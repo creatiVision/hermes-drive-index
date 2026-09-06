@@ -19,6 +19,7 @@ import os
 import tomllib
 
 from hermes_drive_index.core.organize import OrganizeConfig, OrganizeRule
+from hermes_drive_index.core.sync import SyncMapping
 
 DEFAULT_OCR_PDF_ARGS = ("--rotate-pages", "--deskew")
 _SAFE_OCRMYPDF_FLAGS_WITH_VALUES = {
@@ -54,6 +55,8 @@ class DriveIndexConfig:
     include_folders: tuple[str, ...] = ()
     exclude_folders: tuple[str, ...] = ()
     auto_organize: OrganizeConfig = field(default_factory=OrganizeConfig)
+    local_drives: tuple[Path, ...] = ()
+    sync_mappings: tuple[SyncMapping, ...] = ()
 
 
 def _local_config_path(hermes_home: Path, override: str | None = None) -> Path:
@@ -146,14 +149,35 @@ def _organize_config(local: dict, overrides: dict) -> OrganizeConfig:
     )
 
 
+def _sync_mappings(local: dict, overrides: dict) -> tuple[SyncMapping, ...]:
+    raw_list = overrides.get("sync_mappings") or local.get("sync_mappings") or []
+    mappings: list[SyncMapping] = []
+    for item in raw_list:
+        if isinstance(item, dict) and item.get("name") and (item.get("local_path") or item.get("local")):
+            mappings.append(
+                SyncMapping(
+                    name=str(item["name"]),
+                    local_path=Path(item.get("local_path") or item.get("local")).expanduser(),
+                    drive_folder_path=str(item.get("drive_folder_path") or item.get("drive") or ""),
+                    drive_folder_id=str(item.get("drive_folder_id")) if item.get("drive_folder_id") else None,
+                    direction=str(item.get("direction", "bidirectional")),
+                    include_patterns=tuple(item.get("include_patterns", ())),
+                    exclude_patterns=tuple(item.get("exclude_patterns", ())),
+                )
+            )
+        elif isinstance(item, SyncMapping):
+            mappings.append(item)
+    return tuple(mappings)
+
+
 def load_config(overrides: dict | None = None) -> DriveIndexConfig:
     """Resolve configuration following explicit > env > TOML > default precedence.
 
     ``overrides`` keys map to ``DriveIndexConfig`` fields (``config_path``,
     ``base_dir``, ``root_folder_id``, ``root_folder_name``, ``google_api_dir``,
     ``db_path``, ``ocr_enabled``, ``ocr_image_enabled``, ``ocr_pdf_args``,
-    ``include_folders``, ``exclude_folders``). ``None`` values are ignored
-    (treated as "not set").
+    ``include_folders``, ``exclude_folders``, ``local_drives``, ``sync_mappings``).
+    ``None`` values are ignored (treated as "not set").
     """
     overrides = {k: v for k, v in (overrides or {}).items() if v is not None}
     hermes_home = Path(get_hermes_home())
@@ -180,6 +204,9 @@ def load_config(overrides: dict | None = None) -> DriveIndexConfig:
     include_folders = _as_tuple(_pick(overrides.get("include_folders"), "HERMES_DRIVE_INDEX_INCLUDE_FOLDERS", local, "include_folders"))
     exclude_folders = _as_tuple(_pick(overrides.get("exclude_folders"), "HERMES_DRIVE_INDEX_EXCLUDE_FOLDERS", local, "exclude_folders"))
     auto_organize = _organize_config(local, overrides)
+    raw_local_drives = _pick(overrides.get("local_drives"), "HERMES_DRIVE_INDEX_LOCAL_DRIVES", local, "local_drives")
+    local_drives = tuple(Path(p).expanduser() for p in _as_tuple(raw_local_drives))
+    sync_mappings = _sync_mappings(local, overrides)
 
     return DriveIndexConfig(
         root_folder_id=root_folder_id,
@@ -195,6 +222,8 @@ def load_config(overrides: dict | None = None) -> DriveIndexConfig:
         include_folders=include_folders,
         exclude_folders=exclude_folders,
         auto_organize=auto_organize,
+        local_drives=local_drives,
+        sync_mappings=sync_mappings,
     )
 
 

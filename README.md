@@ -20,9 +20,18 @@ Live Google Drive search is useful, but it can be slow, rate-limited, and expens
 ## Key features
 
 - **Local Google Drive document search** — search indexed Drive files without repeated live Drive calls.
+- **Local Drives & Unified Search** — index designated local folders directly into the SQLite FTS5 index to search local documents alongside Google Drive.
+- **Selective Google Drive Sync** — specify only designated local folders to sync with Google Drive, keeping local drives clean while only syncing specific folders.
+- **Safe File Cleanup & Trash Integration** — always uses desktop/system trash (`gio trash` / `trash-put`) rather than permanent deletion.
+- **Four File Cleanup Skills**:
+  - **Duplicate File Detector**: Exact byte-for-byte hashes, near-duplicates, and version variants (`_v2`, `_final`).
+  - **Old File Cleanup Assistant**: Tiered inventory for safe deletion candidates, review items, and active files.
+  - **Auto-Organize Downloads**: Type and date-based sorting into clean subfolders.
+  - **Intelligent Document Structuring**: Content-aware restructuring into 4-6 memorable top-level folders.
+- **Complete SKILL.md Workflow** — strict 7-step interactive workflow requiring explicit user approval before touching files.
 - **SQLite FTS5 full-text index** — fast local search over document chunks and metadata.
-- **Hermes Agent plugin** — exposes `drive_index_search`, `drive_index_status`, and `drive_index_update` as Hermes tools.
-- **Command-line interface** — use `hermes-drive-index search`, `status`, `update`, and `doctor` outside Hermes.
+- **Hermes Agent plugin** — exposes drive indexing, local drive search, selective sync, and cleanup skills as Hermes tools.
+- **Command-line interface** — robust CLI commands (`search`, `duplicates`, `cleanup-old`, `organize-downloads`, `organize-documents`, `sync-plan`, `index-local`).
 - **Safe incremental updates** — manifest-diff updates skip unchanged files, update rename/move metadata, and remove rows for files that disappear from the crawled Drive tree.
 - **Document snippets and Drive links** — returns ranked snippets, file names, paths, and web links.
 - **Optional OCR** — opt-in OCR for scanned PDFs and supported image documents; disabled by default.

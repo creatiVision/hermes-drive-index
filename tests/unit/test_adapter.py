@@ -16,7 +16,20 @@ class _FakeRegistry:
         self.register(**kw)
 
 
-EXPECTED_TOOLS = {"drive_index_search", "drive_index_status", "drive_index_update"}
+EXPECTED_TOOLS = {
+    "drive_index_search",
+    "drive_index_status",
+    "drive_index_update",
+    "file_organizer_analyze",
+    "file_organizer_plan",
+    "file_organizer_execute",
+    "duplicate_file_detector",
+    "old_file_cleanup",
+    "auto_organize_downloads",
+    "intelligent_document_organizer",
+    "local_drive_index",
+    "selective_sync_plan",
+}
 
 
 def test_register_tools_and_register_agree_on_names():

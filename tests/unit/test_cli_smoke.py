@@ -55,3 +55,39 @@ def test_ocr_flags_thread_to_config(tmp_path):
 
     assert cfg.ocr_enabled is True
     assert cfg.ocr_image_enabled is True
+
+
+def test_cli_duplicates_and_cleanup_commands(tmp_path, capsys):
+    (tmp_path / "junk.tmp").write_text("temp")
+    (tmp_path / "pic.png").write_bytes(b"image")
+
+    # duplicates
+    assert cli.main(["duplicates", str(tmp_path)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "total_groups" in out
+
+    # cleanup-old
+    assert cli.main(["cleanup-old", str(tmp_path), "--days", "30"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "safe_deletion_candidates" in out
+
+    # organize-downloads
+    assert cli.main(["organize-downloads", str(tmp_path)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "planned_moves" in out
+
+    # organize-documents
+    assert cli.main(["organize-documents", str(tmp_path)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "folders_to_create" in out
+
+    # organize-analyze
+    assert cli.main(["organize-analyze", str(tmp_path), "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["total_files"] == 2
+
+    # organize-plan
+    assert cli.main(["organize-plan", str(tmp_path), "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "actions" in out
+

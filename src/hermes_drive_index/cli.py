@@ -3,29 +3,53 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
+from pathlib import Path
 
 from . import __version__
-from .api import benchmark_ocr_parameters, build_index, incremental_update, reindex_metadata_only, search, status
+from .api import (
+    auto_organize_downloads,
+    benchmark_ocr_parameters,
+    build_index,
+    find_duplicates,
+    flag_old_files,
+    incremental_update,
+    index_local_folder,
+    organize_documents,
+    reindex_metadata_only,
+    search,
+    selective_sync_plan_api,
+    status,
+)
 from .config import load_config
+from .core.organizer_workflow import (
+    access_check,
+    analyse_first,
+    execute_on_approval,
+    format_plan_presentation,
+    intent_check,
+    propose_plan,
+    validate_approval,
+)
 
 
 def _config_from_args(args: argparse.Namespace):
     return load_config(
         {
-            "config_path": args.config,
-            "root_folder_id": args.root_folder_id,
-            "db_path": args.db_path,
-            "base_dir": args.base_dir,
-            "ocr_enabled": args.ocr_enabled,
-            "ocr_image_enabled": args.ocr_image_enabled,
+            "config_path": getattr(args, "config", None),
+            "root_folder_id": getattr(args, "root_folder_id", None),
+            "db_path": getattr(args, "db_path", None),
+            "base_dir": getattr(args, "base_dir", None),
+            "ocr_enabled": getattr(args, "ocr_enabled", None),
+            "ocr_image_enabled": getattr(args, "ocr_image_enabled", None),
             "ocr_pdf_args": getattr(args, "ocr_pdf_args", None),
         }
     )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Hermes Google Drive local index")
+    parser = argparse.ArgumentParser(description="Hermes Google Drive & Local Drives index and file manager")
     parser.add_argument("--version", action="version", version=f"hermes-drive-index {__version__}")
     parser.add_argument("--config", help="Path to a local TOML config file.")
     parser.add_argument("--root-folder-id", dest="root_folder_id", help="Drive root folder ID override.")
@@ -33,37 +57,87 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-dir", dest="base_dir", help="Base directory override.")
     parser.add_argument("--ocr", dest="ocr_enabled", action="store_true", default=None, help="Enable optional OCR for scanned PDFs.")
     parser.add_argument("--no-ocr", dest="ocr_enabled", action="store_false", help="Disable OCR even if config/env enables it.")
-    parser.add_argument("--ocr-pdf-arg", dest="ocr_pdf_args", action="append", help="Override OCRmyPDF preprocessing/config args with safe allowlisted args. Repeat for multiple args; defaults to rotate+deskew.")
-    parser.add_argument("--ocr-image", dest="ocr_image_enabled", action="store_true", default=None, help="Enable optional OCR indexing for supported image files.")
+    parser.add_argument("--ocr-pdf-arg", dest="ocr_pdf_args", action="append", help="Override OCRmyPDF preprocessing/config args.")
+    parser.add_argument("--ocr-image", dest="ocr_image_enabled", action="store_true", default=None, help="Enable optional OCR indexing for supported images.")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    # Core indexing commands
     build_p = sub.add_parser("build")
     build_p.add_argument("--mode", choices=["weekly_full", "full", "incremental", "incremental_manifest"], default="weekly_full")
-    build_p.add_argument("--json", action="store_true", help="Accepted for consistency; build output is JSON by default.")
+    build_p.add_argument("--json", action="store_true", help="Build output in JSON format.")
 
     update_p = sub.add_parser("update")
     update_p.add_argument("--mode", choices=["incremental", "incremental_manifest", "reindex_metadata_only"], default="incremental_manifest")
-    update_p.add_argument("--json", action="store_true", help="Accepted for consistency; update output is JSON by default.")
+    update_p.add_argument("--json", action="store_true", help="Update output in JSON format.")
+
     incremental_p = sub.add_parser("incremental")
-    incremental_p.add_argument("--json", action="store_true", help="Accepted for consistency; incremental output is JSON by default.")
+    incremental_p.add_argument("--json", action="store_true", help="Incremental output in JSON format.")
+
     status_p = sub.add_parser("status")
-    status_p.add_argument("--json", action="store_true", help="Accepted for consistency; status output is JSON by default.")
+    status_p.add_argument("--json", action="store_true", help="Status output in JSON format.")
+
     doctor_p = sub.add_parser("doctor")
-    doctor_p.add_argument("--json", action="store_true", help="Accepted for consistency; doctor output is JSON by default.")
+    doctor_p.add_argument("--json", action="store_true", help="Doctor output in JSON format.")
 
     bench_p = sub.add_parser("benchmark-ocr", help="Run read-only aggregate OCR parameter benchmark.")
-    bench_p.add_argument("--json", action="store_true", help="Accepted for consistency; benchmark output is JSON by default.")
-    bench_p.add_argument("--mode", dest="modes", action="append", help="Benchmark mode to run; repeat for multiple modes. Defaults to all built-in modes.")
-    bench_p.add_argument("--limit", type=int, help="Limit metadata-only candidates for a quick run.")
-    bench_p.add_argument("--golden", help="Golden query JSON path for private aggregate Recall@5/MRR.")
+    bench_p.add_argument("--json", action="store_true")
+    bench_p.add_argument("--mode", dest="modes", action="append")
+    bench_p.add_argument("--limit", type=int)
+    bench_p.add_argument("--golden")
 
     sp = sub.add_parser("search")
     sp.add_argument("query")
     sp.add_argument("--top", type=int, default=8)
     sp.add_argument("--json", action="store_true")
 
+    # Local drive and cleanup subcommands
+    dupes_p = sub.add_parser("duplicates", help="Scan for exact duplicates, near duplicates, and version variants.")
+    dupes_p.add_argument("folder")
+    dupes_p.add_argument("--json", action="store_true", default=True)
+
+    old_p = sub.add_parser("cleanup-old", help="Analyze old files and generate tiered cleanup inventory.")
+    old_p.add_argument("folder")
+    old_p.add_argument("--days", type=int, default=90)
+    old_p.add_argument("--json", action="store_true", default=True)
+
+    dl_p = sub.add_parser("organize-downloads", help="Plan sorting flat downloads folder by type and date.")
+    dl_p.add_argument("folder")
+    dl_p.add_argument("--no-date", dest="by_date", action="store_false", default=True)
+    dl_p.add_argument("--json", action="store_true", default=True)
+
+    doc_p = sub.add_parser("organize-documents", help="Plan intelligent 4-6 folder structure for documents.")
+    doc_p.add_argument("folder")
+    doc_p.add_argument("--json", action="store_true", default=True)
+
+    # SKILL.md workflow commands
+    ana_p = sub.add_parser("organize-analyze", help="Analyze folder: check access, nesting, patterns, duplicates.")
+    ana_p.add_argument("folder")
+    ana_p.add_argument("--json", action="store_true")
+
+    plan_p = sub.add_parser("organize-plan", help="Propose reorganization plan with before-to-after mapping.")
+    plan_p.add_argument("folder")
+    plan_p.add_argument("--mode", choices=["downloads", "documents"], default="downloads")
+    plan_p.add_argument("--json", action="store_true")
+
+    exec_p = sub.add_parser("organize-execute", help="Execute reorganization plan upon explicit approval.")
+    exec_p.add_argument("folder")
+    exec_p.add_argument("--mode", choices=["downloads", "documents"], default="downloads")
+    exec_p.add_argument("--approval", default="", help="User approval string ('approve' or 'go ahead').")
+    exec_p.add_argument("--dry-run", action="store_true", default=False)
+    exec_p.add_argument("--json", action="store_true")
+
+    # Local indexing & selective sync
+    idx_p = sub.add_parser("index-local", help="Index a local directory directly into the SQLite index.")
+    idx_p.add_argument("folder")
+    idx_p.add_argument("--json", action="store_true", default=True)
+
+    sync_p = sub.add_parser("sync-plan", help="Plan selective sync between designated local and Drive folders.")
+    sync_p.add_argument("--mapping", default=None)
+    sync_p.add_argument("--json", action="store_true", default=True)
+
     args = parser.parse_args(argv)
     cfg = _config_from_args(args)
+
     if args.cmd == "build":
         result = incremental_update(cfg) if args.mode in {"incremental", "incremental_manifest"} else build_index(cfg)
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -93,6 +167,60 @@ def main(argv: list[str] | None = None) -> int:
             for i, row in enumerate(result["results"], 1):
                 print(f"\n{i}. {row['name']}\n   {row['path']}\n   {row.get('web_view_link')}\n   {row['snippet']}")
         return 0
+    if args.cmd == "duplicates":
+        res = find_duplicates(args.folder)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "cleanup-old":
+        res = flag_old_files(args.folder, days_threshold=args.days)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "organize-downloads":
+        res = auto_organize_downloads(args.folder, by_date=args.by_date)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "organize-documents":
+        res = organize_documents(args.folder)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "organize-analyze":
+        acc = access_check(args.folder)
+        if not acc["accessible"]:
+            print(json.dumps(acc, indent=2))
+            return 1
+        res = analyse_first(args.folder)
+        if args.json:
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+        else:
+            print(res["markdown_summary"])
+        return 0
+    if args.cmd == "organize-plan":
+        plan = propose_plan(args.folder, organize_mode=args.mode)
+        if args.json:
+            print(json.dumps(asdict(plan), indent=2, ensure_ascii=False))
+        else:
+            print(format_plan_presentation(plan))
+        return 0
+    if args.cmd == "organize-execute":
+        plan = propose_plan(args.folder, organize_mode=args.mode)
+        if not args.dry_run and not validate_approval(args.approval):
+            print(json.dumps({
+                "success": False,
+                "error": "Explicit approval not provided. Supply --approval 'approve' or use --dry-run."
+            }, indent=2))
+            return 1
+        res = execute_on_approval(plan, dry_run=args.dry_run)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "index-local":
+        res = index_local_folder(args.folder, cfg)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+    if args.cmd == "sync-plan":
+        res = selective_sync_plan_api(args.mapping, cfg)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0
+
     return 1
 
 
