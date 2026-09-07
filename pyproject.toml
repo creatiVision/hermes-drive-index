@@ -1,3 +1,9 @@
+# Modifications Copyright (c) 2026 creatiVision
+# Original Work Copyright (c) Gregory Horn and contributors
+# Licensed under the Apache License, Version 2.0 (the "License").
+# In accordance with Section 4(b) of the Apache 2.0 License, this file has been modified
+# to declare dependencies, entrypoints, and scripts for hermes-auto-organizer.
+
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -39,12 +45,21 @@ dependencies = [
 test = ["pytest>=8"]
 dev = ["pytest>=8", "ruff>=0.8"]
 ocr = ["ocrmypdf>=15"]
+organizer = [
+  "asyncpg>=0.29",
+  "pgvector>=0.2",
+  "ezdxf>=1.1",
+  "mutagen>=1.47",
+  "send2trash>=1.8",
+]
 
 [project.scripts]
 hermes-drive-index = "hermes_drive_index.cli:main"
+hermes-organizer = "hermes_auto_organizer.adapters.cli:main"
 
 [project.entry-points."hermes_agent.plugins"]
 drive_index = "hermes_drive_index.hermes_adapter"
+auto_organizer = "hermes_auto_organizer.adapters.hermes_tools"
 
 [tool.setuptools.dynamic]
 version = {attr = "hermes_drive_index.__version__"}

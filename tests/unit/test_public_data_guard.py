@@ -1,4 +1,9 @@
-"""Public-data guardrails for committable repository files."""
+"""
+Public-data guardrails for committable repository files.
+
+Modifications Copyright (c) 2026 creatiVision. Licensed under Apache 2.0.
+Original Work Copyright (c) Gregory Horn and contributors.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ import re
 
 TEXT_EXTS = {".py", ".toml", ".md", ".yaml", ".yml", ".txt", ".example"}
 BINARY_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
-SKIP_DIRS = {".git", ".local-test", ".pytest_cache", "__pycache__"}
+SKIP_DIRS = {".git", ".local-test", ".pytest_cache", "__pycache__", ".venv", "venv"}
 SECRET_FILENAME_RE = re.compile(r"(client_secret|credentials|token).*\.json$", re.IGNORECASE)
 SECRET_ASSIGNMENT_RE = re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*=\s*['\"][^'\"]{12,}['\"]")
 GENERIC_FORBIDDEN_PATTERNS = [

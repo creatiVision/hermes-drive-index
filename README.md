@@ -1,252 +1,246 @@
-# Hermes Drive Index — Private Google Drive Search for Hermes Agent
+<!--
+Modifications Copyright (c) 2026 creatiVision
+Original Work Copyright (c) Gregory Horn and contributors
+Licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+In accordance with Section 4(b) of the Apache 2.0 License, this file and the repository
+have been modified to expand the project from hermes-drive-index into hermes-auto-organizer.
+-->
 
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/) [![SQLite FTS5](https://img.shields.io/badge/search-SQLite%20FTS5-00bcd4)](https://www.sqlite.org/fts5.html) [![Hermes Plugin](https://img.shields.io/badge/Hermes-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent) [![Real-world validation](https://img.shields.io/badge/real--world%20validation-aggregate%20metrics-green)](docs/real-world-metrics.md)
+# Hermes Auto-Organizer & Drive Index
 
-**Hermes Drive Index** is a local, private **Google Drive search engine for Hermes Agent**. It indexes Google Drive documents into a fast **SQLite full-text search (FTS5)** database so Hermes can find files, snippets, and Drive links in milliseconds instead of calling the Google Drive API for every lookup.
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL_16_%2B_pgvector_HNSW-336791)](https://github.com/pgvector/pgvector)
+[![SQLite FTS5](https://img.shields.io/badge/legacy_search-SQLite_FTS5-00bcd4)](https://www.sqlite.org/fts5.html)
+[![Hermes Agent](https://img.shields.io/badge/Hermes_Agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 
-![Hermes Drive Index infographic showing Google Drive files flowing through an indexing engine into a SQLite full-text index and Hermes search results, with private local search, fast snippets, incremental updates, Drive links, and future OCR support.](docs/assets/hermes-drive-index-infographic.png)
+> **Autonomous, rule-based file management, semantic clustering, and private document search engine for the NousResearch Hermes Agent.**
 
-## Why Hermes Drive Index?
+---
 
-Hermes agents often need to answer questions like:
+## Attribution & Project Lineage
 
-- “Find my lease agreement in Google Drive.”
-- “Which PDF has the fishing license supporting documents?”
-- “Search Drive for project plan snippets.”
-- “Give me the Drive link for that receipt/document.”
+This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
 
-Live Google Drive search is useful, but it can be slow, rate-limited, and expensive to call repeatedly. Hermes Drive Index keeps a lightweight local search index so an AI agent can retrieve relevant personal or team documents quickly while keeping document text on your machine.
+- **Upstream Repository:** https://github.com/gregoryhorn/hermes-drive-index
+- **Fork & Extension:** Developed by **creatiVision** under the Apache License, Version 2.0.
+- **Prominent Notice of Modifications:** In compliance with Section 4 of the Apache 2.0 License, substantial modifications and additions have been introduced:
+  1. Expansion from Google Drive FTS5 indexing into a full multi-root, local and cloud storage auto-organizer (`hermes-auto-organizer`).
+  2. Dual-State Architecture ($\mathcal{S}_{\text{now}} \xrightarrow{\mathcal{R}} \mathcal{S}_{\text{ideal}}$) powered by semantic clustering and deterministic rule compilation.
+  3. Relational and vector persistence layer utilizing **PostgreSQL 16 + pgvector with HNSW indexing**.
+  4. Content-Hash Cache Pattern (two-tier probe + streamed SHA-256) for zero-redundancy multi-modal extraction.
+  5. Multi-modal parsers for CAD/drawings (`.dwg`, `.dxf`), documents (`.pdf`, `.docx`), audio stems (`mutagen`), and video containers (`ffprobe`).
+  6. Interactive Obsidian Vault integration (real-time Markdown dashboards, taxonomy maps, and dry-run checklists).
+  7. Atomic execution engine featuring cross-device (`EXDEV`) copy-verify-trash and full LIFO rollback ledger.
+  8. Full retention of original Google Drive search, local drive indexing, selective sync, and cleanup skills.
+  9. Original `LICENSE` is retained in full; attribution details are recorded in `NOTICE`.
 
-## Key features
+---
 
-- **Local Google Drive document search** — search indexed Drive files without repeated live Drive calls.
-- **Local Drives & Unified Search** — index designated local folders directly into the SQLite FTS5 index to search local documents alongside Google Drive.
-- **Selective Google Drive Sync** — specify only designated local folders to sync with Google Drive, keeping local drives clean while only syncing specific folders.
-- **Safe File Cleanup & Trash Integration** — always uses desktop/system trash (`gio trash` / `trash-put`) rather than permanent deletion.
-- **Four File Cleanup Skills**:
-  - **Duplicate File Detector**: Exact byte-for-byte hashes, near-duplicates, and version variants (`_v2`, `_final`).
-  - **Old File Cleanup Assistant**: Tiered inventory for safe deletion candidates, review items, and active files.
-  - **Auto-Organize Downloads**: Type and date-based sorting into clean subfolders.
-  - **Intelligent Document Structuring**: Content-aware restructuring into 4-6 memorable top-level folders.
-- **Complete SKILL.md Workflow** — strict 7-step interactive workflow requiring explicit user approval before touching files.
-- **SQLite FTS5 full-text index** — fast local search over document chunks and metadata.
-- **Hermes Agent plugin** — exposes drive indexing, local drive search, selective sync, and cleanup skills as Hermes tools.
-- **Command-line interface** — robust CLI commands (`search`, `duplicates`, `cleanup-old`, `organize-downloads`, `organize-documents`, `sync-plan`, `index-local`).
-- **Safe incremental updates** — manifest-diff updates skip unchanged files, update rename/move metadata, and remove rows for files that disappear from the crawled Drive tree.
-- **Document snippets and Drive links** — returns ranked snippets, file names, paths, and web links.
-- **Optional OCR** — opt-in OCR for scanned PDFs and supported image documents; disabled by default.
-- **Optional Drive auto-organization** — opt-in rename/move rules can standardize newly discovered documents during index runs.
-- **Privacy-first defaults** — local DBs, tokens, manifests, and private folder IDs are excluded from the repo.
-- **Metadata-only fallback** — OCR failures or unavailable OCR tools fall back to filename/path indexing instead of breaking builds.
+## Why Hermes Auto-Organizer?
 
-## How it works
+Modern workflows scatter critical documents across local partitions (NVMe, SSDs, external backup drives), network mounts, and Google Drive accounts. Traditional indexing aids lookup, but storage inevitably deteriorates into cluttered "dump zones" (`~/Downloads`, `~/Desktop`) with broken hierarchies, near-duplicates, and untracked versions.
+
+**Hermes Auto-Organizer solves this without permitting chaotic, hallucinated file moves:**
+
+```
+       [ Local Drives / GDrive / Network Mounts ]
+                          │
+                          ▼ (Background Ingestion Worker)
+               [ Multi-Modal Parsers ]
+                          │
+                          ▼
+            [ PostgreSQL + pgvector DB ]
+           /                            \
+(Now-State Metadata)             (Content Embeddings)
+           \                            /
+            ▼                          ▼
+       [ Structural Analyzer & Cluster Engine ]
+                          │
+                          ▼
+        [ Synthesized "Ideal Tree" Ontology ]
+                          │
+                          ▼
+          [ Obsidian Vault Sync & Visualizer ]
+                          │
+                          ▼ (Hermes Interactive Chat)
+             [ User Rule Approval Loop ]
+                          │
+             [ Approved Rules Store ]
+                          │
+                          ▼
+                 [ Dry-Run Manifest ]
+                          │ (User Approves Chunk)
+                          ▼
+             [ Atomic Execution Engine ]
+                          │
+            [ LIFO Rollback Audit Buffer ]
+```
+
+1. **The "Now-State" ($\mathcal{S}_{\text{now}}$):** Physical reality across all storage roots (paths, hashes, sizes, MIME types, metadata).
+2. **The "Ideal Tree" ($\mathcal{S}_{\text{ideal}}$):** Synthesized target ontology derived by clustering semantic file embeddings and learning historical path naming conventions.
+3. **The Deterministic Bridge ($\mathcal{R}$):** The system **never** permits unconstrained, hallucinated file moves. The LLM acts solely as a compiler from semantic clusters into deterministic match-and-move rules that require explicit user approval via Hermes chat before execution.
+
+---
+
+## Key Features
+
+### 1. Storage Intelligence & Ingestion
+- **Multi-Root Support:** Ingest and index local directories, external mounts, and Google Drive roots under unified namespaces.
+- **Two-Tier Content Addressing:** Fast change-detection probe ($O(1)$ head/tail `xxHash64` + size + mtime) paired with streamed chunked `SHA-256` for exact deduplication.
+- **Content-Hash Extraction Cache:** Heavy operations (PDF parsing, OCR, CAD layer extraction, LLM summaries) are keyed by SHA-256—moving or renaming a 500 MB file incurs **zero** re-extraction or re-embedding cost.
+- **Multi-Modal Extractors:**
+  - *CAD / Architecture:* `.dwg`, `.dxf` via `ezdxf` and fallback converter.
+  - *Documents:* `.pdf`, `.docx`, `.md`, `.txt` via `pypdf` with optional OCR (`ocrmypdf`, `tesseract`).
+  - *Audio / Stems:* `.mp3`, `.flac`, `.wav`, `.m4a` via `mutagen`.
+  - *Video / Renders:* `.mp4`, `.mov`, `.mkv` via `ffprobe`.
+
+### 2. Semantic Clustering & Rule Engine
+- **PostgreSQL 16 + pgvector (HNSW):** High-dimensional cosine distance similarity search with real-time incremental indexing.
+- **Density-Based Clustering:** Agglomerative and HDBSCAN grouping of semantic centroids.
+- **Deterministic Rule Compiler:** Synthesizes parametric rules (`organization_rules`) with structured matching conditions and path templates (e.g. `Projects/{client}/{year}/CAD/{file_name}`).
+- **Strict State Machine:** Rules transition explicitly through `DRAFT` $\to$ `DRY_RUN_VERIFIED` $\to$ `USER_APPROVED` $\to$ `EXECUTED`.
+
+### 3. Strict Safety Guardrails & Atomic Execution
+- **Zero Unattended Deletions:** System reorganizes and archives. Permanent `rm` is forbidden; local operations use system trash (`gio trash` / `send2trash`).
+- **Cross-Device Move Guard (`EXDEV`):** Atomic two-phase copy $\to$ SHA-256 verification $\to$ atomic rename $\to$ trash source for cross-partition moves.
+- **Collision Avoidance:** Collision-safe non-overwriting rename policy (`{name}_conflict_{timestamp}_{hash}.{ext}`).
+- **LIFO Rollback Ledger:** Every executed move is atomically committed to `execution_log`, enabling instant one-command rollbacks.
+
+### 4. Interactive Obsidian Vault Visualizer
+- Maintains live Markdown dashboards in `<Obsidian_Vault>/Auto-Organizer/`:
+  - `📊 Current State Overview.md`: Root metrics, scan health, unorganized dump file tallies.
+  - `🗺️ Ideal Taxonomy Map.md`: Synthesized target hierarchy with wikilinks and item counts.
+  - `📋 Pending Moves.md`: Dry-run results formatted as interactive Markdown checklists.
+  - `⚠️ Redundancies and Conflicts.md`: Detailed duplicate hash reports across local drives and Google Drive.
+
+### 5. Retained Core Drive Index & Cleanup Skills
+- **Google Drive SQLite FTS5 Search:** Full-text snippet search and direct Drive web links.
+- **Selective Sync Engine:** Granular bi-directional folder syncing with conflict resolution.
+- **File Organizer Skills:** Full suite of standalone cleanups (`file-organizer`, `auto-organize-downloads`, `duplicate-detector`, `intelligent-document-organizer`, `old-file-cleanup`).
+
+---
+
+## Architecture (Hexagonal / Ports & Adapters)
 
 ```text
-Google Drive folder
-   ↓ crawl metadata and export/download supported docs
-Indexing engine
-   ↓ extract text, chunk documents, preserve metadata
-SQLite FTS5 database
-   ↓ local full-text search
-Hermes Agent tool results
-   → snippets, Drive links, file paths, metadata
+src/
+├── hermes_auto_organizer/
+│   ├── domain/               # Pure business entities & policies (zero framework/I/O imports)
+│   │   ├── models.py         # StorageRoot, FileNode, Rule, MoveIntent, RollbackRecord
+│   │   └── policies.py       # Collision, Safety, Validation policies
+│   ├── application/          # Use cases & orchestration
+│   │   ├── ports/            # Inbound & Outbound interfaces (abstract protocols)
+│   │   │   ├── storage.py    # StorageBackendPort (Local & GDrive)
+│   │   │   ├── repository.py # Metadata & Vector Repository Ports
+│   │   │   ├── extractors.py # ContentExtractorPort
+│   │   │   └── visualizer.py # VaultVisualizerPort
+│   │   └── use_cases/        # Ingest, Cluster, CompileRules, DryRun, Execute, Rollback
+│   ├── infrastructure/       # Outbound adapters (concrete implementations)
+│   │   ├── db/               # PostgreSQL + asyncpg pool, migrations, queries
+│   │   ├── storage/          # LocalFSAdapter (Trash-Safe, EXDEV-safe), GDriveV3Adapter
+│   │   ├── parsers/          # CAD, PDF, Audio, Video parsers
+│   │   └── obsidian/         # Safe Markdown writer & checklist renderer
+│   ├── adapters/             # Inbound driving adapters
+│   │   ├── cli.py            # Command-line interface
+│   │   └── hermes_tools.py   # Hermes Agent RPC tool definitions
+│   ├── config.py             # App configuration & environment validation
+│   └── __init__.py           # Package root & version
+└── hermes_drive_index/       # Retained core drive index & FTS5 search engine
 ```
 
-The package separates Drive crawling, text extraction, SQLite indexing, search, CLI commands, and the Hermes adapter into normal Python modules. The Hermes plugin stays thin and stateless: it registers tools and delegates behavior to the package API.
+---
 
-## Install
+## Installation & Setup
 
-> Current status: this repository is designed for self-hosted Hermes and is undergoing real-world validation in Gregory's local environment. It is designed for local/private use first; review privacy notes before any public release.
+### Requirements
+- Python 3.11+
+- PostgreSQL 16 with `pgvector` extension enabled (`shared-pg` Docker container or local instance)
+- Optional CLI helpers: `ffprobe`, `dwg2dxf`, `ocrmypdf`, `tesseract`
 
-From this repository:
-
+### 1. Install Package
 ```bash
-python -m pip install -e '.[test]'
-hermes-drive-index doctor
+# Clone or navigate to workspace
+cd /media/xchg/skripts/skripts-ai/hermes_gdrive_index_fork+localdrives
+
+# Install dependencies in virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev,test]'
 ```
 
-Optional OCR support keeps the default install lightweight. Install the extra only when you want local OCR helpers available:
-
+### 2. Configure Database & Environment
+Set environment variables or create a `.env` file:
 ```bash
-python -m pip install -e '.[ocr]'
+HERMES_DB_HOST=localhost
+HERMES_DB_PORT=5432
+HERMES_DB_USER=postgres
+HERMES_DB_PASSWORD=secret
+HERMES_DB_NAME=hermes_organizer
+HERMES_OBSIDIAN_VAULT=/media/xchg/ai-knowledge-base/obsidian-vault
 ```
 
-PDF OCR uses the external `ocrmypdf` command and image OCR uses `tesseract`; missing commands are treated as a non-fatal metadata-only fallback.
-
-For a `pipx`-installed Hermes Agent environment:
-
+### 3. Run Database Migrations
 ```bash
-pipx inject --editable hermes-agent /path/to/hermes-drive-index
+python -m hermes_auto_organizer.infrastructure.db.migrations
 ```
 
-Enable the plugin in `~/.hermes/config.yaml`:
-
+### 4. Enable Hermes Agent Plugin
+In `~/.hermes/config.yaml`:
 ```yaml
 plugins:
   enabled:
+    - auto_organizer
     - drive_index
 ```
 
-Start a fresh Hermes session or restart the gateway after installing/enabling the plugin. Hermes caches tool schemas per session.
+---
 
-## Configure
-
-Hermes Drive Index reads configuration from explicit API arguments, environment variables, and a local TOML config file. Keep real folder IDs and local paths outside the repository.
-
-Example config:
-
-```toml
-# ~/.hermes/drive_index/config.toml
-root_folder_name = "Personal Files"
-root_folder_id = "YOUR_GOOGLE_DRIVE_FOLDER_ID"
-base_dir = "/home/you/.hermes/drive_index/personal_files"
-db_path = "/home/you/.hermes/drive_index/personal_files/index.db"
-ocr_enabled = false       # scanned PDF OCR; default false
-ocr_image_enabled = false # image OCR; default false
-
-# Optional Drive organization. Disabled by default.
-[auto_organize]
-enabled = false
-# Keep true until you have reviewed planned actions in update metrics.
-dry_run = true
-# false = only newly discovered files; true = full-build/backfill behavior.
-apply_to_existing = false
-default_target_folder_path = "Personal Files/Documents/Unsorted"
-rename_template = "{date} - {category} - {title}{ext}"
-
-[[auto_organize.rules]]
-name = "receipts"
-pattern = "receipt|invoice|tax invoice"
-target_folder_path = "Personal Files/Finance/Receipts"
-category = "Receipt"
-```
-
-A sanitized template is available at [`examples/config.example.toml`](examples/config.example.toml).
-
-## CLI usage
-
-Check package and plugin health:
+## CLI Usage
 
 ```bash
-hermes-drive-index doctor --json
+# Ingest and scan a local storage root
+hermes-organizer ingest --root /media/work-data/002_cv-projects --name projects
+
+# Analyze clusters and synthesize Ideal Tree
+hermes-organizer analyze --synthesize-rules
+
+# Export status and proposed taxonomy to Obsidian Vault
+hermes-organizer sync-obsidian
+
+# Run dry-run verification for a staged rule
+hermes-organizer dry-run --rule-id <UUID>
+
+# Execute an approved batch with atomic rollback safety
+hermes-organizer execute --rule-id <UUID> --batch-size 50
+
+# Revert a previously executed batch (LIFO rollback)
+hermes-organizer rollback --batch-id <UUID>
 ```
 
-Build or update the local Google Drive index. These commands emit JSON by default; `--json` is also accepted for script consistency:
+---
+
+## Testing & Quality Assurance
+
+Run the test suite:
 ```bash
-hermes-drive-index build --mode weekly_full --json
-hermes-drive-index update --mode incremental_manifest --json
-hermes-drive-index --ocr update --mode reindex_metadata_only --json
+.venv/bin/pytest -q
 ```
 
-OCR is opt-in. Enable scanned-PDF OCR per run with `--ocr`; enable image OCR only for deliberately scoped document folders, because it makes supported `image/*` files indexable:
+The test suite includes:
+- Unit tests for domain models and policies.
+- Two-tier hashing verification and extraction cache benchmarks.
+- Cross-device `EXDEV` move and collision safety tests.
+- Public-data guard checks preventing leakage of private tokens or credentials.
 
-```bash
-hermes-drive-index --ocr build --mode weekly_full --json
-hermes-drive-index --ocr --ocr-image build --mode weekly_full --json
-```
+---
 
-For image OCR, prefer TOML folder scoping such as `include_folders = ["Scanned Docs"]` so personal photo folders are not swept into OCR indexing.
+## License & Attribution
 
-After enabling OCR on an existing index, use `reindex_metadata_only` to retry only files currently indexed by filename/path metadata instead of doing a full rebuild.
+This project is licensed under the **Apache License, Version 2.0**.
+See the [LICENSE](LICENSE) file for the full license text.
 
-Search indexed Drive documents:
-
-```bash
-hermes-drive-index search "project plan" --top 5 --json
-```
-
-Inspect index status:
-
-```bash
-hermes-drive-index status --json
-```
-
-## Hermes Agent tools
-
-When the plugin is installed and enabled, Hermes can use the `drive_index` toolset:
-
-| Tool | Purpose |
-| --- | --- |
-| `drive_index_search` | Search the local Google Drive index for files, snippets, paths, and Drive links. |
-| `drive_index_status` | Inspect DB existence, counts, size, and last run metrics. |
-| `drive_index_update` | Run a rebuild or incremental update from Hermes. |
-
-Suggested Hermes use cases:
-
-- personal document retrieval
-- Google Drive knowledge base search
-- receipt, lease, license, and PDF lookup
-- local RAG-style document search
-- AI assistant memory augmentation for private files
-
-## Real-world validation
-
-This repository includes a privacy-preserving evidence loop for a live local Drive Index. Public metrics are aggregate-only: counts, run status, latency, eval scores, and tool availability. Personal filenames, Google Drive paths, Drive IDs, snippets, raw eval cases, and private document contents are never published.
-
-Latest sanitized local snapshot: 618 files scanned in the most recent metadata-only reindex run, 94 native/full-text indexed files, 48 OCR-indexed files, 5 metadata-only files, 471 skipped files, 0 failed files, and fixed generic search latency averaging 3.264 ms. See [`docs/real-world-metrics.md`](docs/real-world-metrics.md) for reproduction commands, interpretation, and current evidence gaps.
-
-## Privacy and security
-
-This project is built for private/local search. Do **not** commit:
-
-- OAuth tokens or Google credentials
-- client secret JSON files
-- real Google Drive folder IDs
-- SQLite index databases (`*.db`, `*.sqlite*`)
-- crawl manifests or raw Drive exports
-- private golden queries, eval reports, or phase logs
-- document snippets from private files
-
-See [`docs/security.md`](docs/security.md) for the full privacy boundary.
-
-## Architecture
-
-Core modules live under `src/hermes_drive_index/`:
-
-- `core/crawler.py` — Drive metadata crawling and download/export helpers
-- `core/extract.py` — document text extraction and chunking
-- `core/ocr.py` — optional external-command OCR wrappers
-- `core/index.py` — SQLite schema and indexing operations
-- `core/manifest.py` — incremental update planning
-- `core/organize.py` — optional Drive rename/move planning and application
-- `core/search.py` — SQLite FTS search and status
-- `core/orchestrator.py` — build/update orchestration
-- `hermes_adapter/` — Hermes plugin registration and JSON tool wrappers
-- `cli.py` — command-line interface
-
-See [`docs/architecture.md`](docs/architecture.md) for design details.
-
-### Incremental delete/rename/move behavior
-
-Incremental updates use a fresh crawl plus manifest comparison, not Drive
-Changes API tokens. Source-backed details are documented in
-[`docs/architecture.md#deleted-trashed-renamed-and-moved-files`](docs/architecture.md#deleted-trashed-renamed-and-moved-files):
-files absent from the latest `trashed=false` crawl are removed from `files`,
-`chunks`, and `chunks_fts`; rename/path-only changes for the same `file_id` are
-applied as metadata-only updates; changed content is reindexed; and no tombstone
-rows are retained.
-
-## Testing
-
-Run the unit tests:
-
-```bash
-python -m pytest -q
-```
-
-The test suite includes public-data guard checks to reduce the risk of committing private Drive IDs, local DB paths, tokens, or local-only values.
-
-## Roadmap
-
-- Fake Drive client and synthetic fixtures for network-free CI
-- Expanded evaluation metrics: Recall@1, Recall@5, MRR, latency, rebuild time
-- Public release hardening and docs cleanup
-- More configurable extraction backends
-
-## SEO keywords
-
-Hermes Drive Index, Hermes Agent Google Drive search, private Google Drive search, local Google Drive index, SQLite FTS Google Drive, AI agent document search, Google Drive RAG, local document retrieval, personal knowledge base search, Google Drive full-text search, Hermes plugin.
-
-## License
-
-Apache-2.0
+- Original Work Copyright (c) Gregory Horn and contributors (`hermes-drive-index`).
+- Modifications and Additions Copyright (c) 2026 creatiVision (`hermes-auto-organizer`).
+- Detailed attributions and third-party notices are maintained in [NOTICE](NOTICE).
