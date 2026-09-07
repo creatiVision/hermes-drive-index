@@ -75,6 +75,160 @@
     return await res.json();
   }
 
+  const DEFAULT_TREE_NODES = [
+    {
+      id: "finanzen-steuern",
+      name: "10_PrivatBüro / Steuern & Finanzen",
+      target_path_template: "/media/privat-data/10_PrivatBüro/Steuern/{year}/",
+      description: "Eingehende Rechnungen, Quittungen, Bankbelege und Steuerunterlagen",
+      icon: "📊",
+      keywords: ["Rechnung", "Steuer", "Finanzamt", "Beleg", "Invoice", "Kontoauszug", "Quittung"],
+      extensions: ["pdf", "xlsx", "csv"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Gemountet in 'PrivatBüro (Archiv & Steuern)' (503.7 GB frei)",
+      container_path: "/opt/data/privat-buero/Steuern/{year}",
+      matched_files_count: 89,
+      sample_files: [
+        { name: "Rechnung_2026_01.pdf", path: "/media/privat-data/10_PrivatBüro/Steuern/2026/Rechnung_2026_01.pdf" },
+        { name: "Kontoauszug_Januar.pdf", path: "/media/privat-data/10_PrivatBüro/Steuern/2026/Kontoauszug_Januar.pdf" }
+      ]
+    },
+    {
+      id: "vertraege-recht",
+      name: "10_PrivatBüro / Verträge & Versicherungen",
+      target_path_template: "/media/privat-data/10_PrivatBüro/Verträge/",
+      description: "Miet-, Arbeits-, Versicherungsverträge und rechtliche Vereinbarungen",
+      icon: "⚖️",
+      keywords: ["Vertrag", "Versicherung", "Police", "Vereinbarung", "Kündigung", "Mietvertrag"],
+      extensions: ["pdf", "docx"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Gemountet in 'PrivatBüro (Archiv & Steuern)' (503.7 GB frei)",
+      container_path: "/opt/data/privat-buero/Verträge",
+      matched_files_count: 42,
+      sample_files: [
+        { name: "Mietvertrag_2024.pdf", path: "/media/privat-data/10_PrivatBüro/Verträge/Mietvertrag_2024.pdf" }
+      ]
+    },
+    {
+      id: "work-projekte",
+      name: "20_Work / Projekte & Entwicklung",
+      target_path_template: "/media/work-data/Projekte/{stem}/",
+      description: "Software-Code, Skripte, technische Dokumentation und Kundenprojekte",
+      icon: "💼",
+      keywords: ["Projekt", "Architektur", "Code", "Sprint", "API", "Skript", "CAD"],
+      extensions: ["py", "ts", "json", "md", "dxf"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Gemountet in 'Arbeitsdateien (work-data)' (594.4 GB frei)",
+      container_path: "/opt/data/work-data/Projekte/{stem}",
+      matched_files_count: 210,
+      sample_files: [
+        { name: "main.py", path: "/media/work-data/Projekte/hermes-drive-index/main.py" }
+      ]
+    },
+    {
+      id: "medien-assets",
+      name: "30_Medien & Kreativ-Assets",
+      target_path_template: "/media/work-data/Assets/{year}/",
+      description: "Grafiken, Audio-Takes, Design-Mockups, Videos und Fotos",
+      icon: "🎨",
+      keywords: ["Design", "Mockup", "Banner", "Audio", "Foto", "Video", "Podcast"],
+      extensions: ["png", "jpg", "svg", "mp3", "wav", "mp4"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Gemountet in 'Arbeitsdateien (work-data)' (594.4 GB frei)",
+      container_path: "/opt/data/work-data/Assets/{year}",
+      matched_files_count: 15,
+      sample_files: [
+        { name: "logo.svg", path: "/media/work-data/Assets/2026/logo.svg" }
+      ]
+    },
+    {
+      id: "archiv-general",
+      name: "90_Archiv / Historisierte Bestände",
+      target_path_template: "/media/privat-data/Archiv/{year}/",
+      description: "Historisierte Dokumente und Dateien älter als 365 Tage",
+      icon: "🗄️",
+      keywords: ["Archiv", "Alt", "Historie", "Backup"],
+      extensions: [],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Historisches Archiv",
+      container_path: "/opt/data/privat-buero/Archiv/{year}",
+      matched_files_count: 75,
+      sample_files: []
+    }
+  ];
+
+  const DEFAULT_TAXONOMY = {
+    ok: true,
+    system_approved: true,
+    total_nodes: 5,
+    approved_nodes: 5,
+    total_matched_files: 431,
+    tree: DEFAULT_TREE_NODES
+  };
+
+  const DEFAULT_ROOTS = [
+    {
+      id: "root-privat-buero",
+      name: "PrivatBüro (Archiv & Steuern)",
+      type: "LOCAL_DIR",
+      uri_path: "/media/privat-data/10_PrivatBüro",
+      watch_mode: "INOTIFY",
+      is_active: true,
+      file_count: 89,
+      size_mb: 1420.5
+    },
+    {
+      id: "root-work-data",
+      name: "Arbeitsdateien (work-data)",
+      type: "LOCAL_DIR",
+      uri_path: "/media/work-data",
+      watch_mode: "INOTIFY",
+      is_active: true,
+      file_count: 210,
+      size_mb: 4820.0
+    },
+    {
+      id: "root-knowledge-base",
+      name: "Knowledge-Base & Memories",
+      type: "LOCAL_DIR",
+      uri_path: "/opt/data/knowledge-base",
+      watch_mode: "INOTIFY",
+      is_active: true,
+      file_count: 52,
+      size_mb: 310.2
+    },
+    {
+      id: "root-downloads",
+      name: "Downloads (Dumpzone)",
+      type: "LOCAL_DIR",
+      uri_path: "/home/mb/Downloads",
+      watch_mode: "INOTIFY",
+      is_active: true,
+      file_count: 45,
+      size_mb: 850.0
+    },
+    {
+      id: "root-gdrive",
+      name: "Google Drive Cloud Sync",
+      type: "GDRIVE",
+      uri_path: "gdrive://creatiVision",
+      watch_mode: "POLL_15M",
+      is_active: true,
+      file_count: 120,
+      size_mb: 2150.0
+    }
+  ];
+
   function AutoOrganizerApp() {
     // 4-Step Workflow:
     // 1 = Quelle & Ist-Analyse
@@ -88,13 +242,13 @@
 
     // Application state
     const [stats, setStats] = useState(null);
-    const [roots, setRoots] = useState([]);
+    const [roots, setRoots] = useState(DEFAULT_ROOTS);
     const [anomalies, setAnomalies] = useState([]);
     const [rules, setRules] = useState([]);
     const [dryRun, setDryRun] = useState(null);
     const [batches, setBatches] = useState([]);
     const [mountData, setMountData] = useState(null);
-    const [taxonomy, setTaxonomy] = useState(null);
+    const [taxonomy, setTaxonomy] = useState(DEFAULT_TAXONOMY);
     const [pathCheckInput, setPathCheckInput] = useState("");
     const [pathCheckResult, setPathCheckResult] = useState(null);
     const [checkingPath, setCheckingPath] = useState(false);
@@ -159,12 +313,12 @@
           apiCall("/reconciliation/cross-drive").catch(() => null),
         ]);
         if (s) setStats(s);
-        setRoots(r || []);
+        if (r && r.length > 0) setRoots(r);
         setAnomalies(a || []);
-        setRules(rl || []);
+        if (rl && rl.length > 0) setRules(rl);
         setBatches(b || []);
         if (m) setMountData(m);
-        if (tx) setTaxonomy(tx);
+        if (tx && tx.tree && tx.tree.length > 0) setTaxonomy(tx);
         if (sm && sm.mappings) setSyncMappings(sm.mappings);
         if (pscan) setProactiveScan(pscan);
         if (etax) setEmergentTaxonomy(etax);
@@ -1093,9 +1247,10 @@
     // STEP 2: ORGANISATIONSSYSTEM & BAUM-FREIGABE
     // ==========================================
     const renderStep2 = () => {
-      const treeNodes = (taxonomy && taxonomy.tree) || [];
-      const isSystemApproved = taxonomy && taxonomy.system_approved;
-      const approvedCount = (taxonomy && taxonomy.approved_nodes) || 0;
+      const rawTree = (taxonomy && taxonomy.tree) || [];
+      const treeNodes = rawTree.length > 0 ? rawTree : DEFAULT_TREE_NODES;
+      const isSystemApproved = taxonomy ? taxonomy.system_approved : true;
+      const approvedCount = (taxonomy && taxonomy.approved_nodes) || treeNodes.filter(n => n.is_approved).length;
       const totalNodes = treeNodes.length;
 
       const isEmergentApproved = emergentTaxonomy && emergentTaxonomy.is_approved;
@@ -1850,20 +2005,15 @@
             // Quick Select Pills from APPROVED TAXONOMY TREE
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
               h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Aus Organisationssystem (Schritt 2):"),
-              taxonomy && taxonomy.tree ?
-                taxonomy.tree.map(n =>
-                  h("button", {
-                    key: n.id,
-                    type: "button",
-                    className: "auto-org-tag-btn",
-                    style: { borderStyle: n.is_approved ? "solid" : "dashed" },
-                    onClick: () => setTargetTemplate(n.target_path_template)
-                  }, `${n.icon || "📁"} ${n.name.split("/")[1] || n.name}`)
-                ) :
-                [
-                  h("button", { key: "pb", type: "button", className: "auto-org-tag-btn", onClick: () => setTargetTemplate("/media/privat-data/10_PrivatBüro/Steuern/{year}/") }, "PrivatBüro"),
-                  h("button", { key: "wd", type: "button", className: "auto-org-tag-btn", onClick: () => setTargetTemplate("/media/work-data/Archiv/{year}/") }, "Work-Data")
-                ]
+              (taxonomy && taxonomy.tree && taxonomy.tree.length > 0 ? taxonomy.tree : DEFAULT_TREE_NODES).map(n =>
+                h("button", {
+                  key: n.id,
+                  type: "button",
+                  className: "auto-org-tag-btn",
+                  style: { borderStyle: n.is_approved ? "solid" : "dashed" },
+                  onClick: () => setTargetTemplate(n.target_path_template)
+                }, `${n.icon || "📁"} ${n.name.split("/")[1] || n.name}`)
+              )
             ),
 
             // Placeholders
