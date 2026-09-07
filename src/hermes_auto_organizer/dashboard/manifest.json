@@ -1,0 +1,15 @@
+{
+  "name": "auto-organizer",
+  "label": "Auto Organizer",
+  "description": "Autonomous file management, semantic clustering, and storage reorganization for Hermes Agent.",
+  "icon": "FolderTree",
+  "version": "0.2.0",
+  "tab": {
+    "path": "/organizer",
+    "position": "after:kanban"
+  },
+  "slots": ["header-right"],
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}
