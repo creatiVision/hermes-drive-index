@@ -108,7 +108,18 @@ def test_validate_destination_path_unmounted():
     assert "außerhalb der gemounteten Docker-Verzeichnisse" in res["message"]
 
 
-def test_mounts_api_endpoints():
+@patch("hermes_auto_organizer.infrastructure.storage.docker_mounts.DockerMountService.get_mounts")
+@patch("hermes_auto_organizer.infrastructure.storage.docker_mounts.docker_mount_service.get_mounts")
+def test_mounts_api_endpoints(mock_get_mounts_inst, mock_get_mounts_cls):
+    dummy_mounts = [
+        {"host_path": "/home/mb/Downloads", "container_path": "/opt/data/downloads", "is_writable": True, "free_gb": 50, "label": "Downloads (Dumpzone)", "rw": True},
+        {"host_path": "/media/work-data", "container_path": "/opt/data/work-data", "is_writable": True, "free_gb": 50, "label": "Arbeitsdateien (work-data)", "rw": True},
+    ] + [{"host_path": f"/dummy{i}", "container_path": f"/opt/data/dummy{i}", "is_writable": True, "free_gb": 10, "label": f"Dummy{i}", "rw": True} for i in range(6)] + [
+        {"host_path": "/ro1", "container_path": "/opt/data/ro1", "is_writable": False, "free_gb": 10, "label": "RO1", "rw": False},
+        {"host_path": "/ro2", "container_path": "/opt/data/ro2", "is_writable": False, "free_gb": 10, "label": "RO2", "rw": False},
+    ]
+    mock_get_mounts_inst.return_value = dummy_mounts
+    mock_get_mounts_cls.return_value = dummy_mounts
     # GET /mounts
     res = client.get("/api/plugins/auto-organizer/mounts")
     assert res.status_code == 200

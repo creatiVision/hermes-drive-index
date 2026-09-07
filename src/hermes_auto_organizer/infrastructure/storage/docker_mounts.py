@@ -161,6 +161,15 @@ class _UnixHTTPHandler(urllib.request.AbstractHTTPHandler):
         return self.do_open(lambda host: _UnixHTTPConnection(self.socket_path), req)
 
 
+
+def _is_safe_subpath(parent, child):
+    try:
+        norm_parent = os.path.abspath(os.path.normpath(parent))
+        norm_child = os.path.abspath(os.path.normpath(child))
+        return os.path.commonpath([norm_parent, norm_child]) == norm_parent
+    except ValueError:
+        return False
+
 class DockerMountService:
     """Discovers and inspects container mounts and translates file paths."""
 
@@ -294,7 +303,7 @@ class DockerMountService:
 
         for m in mounts:
             hpath = m["host_path"]
-            if norm_path == hpath or norm_path.startswith(hpath + "/"):
+            if _is_safe_subpath(hpath, norm_path):
                 if len(hpath) > best_prefix_len:
                     best_prefix_len = len(hpath)
                     best_match = m
@@ -321,7 +330,7 @@ class DockerMountService:
             best_prefix_len = -1
             for m in mounts:
                 cpath = m["container_path"]
-                if norm_path == cpath or norm_path.startswith(cpath + "/"):
+                if _is_safe_subpath(cpath, norm_path):
                     if len(cpath) > best_prefix_len:
                         best_prefix_len = len(cpath)
                         best_match = m
@@ -336,7 +345,7 @@ class DockerMountService:
 
         for m in mounts:
             hpath = m["host_path"]
-            if norm_path == hpath or norm_path.startswith(hpath + "/"):
+            if _is_safe_subpath(hpath, norm_path):
                 return norm_path
 
         return None
@@ -368,7 +377,7 @@ class DockerMountService:
         best_len = -1
         for m in mounts:
             mp = m["container_path"]
-            if cpath == mp or cpath.startswith(mp + "/"):
+            if _is_safe_subpath(mp, cpath):
                 if len(mp) > best_len:
                     best_len = len(mp)
                     matched_mount = m
