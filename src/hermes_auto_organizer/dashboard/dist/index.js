@@ -1,8 +1,8 @@
 /**
  * Hermes Auto-Organizer — Dashboard Plugin Bundle
  *
- * Intuitive 3-Step Guided Workflow & Modular Storage Cleanup Engine:
- *   [Step 1: Quelle & Analyse] -> [Step 2: Filter-Regeln & Ziel] -> [Step 3: Vorschau & Reorganisation]
+ * 4-Step Guided Workflow with Dedicated Organizational System (Tree / Taxonomy) Approval:
+ *   [Step 1: Quelle & Ist-Stand] -> [Step 2: Organisationssystem & Baum-Freigabe] -> [Step 3: Filter-Regeln & Zuordnung] -> [Step 4: Simulation & Reorganisation]
  * with Top Bar Config Tools (Docker Mounts & Pfad-Prüfer, Speicherwurzeln, Journal & 1-Klick Rollback).
  *
  * Plain IIFE compatible with window.__HERMES_PLUGIN_SDK__.
@@ -33,7 +33,11 @@
   }
 
   function AutoOrganizerApp() {
-    // 3-Step Workflow: 1 = Quelle & Analyse, 2 = Filter-Regeln & Ziel, 3 = Vorschau & Reorganisation
+    // 4-Step Workflow:
+    // 1 = Quelle & Ist-Analyse
+    // 2 = Organisationssystem & Baum-Freigabe
+    // 3 = Filter-Regeln & Zuordnung
+    // 4 = Simulation & Reorganisation
     const [step, setStep] = useState(1);
 
     // Modal state for top bar config tools: null | "mounts" | "roots" | "journal"
@@ -47,13 +51,23 @@
     const [dryRun, setDryRun] = useState(null);
     const [batches, setBatches] = useState([]);
     const [mountData, setMountData] = useState(null);
+    const [taxonomy, setTaxonomy] = useState(null);
     const [pathCheckInput, setPathCheckInput] = useState("");
     const [pathCheckResult, setPathCheckResult] = useState(null);
     const [checkingPath, setCheckingPath] = useState(false);
     const [loading, setLoading] = useState(false);
     const [notice, setNotice] = useState(null);
 
-    // Modular Rule Builder State (Step 2)
+    // Step 2 Taxonomy state
+    const [showNewNodeForm, setShowNewNodeForm] = useState(false);
+    const [newNodeName, setNewNodeName] = useState("");
+    const [newNodePath, setNewNodePath] = useState("");
+    const [newNodeDesc, setNewNodeDesc] = useState("");
+    const [newNodeIcon, setNewNodeIcon] = useState("📁");
+    const [newNodeKeywords, setNewNodeKeywords] = useState("");
+    const [expandedSamples, setExpandedSamples] = useState({});
+
+    // Step 3 Modular Rule Builder State
     const [ruleName, setRuleName] = useState("");
     const [ruleDesc, setRuleDesc] = useState("");
     const [matchMode, setMatchMode] = useState("all"); // "all" (AND) or "any" (OR)
@@ -62,20 +76,21 @@
       { field: "keyword", operator: "contains", value: "Rechnung", scope: "both" },
       { field: "timeframe", operator: "older_than_days", value: "14", scope: "both" }
     ]);
-    const [targetTemplate, setTargetTemplate] = useState("/media/privat-buero/Steuern/{year}/");
+    const [targetTemplate, setTargetTemplate] = useState("/media/privat-data/10_PrivatBüro/Steuern/{year}/");
     const [testResult, setTestResult] = useState(null);
     const [testing, setTesting] = useState(false);
 
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m] = await Promise.all([
+        const [s, r, a, rl, b, m, tx] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
           apiCall("/rules").catch(() => []),
           apiCall("/batches").catch(() => []),
           apiCall("/mounts").catch(() => null),
+          apiCall("/taxonomy").catch(() => null),
         ]);
         if (s) setStats(s);
         setRoots(r || []);
@@ -83,6 +98,7 @@
         setRules(rl || []);
         setBatches(b || []);
         if (m) setMountData(m);
+        if (tx) setTaxonomy(tx);
       } catch (err) {
         console.error("AutoOrganizer load error:", err);
       } finally {
@@ -93,6 +109,89 @@
     useEffect(() => {
       loadData();
     }, [loadData]);
+
+    const handleApproveAllTaxonomy = async () => {
+      setLoading(true);
+      try {
+        const res = await apiCall("/taxonomy/approve", {
+          method: "POST",
+          body: JSON.stringify({ approve_all: true })
+        });
+        setNotice(res.message || "Organisationssystem und Verzeichnis-Baum erfolgreich freigegeben!");
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler bei der Freigabe: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleToggleNodeApproval = async (nodeId, currentApproved) => {
+      setLoading(true);
+      try {
+        const currentNodes = (taxonomy && taxonomy.tree) || [];
+        const newApprovedIds = currentApproved ?
+          currentNodes.filter(n => n.id !== nodeId && n.is_approved).map(n => n.id) :
+          [...currentNodes.filter(n => n.is_approved).map(n => n.id), nodeId];
+
+        await apiCall("/taxonomy/approve", {
+          method: "POST",
+          body: JSON.stringify({ approve_all: false, node_ids: newApprovedIds })
+        });
+        setNotice("Ast-Status im Organisationssystem aktualisiert.");
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleAddTaxonomyNode = async (e) => {
+      if (e) e.preventDefault();
+      if (!newNodeName.trim() || !newNodePath.trim()) {
+        alert("Bitte Name und Pfad-Vorlage angeben.");
+        return;
+      }
+      setLoading(true);
+      try {
+        await apiCall("/taxonomy/node", {
+          method: "POST",
+          body: JSON.stringify({
+            name: newNodeName,
+            target_path_template: newNodePath,
+            description: newNodeDesc,
+            icon: newNodeIcon,
+            keywords: newNodeKeywords.split(",").map(k => k.trim()).filter(Boolean),
+            extensions: []
+          })
+        });
+        setNewNodeName("");
+        setNewNodePath("");
+        setNewNodeDesc("");
+        setShowNewNodeForm(false);
+        setNotice(`Ordner-Ast '${newNodeName}' erfolgreich zum Organisationssystem hinzugefügt!`);
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Speichern: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleApplyTaxonomyBranchToRule = (node) => {
+      setTargetTemplate(node.target_path_template);
+      if (node.keywords && node.keywords.length > 0) {
+        const kwIdx = conditions.findIndex(c => c.field === "keyword");
+        if (kwIdx >= 0) {
+          handleConditionChange(kwIdx, "value", node.keywords[0]);
+        }
+      }
+      setRuleName(`Sortiere nach ${node.name.split("/").pop() || node.name}`);
+      setRuleDesc(`Regel für den freigegebenen Ast '${node.name}'`);
+      setStep(3);
+      setNotice(`Zielpfad '${node.target_path_template}' aus dem Organisationssystem übernommen!`);
+    };
 
     const handleToggleRule = async (ruleId, currentActive) => {
       try {
@@ -134,7 +233,6 @@
       const updated = [...conditions];
       updated[index] = Object.assign({}, updated[index], { [key]: value });
 
-      // Intelligent operator defaults
       if (key === "field") {
         if (value === "source_folder") updated[index].operator = "starts_with";
         else if (value === "timeframe") updated[index].operator = "older_than_days";
@@ -206,7 +304,7 @@
           body: JSON.stringify({ max_items: 50 }),
         });
         setDryRun(result);
-        setStep(3);
+        setStep(4);
         setNotice(`Dry-Run abgeschlossen: ${result.actions_count} Aktionen vorbereitet.`);
       } catch (err) {
         setNotice(`Dry-Run fehlgeschlagen: ${err.message}`);
@@ -282,7 +380,7 @@
       } else {
         setConditions([{ field: "source_folder", operator: "starts_with", value: hpath, scope: "both" }, ...conditions]);
       }
-      setStep(2);
+      setStep(3);
       setActiveModal(null);
       setNotice(`Quellordner im Baukasten auf '${hpath}' gesetzt.`);
     };
@@ -290,7 +388,7 @@
     const handleSetRuleTarget = (hpath) => {
       const template = hpath.endsWith("/") ? `${hpath}Archiv/{year}/` : `${hpath}/Archiv/{year}/`;
       setTargetTemplate(template);
-      setStep(2);
+      setStep(3);
       setActiveModal(null);
       setNotice(`Zielpfad im Baukasten auf '${template}' gesetzt.`);
     };
@@ -310,8 +408,12 @@
       if (an.suggested_target) {
         setTargetTemplate(an.suggested_target.endsWith("/") ? an.suggested_target : an.suggested_target + "/");
       }
-      setStep(2);
+      setStep(3);
       setNotice(`Regel-Baukasten mit Daten von '${an.file_name}' vorausgefüllt.`);
+    };
+
+    const toggleSampleExpand = (nodeId) => {
+      setExpandedSamples(prev => Object.assign({}, prev, { [nodeId]: !prev[nodeId] }));
     };
 
     // Sub-renderers
@@ -350,7 +452,7 @@
               h("span", { className: "auto-org-badge auto-org-badge-blue" }, "🐳 Docker Jail Aktiv")
           ),
           h("div", { className: "auto-org-subtitle" },
-            "Geführter 3-Stufen-Workflow: Quelle & Analyse → Filter-Regeln & Ziel → Simulation & Reorganisation."
+            "Geführter 4-Stufen-Workflow: Quelle & Ist-Stand → Organisationssystem & Baum-Freigabe → Filter-Regeln & Zuordnung → Simulation & Reorganisation."
           )
         ),
         // Top Toolbar Config Buttons
@@ -401,8 +503,10 @@
           h("div", { className: "auto-org-stat-value" }, stats.total_files.toLocaleString())
         ),
         h("div", { className: "auto-org-stat-card" },
-          h("div", { className: "auto-org-stat-label" }, "Speichervolumen"),
-          h("div", { className: "auto-org-stat-value" }, `${stats.total_size_mb} MB`)
+          h("div", { className: "auto-org-stat-label" }, "Ziel-Baum Status"),
+          h("div", { className: "auto-org-stat-value", style: { color: taxonomy && taxonomy.system_approved ? "#4ade80" : "#facc15", fontSize: "1.35rem" } },
+            taxonomy && taxonomy.system_approved ? "✓ Freigegeben" : "⏳ Entwurf"
+          )
         ),
         h("div", { className: "auto-org-stat-card" },
           h("div", { className: "auto-org-stat-label" }, "Unsortierte Anomalien"),
@@ -425,13 +529,13 @@
           h("div", { className: "auto-org-step-badge" }, step > 1 ? "✓" : "1"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
-            h("div", { className: "auto-org-step-name" }, "Quelle & Analyse"),
+            h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
             h("div", { className: "auto-org-step-subtitle" },
               anomalies.length > 0 ? `${anomalies.length} offene Anomalien` : "Keine Anomalien"
             )
           )
         ),
-        // Step 2
+        // Step 2 (Organisationssystem & Baum)
         h("div", {
           className: `auto-org-step-card ${step === 2 ? "active" : ""} ${step > 2 ? "completed" : ""}`,
           onClick: () => setStep(2)
@@ -439,23 +543,37 @@
           h("div", { className: "auto-org-step-badge" }, step > 2 ? "✓" : "2"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
-            h("div", { className: "auto-org-step-name" }, "Filter-Regeln & Ziel"),
+            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Baum"),
             h("div", { className: "auto-org-step-subtitle" },
-              `${rules.length} aktive Regeln • Baukasten`
+              taxonomy && taxonomy.system_approved ? "✓ Baum freigegeben" : "Analyse & Freigabe ausstehend"
             )
           )
         ),
-        // Step 3
+        // Step 3 (Filter-Regeln)
         h("div", {
-          className: `auto-org-step-card ${step === 3 ? "active" : ""}`,
+          className: `auto-org-step-card ${step === 3 ? "active" : ""} ${step > 3 ? "completed" : ""}`,
           onClick: () => setStep(3)
         },
-          h("div", { className: "auto-org-step-badge" }, "3"),
+          h("div", { className: "auto-org-step-badge" }, step > 3 ? "✓" : "3"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 3"),
+            h("div", { className: "auto-org-step-name" }, "Filter-Regeln & Zuordnung"),
+            h("div", { className: "auto-org-step-subtitle" },
+              `${rules.length} aktive Regeln`
+            )
+          )
+        ),
+        // Step 4 (Simulation & Reorganisation)
+        h("div", {
+          className: `auto-org-step-card ${step === 4 ? "active" : ""}`,
+          onClick: () => setStep(4)
+        },
+          h("div", { className: "auto-org-step-badge" }, "4"),
+          h("div", { className: "auto-org-step-info" },
+            h("div", { className: "auto-org-step-number-title" }, "Schritt 4"),
             h("div", { className: "auto-org-step-name" }, "Simulation & Reorganisation"),
             h("div", { className: "auto-org-step-subtitle" },
-              dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & 1-Klick Ausführung"
+              dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Ausführung"
             )
           )
         )
@@ -463,7 +581,7 @@
     };
 
     // ==========================================
-    // STEP 1: QUELLE & ANALYSE
+    // STEP 1: QUELLE & IST-ANALYSE
     // ==========================================
     const renderStep1 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
@@ -472,7 +590,7 @@
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" } },
             h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
               h("span", null, "📥"),
-              h("span", null, "Häufige Quellbereiche & Dumpzones")
+              h("span", null, "Häufige Quellbereiche & Dumpzones (Ist-Stand)")
             ),
             h("span", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)" } },
               "Schnellauswahl zur gezielten Analyse & Regel-Erstellung"
@@ -525,9 +643,9 @@
               )
             ),
             anomalies.length > 0 && h("button", {
-              className: "auto-org-btn auto-org-btn-primary",
-              onClick: handleRunDryRun
-            }, "Alle simulieren (Dry-Run)")
+              className: "auto-org-btn auto-org-btn-outline",
+              onClick: () => setStep(2)
+            }, "Zu Schritt 2: Ziel-Baum prüfen →")
           ),
 
           anomalies.length === 0 ?
@@ -578,19 +696,235 @@
         // Step 1 Footer
         h("div", { className: "auto-org-step-footer" },
           h("div", { style: { fontSize: "0.85rem", color: "var(--muted-foreground)" } },
-            "Analyse abgeschlossen? Fahren Sie fort mit der Definition präziser Sortierregeln."
+            "Ist-Stand erfasst? Definieren und prüfen Sie als Nächstes das Ziel-Organisationssystem (den Verzeichnis-Baum)."
           ),
           h("button", {
             className: "auto-org-btn auto-org-btn-primary",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => setStep(2)
-          }, "Weiter zu Schritt 2: Filter-Regeln & Ziel definieren →")
+          }, "Weiter zu Schritt 2: Organisationssystem & Baum freigeben →")
         )
       );
     };
 
     // ==========================================
-    // STEP 2: FILTER-REGELN & ZIEL
+    // STEP 2: ORGANISATIONSSYSTEM & BAUM-FREIGABE
+    // ==========================================
+    const renderStep2 = () => {
+      const treeNodes = (taxonomy && taxonomy.tree) || [];
+      const isSystemApproved = taxonomy && taxonomy.system_approved;
+      const approvedCount = (taxonomy && taxonomy.approved_nodes) || 0;
+      const totalNodes = treeNodes.length;
+
+      return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+        // Status and Approval Banner
+        h("div", {
+          className: "auto-org-tree-banner",
+          style: {
+            borderLeft: `5px solid ${isSystemApproved ? "#4ade80" : "#facc15"}`,
+            background: isSystemApproved ? "rgba(34, 197, 94, 0.08)" : "rgba(234, 179, 8, 0.08)"
+          }
+        },
+          h("div", null,
+            h("div", { style: { fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: isSystemApproved ? "#4ade80" : "#facc15" } },
+              h("span", null, isSystemApproved ? "✓" : "⏳"),
+              h("span", null, isSystemApproved ? "Ziel-Organisationssystem vollständig freigegeben" : "Analyse & Freigabe des Organisationssystems erforderlich")
+            ),
+            h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.25rem" } },
+              `Das Organisationssystem definiert die verbindliche Zielstruktur (S_ideal). Aktuell sind ${approvedCount} von ${totalNodes} Ordner-Ästen vom Benutzer freigegeben.`
+            )
+          ),
+          h("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap" } },
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-outline",
+              onClick: () => setShowNewNodeForm(!showNewNodeForm)
+            }, showNewNodeForm ? "Abbrechen" : "+ Neuer Ordner-Ast"),
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-primary",
+              style: { fontWeight: 700 },
+              onClick: handleApproveAllTaxonomy,
+              disabled: loading
+            }, "🌳 Gesamten Baum jetzt freigeben")
+          )
+        ),
+
+        // Optional Form to Add a Custom Taxonomy Branch
+        showNewNodeForm && h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6" } },
+          h("h4", { style: { fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem" } }, "➕ Neuen Ordner-Ast im Organisationsbaum anlegen"),
+          h("form", { onSubmit: handleAddTaxonomyNode, style: { display: "flex", flexDirection: "column", gap: "0.75rem" } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: "0.75rem" } },
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Icon"),
+                h("input", {
+                  className: "auto-org-input",
+                  style: { width: "100%", textAlign: "center", fontSize: "1.1rem" },
+                  value: newNodeIcon,
+                  onChange: (e) => setNewNodeIcon(e.target.value)
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Kategorie / Ast-Name"),
+                h("input", {
+                  className: "auto-org-input",
+                  style: { width: "100%" },
+                  placeholder: "z.B. 40_Personal & Verträge",
+                  value: newNodeName,
+                  onChange: (e) => setNewNodeName(e.target.value)
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Zielordner-Vorlage"),
+                h("input", {
+                  className: "auto-org-input",
+                  style: { width: "100%", fontFamily: "monospace" },
+                  placeholder: "/media/privat-data/10_PrivatBüro/Personal/{year}/",
+                  value: newNodePath,
+                  onChange: (e) => setNewNodePath(e.target.value)
+                })
+              )
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" } },
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Beschreibung / Zweck"),
+                h("input", {
+                  className: "auto-org-input",
+                  style: { width: "100%" },
+                  placeholder: "Gehaltsabrechnungen, Arbeitsverträge...",
+                  value: newNodeDesc,
+                  onChange: (e) => setNewNodeDesc(e.target.value)
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Schlagworte (Kommagetrennt)"),
+                h("input", {
+                  className: "auto-org-input",
+                  style: { width: "100%" },
+                  placeholder: "Gehalt, Lohn, Abrechnung, Vertrag",
+                  value: newNodeKeywords,
+                  onChange: (e) => setNewNodeKeywords(e.target.value)
+                })
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" } },
+              h("button", { type: "button", className: "auto-org-btn auto-org-btn-outline", onClick: () => setShowNewNodeForm(false) }, "Abbrechen"),
+              h("button", { type: "submit", className: "auto-org-btn auto-org-btn-primary" }, "Ast speichern & in Baum aufnehmen")
+            )
+          )
+        ),
+
+        // Tree Nodes View
+        h("div", { className: "auto-org-tree-container" },
+          treeNodes.map((node) => {
+            const isApproved = node.is_approved;
+            const isExpanded = !!expandedSamples[node.id];
+
+            return h("div", {
+              key: node.id,
+              className: `auto-org-tree-node ${isApproved ? "approved" : "draft"}`
+            },
+              // Header Row
+              h("div", { className: "auto-org-tree-node-header" },
+                h("div", { className: "auto-org-tree-node-title" },
+                  h("span", { className: "auto-org-tree-node-icon" }, node.icon || "📁"),
+                  h("span", null, node.name),
+                  h("span", { className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}` },
+                    isApproved ? "✓ Freigegeben" : "⏳ Vorschlag / Entwurf"
+                  ),
+                  node.mount_valid ?
+                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Docker RW") :
+                    h("span", { className: "auto-org-badge auto-org-badge-red" }, "⚠️ Unmounted")
+                ),
+                h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                  h("button", {
+                    type: "button",
+                    className: isApproved ? "auto-org-btn auto-org-btn-outline" : "auto-org-btn auto-org-btn-primary",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem" },
+                    onClick: () => handleToggleNodeApproval(node.id, isApproved)
+                  }, isApproved ? "Pausieren" : "✓ Ast freigeben"),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-outline",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem", color: "#60a5fa" },
+                    onClick: () => handleApplyTaxonomyBranchToRule(node)
+                  }, "⚡ In Baukasten übernehmen →")
+                )
+              ),
+
+              // Path & Details Row
+              h("div", { className: "auto-org-tree-details" },
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                  h("span", { style: { color: "var(--muted-foreground)" } }, "Ziel-Pfad:"),
+                  h("span", { className: "auto-org-tree-path-badge" }, node.target_path_template),
+                  node.description && h("span", { style: { color: "var(--muted-foreground)" } }, `• ${node.description}`)
+                ),
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                  h("span", { style: { fontWeight: 600, color: "#f8fafc" } },
+                    `${node.matched_files_count || 0} passende Dateien im Index`
+                  ),
+                  node.sample_files && node.sample_files.length > 0 && h("button", {
+                    type: "button",
+                    className: "auto-org-tag-btn",
+                    onClick: () => toggleSampleExpand(node.id)
+                  }, isExpanded ? "Beispiele ausblenden ▲" : "Beispiele anzeigen ▼")
+                )
+              ),
+
+              // Keywords & Extensions Pills
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" } },
+                h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Erkennungs-Kriterien:"),
+                (node.keywords || []).map((kw, i) =>
+                  h("span", { key: i, className: "auto-org-cond-badge" }, `🔍 ${kw}`)
+                ),
+                (node.extensions || []).map((ext, i) =>
+                  h("span", { key: i, className: "auto-org-cond-badge" }, `📄 .${ext}`)
+                )
+              ),
+
+              // Expanded Samples Table
+              isExpanded && node.sample_files && h("div", {
+                style: {
+                  background: "rgba(15, 23, 42, 0.7)",
+                  border: "1px solid var(--border, #334155)",
+                  borderRadius: "0.375rem",
+                  padding: "0.6rem 0.85rem",
+                  marginTop: "0.25rem"
+                }
+              },
+                h("div", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#60a5fa", marginBottom: "0.4rem" } },
+                  "Zugeordnete Beispieldateien für diesen Ast:"
+                ),
+                h("ul", { style: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: "var(--foreground)" } },
+                  node.sample_files.map((s, idx) =>
+                    h("li", { key: idx, style: { marginBottom: "0.2rem" } },
+                      h("strong", null, s.file_name),
+                      h("span", { style: { color: "var(--muted-foreground)", marginLeft: "0.4rem", fontFamily: "monospace" } }, `(${s.relative_path})`)
+                    )
+                  )
+                )
+              )
+            );
+          })
+        ),
+
+        // Step 2 Footer Navigation
+        h("div", { className: "auto-org-step-footer" },
+          h("button", {
+            className: "auto-org-btn auto-org-btn-outline",
+            onClick: () => setStep(1)
+          }, "← Zurück zu Schritt 1: Quelle & Ist-Stand"),
+          h("button", {
+            className: "auto-org-btn auto-org-btn-primary",
+            style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
+            onClick: () => setStep(3)
+          }, "Weiter zu Schritt 3: Filter-Regeln & Zuordnung →")
+        )
+      );
+    };
+
+    // ==========================================
+    // STEP 3: FILTER-REGELN & ZUORDNUNG
     // ==========================================
     const renderRuleConditionBadges = (r) => {
       const cond = r.condition_json || {};
@@ -629,7 +963,7 @@
         h("div", { style: { borderBottom: "1px solid var(--border, #334155)", paddingBottom: "0.75rem" } },
           h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
             h("span", null, "⚡"),
-            h("span", null, "Modularer Datei-Regel-Baukasten")
+            h("span", null, "Modularer Datei-Regel-Baukasten (Zuordnung in den Baum)")
           ),
           h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.25rem" } },
             "Definiere mehrstufige Sortierkriterien nach Quellordner, Alter, Schlagwörtern (Dateiname & OCR-Text) und Dateityp."
@@ -688,7 +1022,7 @@
           h("span", { style: { fontSize: "0.75rem", fontWeight: 600, color: "var(--muted-foreground)" } }, "WENN folgende Kriterien zutreffen:"),
           conditions.map((cond, idx) => {
             return h("div", { key: idx, className: "auto-org-condition-row" },
-              // Field selector (Explicit contrast)
+              // Field selector (Explicit high-contrast styling)
               h("select", {
                 className: "auto-org-select",
                 value: cond.field,
@@ -810,7 +1144,7 @@
         h("div", { style: { background: "rgba(15, 23, 42, 0.4)", padding: "1rem", borderRadius: "0.375rem", border: "1px solid var(--border, #334155)" } },
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
             h("span", { style: { fontSize: "0.875rem", fontWeight: 700 } }, "DANN führe folgende Aktion aus:"),
-            h("span", { className: "auto-org-badge auto-org-badge-green" }, "Verschieben nach Ordner (Move)")
+            h("span", { className: "auto-org-badge auto-org-badge-green" }, "Verschieben nach Ziel-Ast (Move)")
           ),
           h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" } },
             h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } },
@@ -838,23 +1172,26 @@
               }
               return null;
             })(),
-            // Quick Select Pills for Targets
+
+            // Quick Select Pills from APPROVED TAXONOMY TREE
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
-              h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Ziel-Mounts:"),
-              mountData && mountData.mounts ?
-                mountData.mounts.filter(m => m.is_writable && (m.category === "Storage Root" || m.category === "Dumpzone" || m.category === "Host Work")).map(m =>
+              h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Aus Organisationssystem (Schritt 2):"),
+              taxonomy && taxonomy.tree ?
+                taxonomy.tree.map(n =>
                   h("button", {
-                    key: m.host_path,
+                    key: n.id,
                     type: "button",
                     className: "auto-org-tag-btn",
-                    onClick: () => setTargetTemplate(m.host_path.endsWith("/") ? `${m.host_path}Archiv/{year}/` : `${m.host_path}/Archiv/{year}/`)
-                  }, m.label.split(" ")[0])
+                    style: { borderStyle: n.is_approved ? "solid" : "dashed" },
+                    onClick: () => setTargetTemplate(n.target_path_template)
+                  }, `${n.icon || "📁"} ${n.name.split("/")[1] || n.name}`)
                 ) :
                 [
                   h("button", { key: "pb", type: "button", className: "auto-org-tag-btn", onClick: () => setTargetTemplate("/media/privat-data/10_PrivatBüro/Steuern/{year}/") }, "PrivatBüro"),
                   h("button", { key: "wd", type: "button", className: "auto-org-tag-btn", onClick: () => setTargetTemplate("/media/work-data/Archiv/{year}/") }, "Work-Data")
                 ]
             ),
+
             // Placeholders
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
               h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Platzhalter einfügen:"),
@@ -927,7 +1264,7 @@
       );
     };
 
-    const renderStep2 = () => {
+    const renderStep3 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
         // 1. Modular Rule Builder
         renderModularRuleBuilder(),
@@ -947,7 +1284,7 @@
               h("tr", null,
                 h("th", null, "Regelname"),
                 h("th", null, "Modulare Kriterien (WENN)"),
-                h("th", null, "Ziel-Ordner (DANN)"),
+                h("th", null, "Ziel-Ast im Baum (DANN)"),
                 h("th", null, "Status"),
                 h("th", null, "Aktionen")
               )
@@ -987,28 +1324,28 @@
           )
         ),
 
-        // Step 2 Footer Navigation
+        // Step 3 Footer Navigation
         h("div", { className: "auto-org-step-footer" },
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
-            onClick: () => setStep(1)
-          }, "← Zurück zu Schritt 1: Quelle & Analyse"),
+            onClick: () => setStep(2)
+          }, "← Zurück zu Schritt 2: Organisationssystem & Baum"),
           h("button", {
             className: "auto-org-btn auto-org-btn-primary",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => {
               handleRunDryRun();
-              setStep(3);
+              setStep(4);
             }
-          }, "Weiter zu Schritt 3: Simulation & Reorganisation starten →")
+          }, "Weiter zu Schritt 4: Simulation & Reorganisation starten →")
         )
       );
     };
 
     // ==========================================
-    // STEP 3: VORSCHAU & REORGANISATION
+    // STEP 4: SIMULATION & REORGANISATION
     // ==========================================
-    const renderStep3 = () => {
+    const renderStep4 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
         // Dry-Run Simulation Card
         h("div", { className: "auto-org-panel" },
@@ -1057,7 +1394,7 @@
                   h("th", null, "Datei"),
                   h("th", null, "Aktueller Pfad (S_now)"),
                   h("th", null, ""),
-                  h("th", null, "Neues Ziel (S_ideal)"),
+                  h("th", null, "Neues Ziel im Baum (S_ideal)"),
                   h("th", null, "Regel"),
                   h("th", null, "Docker Mount"),
                   h("th", null, "Sicherheits-Check")
@@ -1087,12 +1424,12 @@
             )
         ),
 
-        // Step 3 Footer Navigation
+        // Step 4 Footer Navigation
         h("div", { className: "auto-org-step-footer" },
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
-            onClick: () => setStep(2)
-          }, "← Zurück zu Schritt 2: Regeln anpassen"),
+            onClick: () => setStep(3)
+          }, "← Zurück zu Schritt 3: Filter-Regeln anpassen"),
           h("div", { style: { display: "flex", gap: "0.5rem" } },
             h("button", {
               className: "auto-org-btn auto-org-btn-outline",
@@ -1395,6 +1732,7 @@
       step === 1 && renderStep1(),
       step === 2 && renderStep2(),
       step === 3 && renderStep3(),
+      step === 4 && renderStep4(),
 
       // Configuration Modal Overlay
       renderConfigModal()

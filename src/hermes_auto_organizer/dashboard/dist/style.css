@@ -108,10 +108,10 @@
   color: var(--card-foreground, #ffffff);
 }
 
-/* 3-Step Guided Stepper */
+/* 4-Step Guided Stepper */
 .auto-org-stepper {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.75rem;
   background: rgba(15, 23, 42, 0.6);
   padding: 0.5rem;
@@ -119,7 +119,13 @@
   border: 1px solid var(--border, #334155);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .auto-org-stepper {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
   .auto-org-stepper {
     grid-template-columns: 1fr;
   }
@@ -577,6 +583,87 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* Taxonomy Tree & Organizational System Styles */
+.auto-org-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auto-org-tree-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.15rem 1.35rem;
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border, #334155);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.auto-org-tree-node {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid var(--border, #334155);
+  border-left: 4px solid #3b82f6;
+  border-radius: 0.5rem;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.auto-org-tree-node.approved {
+  border-left-color: #4ade80;
+  background: rgba(30, 41, 59, 0.75);
+}
+
+.auto-org-tree-node.draft {
+  border-left-color: #facc15;
+}
+
+.auto-org-tree-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.auto-org-tree-node-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.auto-org-tree-node-icon {
+  font-size: 1.35rem;
+}
+
+.auto-org-tree-path-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  color: #93c5fd;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.auto-org-tree-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground, #94a3b8);
 }
 
 /* Step Footer Navigation */

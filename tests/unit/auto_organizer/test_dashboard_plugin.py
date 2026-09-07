@@ -210,3 +210,24 @@ def test_delete_rule_endpoint():
         data = res.json()
         assert data["ok"] is True
         assert data["rule_id"] == test_uuid
+
+
+def test_get_taxonomy_tree_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.get("/api/plugins/auto-organizer/taxonomy")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["total_nodes"] >= 5
+        assert len(data["tree"]) >= 5
+        assert data["tree"][0]["name"] == "10_PrivatBüro / Steuern & Finanzen"
+
+
+def test_approve_taxonomy_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.post("/api/plugins/auto-organizer/taxonomy/approve", json={"approve_all": True})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["system_approved"] is True
+        assert data["approved_count"] >= 5

@@ -105,6 +105,22 @@ class PathCheckRequest(BaseModel):
     path: str
 
 
+class TaxonomyApproveRequest(BaseModel):
+    node_ids: Optional[List[str]] = None
+    approve_all: bool = True
+
+
+class TaxonomyNodeRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    target_path_template: str
+    description: Optional[str] = None
+    icon: Optional[str] = "📁"
+    keywords: List[str] = Field(default_factory=list)
+    extensions: List[str] = Field(default_factory=list)
+    state: str = "USER_APPROVED"
+
+
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Health check verifying database connectivity."""
@@ -727,3 +743,219 @@ async def list_batches() -> List[Dict[str, Any]]:
         ]
     finally:
         await conn.close()
+
+
+# In-memory / dynamic store for the synthesized Target Hierarchy (Taxonomy Tree)
+_TAXONOMY_STORE: List[Dict[str, Any]] = [
+    {
+        "id": "finanzen-steuern",
+        "name": "10_PrivatBüro / Steuern & Finanzen",
+        "target_path_template": "/media/privat-data/10_PrivatBüro/Steuern/{year}/",
+        "description": "Eingehende Rechnungen, Quittungen, Bankbelege und Steuerunterlagen",
+        "icon": "📊",
+        "keywords": ["Rechnung", "Steuer", "Finanzamt", "Beleg", "Invoice", "Kontoauszug", "Quittung"],
+        "extensions": ["pdf", "xlsx", "csv"],
+        "state": "USER_APPROVED",
+    },
+    {
+        "id": "vertraege-recht",
+        "name": "10_PrivatBüro / Verträge & Versicherungen",
+        "target_path_template": "/media/privat-data/10_PrivatBüro/Verträge/",
+        "description": "Miet-, Arbeits-, Versicherungsverträge und rechtliche Vereinbarungen",
+        "icon": "⚖️",
+        "keywords": ["Vertrag", "Versicherung", "Police", "Vereinbarung", "Kündigung", "Mietvertrag"],
+        "extensions": ["pdf", "docx"],
+        "state": "USER_APPROVED",
+    },
+    {
+        "id": "work-projekte",
+        "name": "20_Work / Projekte & Entwicklung",
+        "target_path_template": "/media/work-data/Projekte/{stem}/",
+        "description": "Software-Code, Skripte, technische Dokumentation und Kundenprojekte",
+        "icon": "💼",
+        "keywords": ["Projekt", "Architektur", "Code", "Sprint", "API", "Skript", "CAD"],
+        "extensions": ["py", "ts", "json", "md", "dxf"],
+        "state": "USER_APPROVED",
+    },
+    {
+        "id": "medien-assets",
+        "name": "30_Medien & Kreativ-Assets",
+        "target_path_template": "/media/work-data/Assets/{year}/",
+        "description": "Grafiken, Audio-Takes, Design-Mockups, Videos und Fotos",
+        "icon": "🎨",
+        "keywords": ["Design", "Mockup", "Banner", "Audio", "Foto", "Video", "Podcast"],
+        "extensions": ["png", "jpg", "svg", "mp3", "wav", "mp4"],
+        "state": "USER_APPROVED",
+    },
+    {
+        "id": "archiv-general",
+        "name": "90_Archiv / Historisierte Bestände",
+        "target_path_template": "/media/privat-data/Archiv/{year}/",
+        "description": "Historisierte Dokumente und Dateien älter als 365 Tage",
+        "icon": "🗄️",
+        "keywords": ["Archiv", "Alt", "Historie", "Backup"],
+        "extensions": [],
+        "state": "USER_APPROVED",
+    },
+]
+
+
+@router.get("/taxonomy")
+async def get_taxonomy_tree() -> Dict[str, Any]:
+    """
+    Return the synthesized target organizational system (directory tree / taxonomy),
+    including match metrics against currently indexed files, Docker mount safety check,
+    and user approval state.
+    """
+    conn = await _get_connection()
+    nodes_result = []
+    total_matched_files = 0
+
+    try:
+        for node in _TAXONOMY_STORE:
+            # 1. Mount safety validation
+            target_path = node["target_path_template"]
+            mount_check = docker_mount_service.validate_destination_path(target_path)
+
+            # 2. Query matching files in database
+            matched_files = 0
+            sample_files = []
+            if conn:
+                try:
+                    kw_patterns = [f"%{kw.lower()}%" for kw in node.get("keywords", [])]
+                    exts = [e.lower() for e in node.get("extensions", [])]
+
+                    clauses = []
+                    params: List[Any] = []
+                    param_idx = 1
+
+                    if kw_patterns:
+                        kw_conditions = []
+                        for kw in kw_patterns:
+                            kw_conditions.append(f"LOWER(file_name) LIKE ${param_idx}")
+                            params.append(kw)
+                            param_idx += 1
+                        clauses.append(f"({' OR '.join(kw_conditions)})")
+
+                    if exts:
+                        ext_conditions = []
+                        for ext in exts:
+                            ext_conditions.append(f"LOWER(file_extension) = ${param_idx}")
+                            params.append(ext)
+                            param_idx += 1
+                        clauses.append(f"({' OR '.join(ext_conditions)})")
+
+                    if clauses:
+                        sql = f"""
+                        SELECT file_name, relative_path, size_bytes 
+                        FROM file_nodes 
+                        WHERE NOT is_deleted AND ({' OR '.join(clauses)})
+                        ORDER BY mtime DESC 
+                        LIMIT 10;
+                        """
+                        rows = await conn.fetch(sql, *params)
+                        matched_files = len(rows)
+                        sample_files = [
+                            {"file_name": r["file_name"], "relative_path": r["relative_path"]}
+                            for r in rows[:5]
+                        ]
+                except Exception as exc:
+                    logger.debug("Taxonomy match query failed for %s: %s", node["name"], exc)
+
+            total_matched_files += matched_files
+            nodes_result.append({
+                "id": node["id"],
+                "name": node["name"],
+                "target_path_template": node["target_path_template"],
+                "description": node.get("description", ""),
+                "icon": node.get("icon", "📁"),
+                "keywords": node.get("keywords", []),
+                "extensions": node.get("extensions", []),
+                "state": node.get("state", "USER_APPROVED"),
+                "is_approved": node.get("state") == "USER_APPROVED",
+                "mount_valid": mount_check.get("valid", False),
+                "mount_message": mount_check.get("message", ""),
+                "container_path": mount_check.get("container_path"),
+                "matched_files_count": matched_files,
+                "sample_files": sample_files,
+            })
+
+        approved_count = sum(1 for n in nodes_result if n["is_approved"])
+        system_approved = approved_count == len(nodes_result) if nodes_result else False
+
+        return {
+            "ok": True,
+            "system_approved": system_approved,
+            "total_nodes": len(nodes_result),
+            "approved_nodes": approved_count,
+            "total_matched_files": total_matched_files,
+            "tree": nodes_result,
+            "timestamp": time.time(),
+        }
+    finally:
+        if conn:
+            await conn.close()
+
+
+@router.post("/taxonomy/approve")
+async def approve_taxonomy(req: TaxonomyApproveRequest) -> Dict[str, Any]:
+    """
+    Approve the entire organizational tree system or specific branches,
+    establishing S_ideal as the verified target structure.
+    """
+    approved_ids = set(req.node_ids or [])
+    for node in _TAXONOMY_STORE:
+        if req.approve_all or node["id"] in approved_ids:
+            node["state"] = "USER_APPROVED"
+        elif req.node_ids is not None:
+            node["state"] = "DRAFT"
+
+    # Sync to Obsidian Vault if available
+    try:
+        from hermes_auto_organizer.infrastructure.obsidian.vault_sync import ObsidianVaultVisualizer
+        vault_path = Path(os.getenv("HERMES_VAULT_DIR", "/media/xchg/ai-knowledge-base/obsidian-vault"))
+        if vault_path.exists():
+            vis = ObsidianVaultVisualizer(vault_path)
+            taxonomy_tree_dict = {
+                f"{node.get('icon', '📁')} {node['name']}": [
+                    f"Ziel: `{node['target_path_template']}`",
+                    f"Zweck: {node.get('description', '')}",
+                    f"Status: **{node.get('state', 'USER_APPROVED')}**"
+                ]
+                for node in _TAXONOMY_STORE
+            }
+            await vis.write_taxonomy_map(taxonomy_tree_dict)
+    except Exception as exc:
+        logger.warning("Could not sync taxonomy map to Obsidian vault: %s", exc)
+
+    return {
+        "ok": True,
+        "system_approved": all(n.get("state") == "USER_APPROVED" for n in _TAXONOMY_STORE),
+        "approved_count": sum(1 for n in _TAXONOMY_STORE if n.get("state") == "USER_APPROVED"),
+        "message": "Organisationssystem und Verzeichnis-Baum erfolgreich freigegeben!",
+    }
+
+
+@router.post("/taxonomy/node")
+async def save_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
+    """Create or update a branch node in the target taxonomy tree."""
+    node_id = req.id or f"node-{uuid4().hex[:8]}"
+    existing = next((n for n in _TAXONOMY_STORE if n["id"] == node_id), None)
+
+    node_data = {
+        "id": node_id,
+        "name": req.name,
+        "target_path_template": req.target_path_template,
+        "description": req.description or "Benutzerdefinierter Zielordner",
+        "icon": req.icon or "📁",
+        "keywords": req.keywords,
+        "extensions": req.extensions,
+        "state": req.state,
+    }
+
+    if existing:
+        existing.update(node_data)
+    else:
+        _TAXONOMY_STORE.append(node_data)
+
+    return {"ok": True, "node": node_data}
