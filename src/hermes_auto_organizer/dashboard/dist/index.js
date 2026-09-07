@@ -10,6 +10,49 @@
 (function () {
   "use strict";
 
+  // Inject bulletproof high-contrast stylesheet into document.head to guarantee
+  // that text is crisp, radiant #f8fafc and completely immune to host CSS variable leaks or stale CSS caching.
+  if (typeof document !== "undefined" && !document.getElementById("auto-org-bulletproof-contrast")) {
+    const styleEl = document.createElement("style");
+    styleEl.id = "auto-org-bulletproof-contrast";
+    styleEl.textContent = `
+      .auto-org-container { color: #f8fafc !important; }
+      .auto-org-container, .auto-org-container * {
+        box-sizing: border-box;
+      }
+      .auto-org-container h1, .auto-org-container h2, .auto-org-container h3, .auto-org-container h4 {
+        color: #ffffff !important;
+      }
+      .auto-org-container p, .auto-org-container span, .auto-org-container label, .auto-org-container div, .auto-org-container td {
+        color: #f8fafc;
+      }
+      .auto-org-container th, .auto-org-container .auto-org-subtitle, .auto-org-container .auto-org-step-subtitle, .auto-org-container .auto-org-stat-label {
+        color: #94a3b8 !important;
+      }
+      .auto-org-container select, .auto-org-container input, .auto-org-container textarea {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+        border: 1px solid #475569 !important;
+      }
+      .auto-org-container select option, .auto-org-container select optgroup {
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+      }
+      .auto-org-container select option:checked {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+      }
+      .auto-org-container ::selection {
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
   const SDK = window.__HERMES_PLUGIN_SDK__;
   if (!SDK) return;
 
@@ -40,7 +83,7 @@
     // 4 = Simulation & Reorganisation
     const [step, setStep] = useState(1);
 
-    // Modal state for top bar config tools: null | "mounts" | "roots" | "journal"
+    // Modal state for top bar config tools: null | "mounts" | "roots" | "journal" | "sync"
     const [activeModal, setActiveModal] = useState(null);
 
     // Application state
@@ -57,6 +100,19 @@
     const [checkingPath, setCheckingPath] = useState(false);
     const [loading, setLoading] = useState(false);
     const [notice, setNotice] = useState(null);
+
+    // Google Drive <-> Local Sync Mappings State
+    const [syncMappings, setSyncMappings] = useState([]);
+    const [syncPlan, setSyncPlan] = useState(null);
+    const [syncingId, setSyncingId] = useState(null);
+    const [planningId, setPlanningId] = useState(null);
+    const [showNewSyncForm, setShowNewSyncForm] = useState(false);
+    const [newSyncName, setNewSyncName] = useState("");
+    const [newSyncDrivePath, setNewSyncDrivePath] = useState("");
+    const [newSyncLocalPath, setNewSyncLocalPath] = useState("");
+    const [newSyncDirection, setNewSyncDirection] = useState("bidirectional");
+    const [newSyncInclude, setNewSyncInclude] = useState("*.pdf, *.docx, *.xlsx");
+    const [newSyncExclude, setNewSyncExclude] = useState("*.tmp, ~*");
 
     // Step 2 Taxonomy state
     const [showNewNodeForm, setShowNewNodeForm] = useState(false);
@@ -83,7 +139,7 @@
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m, tx] = await Promise.all([
+        const [s, r, a, rl, b, m, tx, sm] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
@@ -91,6 +147,7 @@
           apiCall("/batches").catch(() => []),
           apiCall("/mounts").catch(() => null),
           apiCall("/taxonomy").catch(() => null),
+          apiCall("/sync/mappings").catch(() => ({ mappings: [] })),
         ]);
         if (s) setStats(s);
         setRoots(r || []);
@@ -99,6 +156,7 @@
         setBatches(b || []);
         if (m) setMountData(m);
         if (tx) setTaxonomy(tx);
+        if (sm && sm.mappings) setSyncMappings(sm.mappings);
       } catch (err) {
         console.error("AutoOrganizer load error:", err);
       } finally {
@@ -176,6 +234,95 @@
         setNotice(`Fehler beim Speichern: ${err.message}`);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const handleSaveSyncMapping = async (e) => {
+      if (e) e.preventDefault();
+      if (!newSyncName.trim() || !newSyncDrivePath.trim() || !newSyncLocalPath.trim()) {
+        alert("Bitte Name, Drive-Ordner und Lokalen Pfad angeben.");
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await apiCall("/sync/mappings", {
+          method: "POST",
+          body: JSON.stringify({
+            name: newSyncName.trim(),
+            drive_folder_path: newSyncDrivePath.trim(),
+            local_path: newSyncLocalPath.trim(),
+            direction: newSyncDirection,
+            include_patterns: newSyncInclude.split(",").map(p => p.trim()).filter(Boolean),
+            exclude_patterns: newSyncExclude.split(",").map(p => p.trim()).filter(Boolean),
+            is_active: true
+          })
+        });
+        setNotice(res.message || "Sync-Ordner erfolgreich konfiguriert!");
+        setShowNewSyncForm(false);
+        setNewSyncName("");
+        setNewSyncDrivePath("");
+        setNewSyncLocalPath("");
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Speichern des Sync-Ordners: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleToggleSyncMapping = async (id, currentActive) => {
+      try {
+        await apiCall("/sync/mappings/toggle", {
+          method: "POST",
+          body: JSON.stringify({ id, is_active: !currentActive })
+        });
+        setNotice("Sync-Status aktualisiert.");
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      }
+    };
+
+    const handleDeleteSyncMapping = async (id, name) => {
+      if (!window.confirm(`Sync-Zuordnung '${name}' wirklich entfernen?`)) return;
+      try {
+        await apiCall(`/sync/mappings/${id}`, { method: "DELETE" });
+        setNotice(`Sync-Ordner '${name}' entfernt.`);
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Löschen: ${err.message}`);
+      }
+    };
+
+    const handleCalculateSyncPlan = async (mappingId) => {
+      setPlanningId(mappingId);
+      try {
+        const plan = await apiCall("/sync/plan", {
+          method: "POST",
+          body: JSON.stringify({ mapping_id: mappingId })
+        });
+        setSyncPlan(plan);
+        setNotice(`Sync-Plan für '${plan.mapping_name}' berechnet: ${plan.summary.to_upload} Uploads, ${plan.summary.to_download} Downloads.`);
+      } catch (err) {
+        setNotice(`Fehler bei Plan-Berechnung: ${err.message}`);
+      } finally {
+        setPlanningId(null);
+      }
+    };
+
+    const handleExecuteSync = async (mappingId) => {
+      setSyncingId(mappingId);
+      try {
+        const res = await apiCall("/sync/execute", {
+          method: "POST",
+          body: JSON.stringify({ mapping_id: mappingId })
+        });
+        setNotice(res.message || "Synchronisation erfolgreich durchgeführt!");
+        loadData();
+      } catch (err) {
+        setNotice(`Fehler bei Synchronisation: ${err.message}`);
+      } finally {
+        setSyncingId(null);
       }
     };
 
@@ -482,6 +629,14 @@
             h("span", { className: "auto-org-badge auto-org-badge-green" }, batches.length)
           ),
           h("button", {
+            className: `auto-org-config-btn ${activeModal === "sync" ? "active" : ""}`,
+            onClick: () => setActiveModal(activeModal === "sync" ? null : "sync"),
+            title: "Google Drive ↔ Lokaler Speicher: Sync-Ordner & Mappings verwalten"
+          },
+            h("span", null, "☁️ GDrive-Sync"),
+            h("span", { className: "auto-org-badge auto-org-badge-blue" }, syncMappings.length)
+          ),
+          h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: loadData,
             disabled: loading,
@@ -592,7 +747,7 @@
               h("span", null, "📥"),
               h("span", null, "Häufige Quellbereiche & Dumpzones (Ist-Stand)")
             ),
-            h("span", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)" } },
+            h("span", { style: { fontSize: "0.8125rem", color: "#94a3b8" } },
               "Schnellauswahl zur gezielten Analyse & Regel-Erstellung"
             )
           ),
@@ -606,8 +761,8 @@
               h("div", {
                 key: i,
                 style: {
-                  background: "rgba(15, 23, 42, 0.6)",
-                  border: "1px solid var(--border, #334155)",
+                  background: "rgba(15, 23, 42, 0.75)",
+                  border: "1px solid #334155",
                   borderRadius: "0.375rem",
                   padding: "0.85rem 1rem",
                   display: "flex",
@@ -616,7 +771,7 @@
                 }
               },
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                  h("span", { style: { fontWeight: 600 } }, `${src.icon} ${src.name}`),
+                  h("span", { style: { fontWeight: 600, color: "#ffffff" } }, `${src.icon} ${src.name}`),
                   h("button", {
                     type: "button",
                     className: "auto-org-pill-btn",
@@ -624,21 +779,107 @@
                   }, "Als Quelle wählen →")
                 ),
                 h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd" } }, src.path),
-                h("div", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, src.desc)
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, src.desc)
               )
             )
           )
+        ),
+
+        // Google Drive <-> Local Sync Mappings Section
+        h("div", { className: "auto-org-panel" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+            h("div", null,
+              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
+                h("span", null, "☁️"),
+                h("span", null, `Google Drive ↔ Lokaler Speicher: Sync-Ordner & Mappings (${syncMappings.length})`)
+              ),
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                "Selektive Synchronisation zwischen Google Drive und Ihren lokalen Festplatten/Container-Mounts."
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setActiveModal("sync"),
+                style: { fontSize: "0.75rem" }
+              }, "⚙️ Sync-Manager öffnen"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: () => {
+                  setShowNewSyncForm(true);
+                  setActiveModal("sync");
+                },
+                style: { fontSize: "0.75rem" }
+              }, "+ Neuer Sync-Ordner")
+            )
+          ),
+          syncMappings.length === 0 ?
+            h("div", { style: { textAlign: "center", padding: "1.5rem", color: "#94a3b8" } },
+              "Noch keine Google Drive ↔ Lokale Sync-Ordner konfiguriert. Klicken Sie oben auf '+ Neuer Sync-Ordner'."
+            ) :
+            h("div", { className: "auto-org-sync-grid" },
+              syncMappings.map((m) => {
+                const isBi = m.direction === "bidirectional";
+                const isPush = m.direction === "push";
+                const dirLabel = isBi ? "⇄ Bidirektional" : (isPush ? "⬆️ Lokal ➔ Drive" : "⬇️ Drive ➔ Lokal");
+                const mountOk = m.mount_check && m.mount_check.valid && !m.mount_check.read_only;
+                return h("div", {
+                  key: m.id,
+                  className: `auto-org-sync-card ${m.is_active ? "" : "paused"}`
+                },
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    h("span", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" } }, m.name),
+                    h("span", { className: "auto-org-sync-direction-badge" }, dirLabel)
+                  ),
+                  h("div", { style: { display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8125rem" } },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Drive:"),
+                      h("span", { style: { fontFamily: "monospace", color: "#60a5fa", wordBreak: "break-all" } }, `gdrive:${m.drive_folder_path}`)
+                    ),
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Lokal:"),
+                      h("span", { style: { fontFamily: "monospace", color: "#4ade80", wordBreak: "break-all" } }, m.local_path)
+                    )
+                  ),
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.25rem" } },
+                    h("div", { className: "auto-org-mount-status-tag" },
+                      mountOk ?
+                        h("span", { className: "auto-org-mount-status-ok" }, "✅ Gemountet & Schreibbar") :
+                        h("span", { className: "auto-org-mount-status-warn", title: (m.mount_check && m.mount_check.warning) || "Mount prüfen" }, "⚠️ Host-Pfad (Prüfen)")
+                    ),
+                    h("div", { style: { display: "flex", gap: "0.4rem" } },
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        onClick: () => {
+                          setActiveModal("sync");
+                          handleCalculateSyncPlan(m.id);
+                        }
+                      }, "Plan / Diff →"),
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        style: { color: m.is_active ? "#facc15" : "#4ade80" },
+                        onClick: () => handleToggleSyncMapping(m.id, m.is_active)
+                      }, m.is_active ? "Pausieren" : "Aktivieren")
+                    )
+                  )
+                );
+              })
+            )
         ),
 
         // Anomalies Inbox
         h("div", { className: "auto-org-panel" },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" } },
             h("div", null,
-              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
+              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
                 h("span", null, "🚨"),
                 h("span", null, `Erkannte Anomalien & Unsortierte Dateien (${anomalies.length})`)
               ),
-              h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.2rem" } },
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
                 "Dateien in Dump-Zonen oder chaotischer Ordnerstruktur, die der KI-Index als reorganisationsbedürftig markiert hat."
               )
             ),
@@ -652,7 +893,7 @@
             h("div", { style: { textAlign: "center", padding: "2.5rem 1rem" } },
               h("div", { style: { fontSize: "2rem", marginBottom: "0.5rem" } }, "🎉"),
               h("p", { style: { color: "#4ade80", fontWeight: 600, fontSize: "1rem" } }, "Alle Speicherwurzeln sind sauber strukturiert!"),
-              h("p", { style: { color: "var(--muted-foreground)", fontSize: "0.875rem", marginTop: "0.25rem" } }, "Keine offenen Dump-Zone-Dateien oder verwaisten Elemente gefunden.")
+              h("p", { style: { color: "#94a3b8", fontSize: "0.875rem", marginTop: "0.25rem" } }, "Keine offenen Dump-Zone-Dateien oder verwaisten Elemente gefunden.")
             ) :
             h("table", { className: "auto-org-table" },
               h("thead", null,
@@ -668,7 +909,7 @@
               h("tbody", null,
                 anomalies.map((an) => h("tr", { key: an.id },
                   h("td", { style: { fontWeight: 600 } }, an.file_name),
-                  h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "var(--muted-foreground)" } },
+                  h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8" } },
                     an.relative_path || an.physical_path
                   ),
                   h("td", null, `${an.size_kb} KB`),
@@ -695,7 +936,7 @@
 
         // Step 1 Footer
         h("div", { className: "auto-org-step-footer" },
-          h("div", { style: { fontSize: "0.85rem", color: "var(--muted-foreground)" } },
+          h("div", { style: { fontSize: "0.85rem", color: "#94a3b8" } },
             "Ist-Stand erfasst? Definieren und prüfen Sie als Nächstes das Ziel-Organisationssystem (den Verzeichnis-Baum)."
           ),
           h("button", {
@@ -730,7 +971,7 @@
               h("span", null, isSystemApproved ? "✓" : "⏳"),
               h("span", null, isSystemApproved ? "Ziel-Organisationssystem vollständig freigegeben" : "Analyse & Freigabe des Organisationssystems erforderlich")
             ),
-            h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.25rem" } },
+            h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.25rem" } },
               `Das Organisationssystem definiert die verbindliche Zielstruktur (S_ideal). Aktuell sind ${approvedCount} von ${totalNodes} Ordner-Ästen vom Benutzer freigegeben.`
             )
           ),
@@ -756,7 +997,7 @@
           h("form", { onSubmit: handleAddTaxonomyNode, style: { display: "flex", flexDirection: "column", gap: "0.75rem" } },
             h("div", { style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: "0.75rem" } },
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Icon"),
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Icon"),
                 h("input", {
                   className: "auto-org-input",
                   style: { width: "100%", textAlign: "center", fontSize: "1.1rem" },
@@ -765,7 +1006,7 @@
                 })
               ),
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Kategorie / Ast-Name"),
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Kategorie / Ast-Name"),
                 h("input", {
                   className: "auto-org-input",
                   style: { width: "100%" },
@@ -775,7 +1016,7 @@
                 })
               ),
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Zielordner-Vorlage"),
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Zielordner-Vorlage"),
                 h("input", {
                   className: "auto-org-input",
                   style: { width: "100%", fontFamily: "monospace" },
@@ -787,7 +1028,7 @@
             ),
             h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" } },
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Beschreibung / Zweck"),
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Beschreibung / Zweck"),
                 h("input", {
                   className: "auto-org-input",
                   style: { width: "100%" },
@@ -797,7 +1038,7 @@
                 })
               ),
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block" } }, "Schlagworte (Kommagetrennt)"),
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Schlagworte (Kommagetrennt)"),
                 h("input", {
                   className: "auto-org-input",
                   style: { width: "100%" },
@@ -855,9 +1096,9 @@
               // Path & Details Row
               h("div", { className: "auto-org-tree-details" },
                 h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                  h("span", { style: { color: "var(--muted-foreground)" } }, "Ziel-Pfad:"),
+                  h("span", { style: { color: "#94a3b8" } }, "Ziel-Pfad:"),
                   h("span", { className: "auto-org-tree-path-badge" }, node.target_path_template),
-                  node.description && h("span", { style: { color: "var(--muted-foreground)" } }, `• ${node.description}`)
+                  node.description && h("span", { style: { color: "#94a3b8" } }, `• ${node.description}`)
                 ),
                 h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
                   h("span", { style: { fontWeight: 600, color: "#f8fafc" } },
@@ -873,7 +1114,7 @@
 
               // Keywords & Extensions Pills
               h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" } },
-                h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Erkennungs-Kriterien:"),
+                h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Erkennungs-Kriterien:"),
                 (node.keywords || []).map((kw, i) =>
                   h("span", { key: i, className: "auto-org-cond-badge" }, `🔍 ${kw}`)
                 ),
@@ -886,7 +1127,7 @@
               isExpanded && node.sample_files && h("div", {
                 style: {
                   background: "rgba(15, 23, 42, 0.7)",
-                  border: "1px solid var(--border, #334155)",
+                  border: "1px solid #334155",
                   borderRadius: "0.375rem",
                   padding: "0.6rem 0.85rem",
                   marginTop: "0.25rem"
@@ -895,11 +1136,11 @@
                 h("div", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#60a5fa", marginBottom: "0.4rem" } },
                   "Zugeordnete Beispieldateien für diesen Ast:"
                 ),
-                h("ul", { style: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: "var(--foreground)" } },
+                h("ul", { style: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: "#f8fafc" } },
                   node.sample_files.map((s, idx) =>
                     h("li", { key: idx, style: { marginBottom: "0.2rem" } },
                       h("strong", null, s.file_name),
-                      h("span", { style: { color: "var(--muted-foreground)", marginLeft: "0.4rem", fontFamily: "monospace" } }, `(${s.relative_path})`)
+                      h("span", { style: { color: "#94a3b8", marginLeft: "0.4rem", fontFamily: "monospace" } }, `(${s.relative_path})`)
                     )
                   )
                 )
@@ -960,12 +1201,12 @@
 
     const renderModularRuleBuilder = () => {
       return h("div", { className: "auto-org-builder-card" },
-        h("div", { style: { borderBottom: "1px solid var(--border, #334155)", paddingBottom: "0.75rem" } },
+        h("div", { style: { borderBottom: "1px solid #334155", paddingBottom: "0.75rem" } },
           h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
             h("span", null, "⚡"),
             h("span", null, "Modularer Datei-Regel-Baukasten (Zuordnung in den Baum)")
           ),
-          h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.25rem" } },
+          h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.25rem" } },
             "Definiere mehrstufige Sortierkriterien nach Quellordner, Alter, Schlagwörtern (Dateiname & OCR-Text) und Dateityp."
           )
         ),
@@ -973,7 +1214,7 @@
         // Rule Name & Description
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" } },
           h("div", null,
-            h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block", marginBottom: "0.25rem" } }, "Regel-Name"),
+            h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Regel-Name"),
             h("input", {
               className: "auto-org-input",
               style: { width: "100%" },
@@ -983,7 +1224,7 @@
             })
           ),
           h("div", null,
-            h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)", display: "block", marginBottom: "0.25rem" } }, "Beschreibung / Notiz"),
+            h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Beschreibung / Notiz"),
             h("input", {
               className: "auto-org-input",
               style: { width: "100%" },
@@ -1019,7 +1260,7 @@
 
         // Conditions list
         h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" } },
-          h("span", { style: { fontSize: "0.75rem", fontWeight: 600, color: "var(--muted-foreground)" } }, "WENN folgende Kriterien zutreffen:"),
+          h("span", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "WENN folgende Kriterien zutreffen:"),
           conditions.map((cond, idx) => {
             return h("div", { key: idx, className: "auto-org-condition-row" },
               // Field selector (Explicit high-contrast styling)
@@ -1141,13 +1382,13 @@
         ),
 
         // Action Section (Target Folder & Safety Check)
-        h("div", { style: { background: "rgba(15, 23, 42, 0.4)", padding: "1rem", borderRadius: "0.375rem", border: "1px solid var(--border, #334155)" } },
+        h("div", { style: { background: "rgba(15, 23, 42, 0.4)", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
             h("span", { style: { fontSize: "0.875rem", fontWeight: 700 } }, "DANN führe folgende Aktion aus:"),
             h("span", { className: "auto-org-badge auto-org-badge-green" }, "Verschieben nach Ziel-Ast (Move)")
           ),
           h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" } },
-            h("label", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } },
+            h("label", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
               "Zielordner / Pfad-Vorlage (wird auf Docker-Container RW-Mount geprüft):"
             ),
             h("input", {
@@ -1163,7 +1404,7 @@
               if (matchedMount) {
                 return h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem", color: "#4ade80", background: "rgba(34, 197, 94, 0.1)", padding: "0.35rem 0.6rem", borderRadius: "0.25rem" } },
                   h("span", null, `✓ In Docker gemountet: ${matchedMount.label} → ${matchedMount.container_path}`),
-                  h("span", { style: { color: "var(--muted-foreground)" } }, `(${matchedMount.free_gb} GB frei • RW)`)
+                  h("span", { style: { color: "#94a3b8" } }, `(${matchedMount.free_gb} GB frei • RW)`)
                 );
               } else if (targetTemplate.trim().length > 3) {
                 return h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem", color: "#f87171", background: "rgba(239, 68, 68, 0.1)", padding: "0.35rem 0.6rem", borderRadius: "0.25rem" } },
@@ -1175,7 +1416,7 @@
 
             // Quick Select Pills from APPROVED TAXONOMY TREE
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
-              h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Aus Organisationssystem (Schritt 2):"),
+              h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Aus Organisationssystem (Schritt 2):"),
               taxonomy && taxonomy.tree ?
                 taxonomy.tree.map(n =>
                   h("button", {
@@ -1194,7 +1435,7 @@
 
             // Placeholders
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
-              h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Platzhalter einfügen:"),
+              h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Platzhalter einfügen:"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{year}") }, "+ {year}"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{month}") }, "+ {month}"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{stem}") }, "+ {stem}"),
@@ -1259,7 +1500,7 @@
               ))
             )
           ) :
-          h("p", { style: { color: "var(--muted-foreground)", fontSize: "0.8125rem" } }, "Keine indexierten Dateien gefunden, die derzeit auf diese Bedingungen zutreffen.")
+          h("p", { style: { color: "#94a3b8", fontSize: "0.8125rem" } }, "Keine indexierten Dateien gefunden, die derzeit auf diese Bedingungen zutreffen.")
         )
       );
     };
@@ -1275,7 +1516,7 @@
             h("h3", { style: { fontSize: "1.125rem", fontWeight: 700 } },
               `Gespeicherte Regel-Matrix (${rules.length} definierte Regeln)`
             ),
-            h("span", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)" } },
+            h("span", { style: { fontSize: "0.8125rem", color: "#94a3b8" } },
               "Regeln werden nach Priorität sortiert ausgeführt"
             )
           ),
@@ -1291,13 +1532,13 @@
             ),
             h("tbody", null,
               rules.length === 0 ?
-              h("tr", null, h("td", { colSpan: 5, style: { textAlign: "center", color: "var(--muted-foreground)" } }, "Noch keine Regeln eingerichtet. Nutzen Sie den Baukasten oben!")) :
+              h("tr", null, h("td", { colSpan: 5, style: { textAlign: "center", color: "#94a3b8" } }, "Noch keine Regeln eingerichtet. Nutzen Sie den Baukasten oben!")) :
               rules.map((r) => {
                 const isApproved = r.state === "USER_APPROVED";
                 return h("tr", { key: r.id },
                   h("td", { style: { fontWeight: 600 } },
                     h("div", null, r.name),
-                    r.description && h("div", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, r.description)
+                    r.description && h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, r.description)
                   ),
                   h("td", null, renderRuleConditionBadges(r)),
                   h("td", { style: { fontFamily: "monospace", fontSize: "0.8125rem", color: "#4ade80" } }, r.target_template),
@@ -1354,7 +1595,7 @@
               h("h3", { style: { fontWeight: 700, fontSize: "1.125rem" } },
                 dryRun ? `⚡ Dry-Run Staging: ${dryRun.actions_count} geplante Datei-Verschiebungen` : "⚡ Reorganisations-Simulation"
               ),
-              h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.2rem" } },
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
                 dryRun ?
                   `Batch: ${dryRun.batch_id.slice(0, 12)} • Sicher zur Ausführung: ${dryRun.safe_count} • Kollisionen/Gesperrt: ${dryRun.collisions_count}` :
                   "Simulieren Sie die Reorganisation vor der Ausführung. Hermes prüft Schreibrechte, Docker-Mounts und Dateinamen-Kollisionen."
@@ -1379,7 +1620,7 @@
             h("div", { style: { textAlign: "center", padding: "3rem 1rem" } },
               h("div", { style: { fontSize: "2.5rem", marginBottom: "0.75rem" } }, "🔍"),
               h("h4", { style: { fontWeight: 600, marginBottom: "0.5rem" } }, "Bereit für die Dry-Run Simulation"),
-              h("p", { style: { color: "var(--muted-foreground)", fontSize: "0.875rem", marginBottom: "1.5rem", maxWidth: "500px", margin: "0 auto 1.5rem auto" } },
+              h("p", { style: { color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1.5rem", maxWidth: "500px", margin: "0 auto 1.5rem auto" } },
                 "Die Simulation gleicht alle aktiven Filter-Regeln gegen den aktuellen Dateibestand ab und stellt geplante Verschiebungen zusammen."
               ),
               h("button", {
@@ -1402,7 +1643,7 @@
               ),
               h("tbody", null,
                 dryRun.actions.length === 0 ?
-                h("tr", null, h("td", { colSpan: 7, style: { textAlign: "center", color: "var(--muted-foreground)", padding: "2rem" } }, "Keine Verschiebungs-Aktionen für die aktuellen Regeln gefunden.")) :
+                h("tr", null, h("td", { colSpan: 7, style: { textAlign: "center", color: "#94a3b8", padding: "2rem" } }, "Keine Verschiebungs-Aktionen für die aktuellen Regeln gefunden.")) :
                 dryRun.actions.map((act, idx) => h("tr", { key: idx },
                   h("td", { style: { fontWeight: 600 } }, act.file_name),
                   h("td", null, h("span", { className: "auto-org-diff-source" }, act.source_path)),
@@ -1465,7 +1706,7 @@
               h("div", { className: "auto-org-stat-value", style: { fontSize: "1.25rem", color: "#60a5fa" } },
                 mountData && mountData.in_container ? "Docker Jail Aktiv" : "Host-Umgebung"
               ),
-              h("div", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } },
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
                 "Dateizugriff auf gemountete Pfade unter /opt/data/... beschränkt"
               )
             ),
@@ -1481,14 +1722,14 @@
               h("div", { className: "auto-org-stat-value", style: { color: "#4ade80" } },
                 `${mountData ? mountData.total_free_gb : 0} GB`
               ),
-              h("div", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } },
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
                 "über beschreibbare Docker-Mounts"
               )
             ),
             h("div", { className: "auto-org-stat-card" },
               h("div", { className: "auto-org-stat-label" }, "Host-System-Schutz"),
               h("div", { className: "auto-org-stat-value", style: { fontSize: "1.25rem", color: "#4ade80" } }, "Geschützt"),
-              h("div", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } },
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
                 "Unmountete Pfade (/etc, /root) blockiert"
               )
             )
@@ -1498,7 +1739,7 @@
           h("div", { className: "auto-org-checker-box" },
             h("div", null,
               h("h4", { style: { fontSize: "1rem", fontWeight: 700 } }, "🔍 Docker Pfad-Inspector & Übersetzer"),
-              h("p", { style: { fontSize: "0.8125rem", color: "var(--muted-foreground)", marginTop: "0.15rem" } },
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.15rem" } },
                 "Prüfen Sie beliebige Pfade auf Container-Erreichbarkeit und Schreibrechte vor dem Erstellen von Regeln."
               )
             ),
@@ -1521,7 +1762,7 @@
             ),
             // Presets
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" } },
-              h("span", { style: { fontSize: "0.75rem", color: "var(--muted-foreground)" } }, "Schnelltests:"),
+              h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Schnelltests:"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => { setPathCheckInput("/home/mb/Downloads"); handleCheckPath("/home/mb/Downloads"); } }, "Downloads"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => { setPathCheckInput("/home/mb/Schreibtisch"); handleCheckPath("/home/mb/Schreibtisch"); } }, "Desktop"),
               h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => { setPathCheckInput("/media/privat-data/10_PrivatBüro"); handleCheckPath("/media/privat-data/10_PrivatBüro"); } }, "PrivatBüro"),
@@ -1547,7 +1788,7 @@
                 h("div", { style: { fontWeight: 600, color: pathCheckResult.valid ? "#4ade80" : pathCheckResult.is_mounted ? "#facc15" : "#f87171" } },
                   pathCheckResult.message
                 ),
-                pathCheckResult.container_path && h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem" } },
+                pathCheckResult.container_path && h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem" } },
                   `Container-Pfad: ${pathCheckResult.container_path} • Host-Pfad: ${pathCheckResult.host_path || "-"}`
                 )
               ),
@@ -1584,7 +1825,7 @@
               ),
               h("tbody", null,
                 mounts.length === 0 ?
-                h("tr", null, h("td", { colSpan: 6, style: { textAlign: "center", color: "var(--muted-foreground)" } }, "Keine Docker Mounts gefunden.")) :
+                h("tr", null, h("td", { colSpan: 6, style: { textAlign: "center", color: "#94a3b8" } }, "Keine Docker Mounts gefunden.")) :
                 mounts.map((m, idx) => {
                   const isRW = m.rw && m.is_writable;
                   return h("tr", { key: idx },
@@ -1610,7 +1851,7 @@
                           }
                         })
                       ),
-                      h("div", { style: { fontSize: "0.7rem", color: "var(--muted-foreground)", marginTop: "0.15rem" } },
+                      h("div", { style: { fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.15rem" } },
                         `${m.total_gb} GB gesamt (${m.used_percent}% belegt)`
                       )
                     ),
@@ -1651,7 +1892,7 @@
           ),
           h("tbody", null,
             roots.length === 0 ?
-            h("tr", null, h("td", { colSpan: 6, style: { textAlign: "center", color: "var(--muted-foreground)" } }, "Keine Speicherwurzeln registriert.")) :
+            h("tr", null, h("td", { colSpan: 6, style: { textAlign: "center", color: "#94a3b8" } }, "Keine Speicherwurzeln registriert.")) :
             roots.map((r) => h("tr", { key: r.id },
               h("td", { style: { fontWeight: 600 } }, r.name),
               h("td", null, h("span", { className: "auto-org-badge auto-org-badge-blue" }, r.type)),
@@ -1665,7 +1906,7 @@
       } else if (activeModal === "journal") {
         title = "📜 Reorganisations-Journal & 1-Klick Rollback";
         content = batches.length === 0 ?
-          h("p", { style: { color: "var(--muted-foreground)", fontSize: "0.875rem", padding: "2rem", textAlign: "center" } }, "Noch keine Reorganisationen protokolliert.") :
+          h("p", { style: { color: "#94a3b8", fontSize: "0.875rem", padding: "2rem", textAlign: "center" } }, "Noch keine Reorganisationen protokolliert.") :
           h("table", { className: "auto-org-table" },
             h("thead", null,
               h("tr", null,
@@ -1696,12 +1937,270 @@
                       className: "auto-org-btn auto-org-btn-danger",
                       onClick: () => handleRollback(b.batch_id)
                     }, "↩️ Zurückrollen") :
-                    h("span", { style: { color: "var(--muted-foreground)", fontSize: "0.75rem" } }, "Wiederhergestellt")
+                    h("span", { style: { color: "#94a3b8", fontSize: "0.75rem" } }, "Wiederhergestellt")
                   )
                 );
               })
             )
           );
+      } else if (activeModal === "sync") {
+        title = "☁️ Google Drive ↔ Lokaler Speicher: Synchronisations-Manager";
+        content = h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+          // Info banner
+          h("div", {
+            style: {
+              background: "rgba(15, 23, 42, 0.75)",
+              border: "1px solid #334155",
+              borderRadius: "0.5rem",
+              padding: "1rem 1.25rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.75rem"
+            }
+          },
+            h("div", null,
+              h("div", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } },
+                "Selektiver Synchronisations-Abgleich (Selective Sync)"
+              ),
+              h("div", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                "Definieren Sie, welche Google Drive Verzeichnisse auf lokale Host- bzw. Container-Mounts gespiegelt oder abgeglichen werden."
+              )
+            ),
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-primary",
+              onClick: () => setShowNewSyncForm(!showNewSyncForm)
+            }, showNewSyncForm ? "✕ Formular schließen" : "+ Neuer Sync-Ordner anlegen")
+          ),
+
+          // New Sync Mapping Form
+          showNewSyncForm && h("form", {
+            onSubmit: handleSaveSyncMapping,
+            style: {
+              background: "rgba(30, 41, 59, 0.75)",
+              border: "1px solid #3b82f6",
+              borderRadius: "0.5rem",
+              padding: "1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem"
+            }
+          },
+            h("h4", { style: { fontSize: "1rem", fontWeight: 700, color: "#ffffff" } }, "➕ Neuer Google Drive ↔ Lokaler Sync-Ordner"),
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.85rem" } },
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Name der Zuordnung"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  placeholder: "z.B. PrivatBüro Dokumente",
+                  value: newSyncName,
+                  onChange: (e) => setNewSyncName(e.target.value),
+                  required: true
+                })
+              ),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Google Drive Ordner-Pfad"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  placeholder: "z.B. /PrivatBüro oder /Work",
+                  value: newSyncDrivePath,
+                  onChange: (e) => setNewSyncDrivePath(e.target.value),
+                  required: true
+                })
+              ),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Lokaler Pfad (Host / Container-Mount)"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  placeholder: "z.B. /media/privat-data/10_PrivatBüro",
+                  value: newSyncLocalPath,
+                  onChange: (e) => setNewSyncLocalPath(e.target.value),
+                  required: true
+                })
+              ),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Synchronisations-Richtung"),
+                h("select", {
+                  className: "auto-org-select",
+                  value: newSyncDirection,
+                  onChange: (e) => setNewSyncDirection(e.target.value)
+                },
+                  h("option", { value: "bidirectional" }, "⇄ Bidirektional (Beidseitiger Abgleich)"),
+                  h("option", { value: "push" }, "⬆️ Lokal ➔ GDrive (Upload zu Drive)"),
+                  h("option", { value: "pull" }, "⬇️ GDrive ➔ Lokal (Download & Spiegeln)")
+                )
+              ),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Einschlussfilter (Include Glob-Patterns)"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  placeholder: "*.pdf, *.docx, *.xlsx, *.txt, *.md",
+                  value: newSyncInclude,
+                  onChange: (e) => setNewSyncInclude(e.target.value)
+                })
+              ),
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "0.3rem" } },
+                h("label", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" } }, "Ausschlussfilter (Exclude Glob-Patterns)"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  placeholder: "*.tmp, ~*, .git/*",
+                  value: newSyncExclude,
+                  onChange: (e) => setNewSyncExclude(e.target.value)
+                })
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setShowNewSyncForm(false)
+              }, "Abbrechen"),
+              h("button", {
+                type: "submit",
+                className: "auto-org-btn auto-org-btn-primary",
+                disabled: loading
+              }, loading ? "Speichere..." : "✓ Sync-Ordner speichern")
+            )
+          ),
+
+          // Configured Mappings Table
+          h("div", null,
+            h("h4", { style: { fontSize: "1rem", fontWeight: 700, color: "#ffffff", marginBottom: "0.5rem" } },
+              `Konfigurierte Sync-Pfade (${syncMappings.length})`
+            ),
+            h("table", { className: "auto-org-table" },
+              h("thead", null,
+                h("tr", null,
+                  h("th", null, "Name & Status"),
+                  h("th", null, "Google Drive Pfad"),
+                  h("th", null, "Lokaler Host- / Container-Pfad"),
+                  h("th", null, "Richtung"),
+                  h("th", null, "Mount-Status"),
+                  h("th", null, "Letzter Sync"),
+                  h("th", null, "Aktionen")
+                )
+              ),
+              h("tbody", null,
+                syncMappings.length === 0 ?
+                h("tr", null, h("td", { colSpan: 7, style: { textAlign: "center", color: "#94a3b8" } }, "Keine Sync-Ordner definiert.")) :
+                syncMappings.map((m) => {
+                  const isBi = m.direction === "bidirectional";
+                  const isPush = m.direction === "push";
+                  const dirBadge = isBi ? "⇄ Bidirektional" : (isPush ? "⬆️ Push" : "⬇️ Pull");
+                  const mountOk = m.mount_check && m.mount_check.valid && !m.mount_check.read_only;
+                  return h("tr", { key: m.id },
+                    h("td", null,
+                      h("div", { style: { fontWeight: 600, color: "#ffffff" } }, m.name),
+                      h("span", {
+                        className: `auto-org-badge ${m.is_active ? "auto-org-badge-green" : "auto-org-badge-yellow"}`,
+                        style: { marginTop: "0.2rem" }
+                      }, m.is_active ? "Aktiv" : "Pausiert")
+                    ),
+                    h("td", { style: { fontFamily: "monospace", fontSize: "0.8125rem", color: "#60a5fa" } },
+                      `gdrive:${m.drive_folder_path}`
+                    ),
+                    h("td", { style: { fontFamily: "monospace", fontSize: "0.8125rem", color: "#4ade80" } },
+                      m.local_path
+                    ),
+                    h("td", null,
+                      h("span", { className: "auto-org-sync-direction-badge" }, dirBadge)
+                    ),
+                    h("td", null,
+                      mountOk ?
+                        h("span", { className: "auto-org-badge auto-org-badge-green", title: `Container: ${m.mount_check.container_path}` }, "✓ OK (RW)") :
+                        h("span", { className: "auto-org-badge auto-org-badge-yellow", title: (m.mount_check && m.mount_check.warning) || "Mount prüfen" }, "⚠️ Prüfen")
+                    ),
+                    h("td", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                      m.last_sync_at ? new Date(m.last_sync_at).toLocaleString() : "Noch nie"
+                    ),
+                    h("td", null,
+                      h("div", { style: { display: "flex", gap: "0.35rem" } },
+                        h("button", {
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-outline",
+                          style: { fontSize: "0.75rem", padding: "0.25rem 0.5rem" },
+                          onClick: () => handleCalculateSyncPlan(m.id),
+                          disabled: planningId === m.id
+                        }, planningId === m.id ? "Berechne..." : "🔍 Diff"),
+                        h("button", {
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-primary",
+                          style: { fontSize: "0.75rem", padding: "0.25rem 0.5rem" },
+                          onClick: () => handleExecuteSync(m.id),
+                          disabled: syncingId === m.id
+                        }, syncingId === m.id ? "Sync..." : "⚡ Sync"),
+                        h("button", {
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-danger",
+                          style: { fontSize: "0.75rem", padding: "0.25rem 0.4rem" },
+                          onClick: () => handleDeleteSyncMapping(m.id, m.name)
+                        }, "✕")
+                      )
+                    )
+                  );
+                })
+              )
+            )
+          ),
+
+          // Sync Plan Diff Preview (if loaded)
+          syncPlan && h("div", {
+            style: {
+              background: "rgba(15, 23, 42, 0.85)",
+              border: "1px solid #3b82f6",
+              borderRadius: "0.5rem",
+              padding: "1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem"
+            }
+          },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+              h("h4", { style: { fontSize: "1rem", fontWeight: 700, color: "#ffffff" } },
+                `Abgleichs-Vorschau: ${syncPlan.mapping_name} (${syncPlan.summary.total_items} Dateien)`
+              ),
+              h("div", { style: { display: "flex", gap: "0.5rem" } },
+                h("span", { className: "auto-org-badge auto-org-badge-blue" }, `Uploads: ${syncPlan.summary.to_upload}`),
+                h("span", { className: "auto-org-badge auto-org-badge-green" }, `Downloads: ${syncPlan.summary.to_download}`),
+                h("span", { className: "auto-org-badge auto-org-badge-yellow" }, `In Sync: ${syncPlan.summary.in_sync}`)
+              )
+            ),
+            h("table", { className: "auto-org-table" },
+              h("thead", null,
+                h("tr", null,
+                  h("th", null, "Relative Datei"),
+                  h("th", null, "Geplante Aktion"),
+                  h("th", null, "Grund")
+                )
+              ),
+              h("tbody", null,
+                syncPlan.items.slice(0, 10).map((item, idx) => h("tr", { key: idx },
+                  h("td", { style: { fontFamily: "monospace", fontSize: "0.8125rem", color: "#f8fafc" } }, item.relative_path),
+                  h("td", null,
+                    h("span", {
+                      className: `auto-org-badge ${item.action === "upload" ? "auto-org-badge-blue" : item.action === "download" ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                    }, item.action)
+                  ),
+                  h("td", { style: { fontSize: "0.8125rem", color: "#94a3b8" } }, item.reason)
+                ))
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: () => handleExecuteSync(syncPlan.mapping_id)
+              }, "🚀 Synchronisation jetzt anwenden")
+            )
+          )
+        );
       }
 
       return h("div", {
@@ -1753,7 +2252,7 @@
         alignItems: "center",
         gap: "0.375rem",
         fontSize: "0.75rem",
-        color: "var(--muted-foreground)"
+        color: "#94a3b8"
       }
     },
       h("span", {

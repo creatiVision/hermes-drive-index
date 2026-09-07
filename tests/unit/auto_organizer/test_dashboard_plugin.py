@@ -231,3 +231,73 @@ def test_approve_taxonomy_endpoint():
         assert data["ok"] is True
         assert data["system_approved"] is True
         assert data["approved_count"] >= 5
+
+
+def test_sync_mappings_list():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.get("/api/plugins/auto-organizer/sync/mappings")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["total"] >= 3
+        mappings = data["mappings"]
+        assert any(m["name"] == "PrivatBüro Dokumente" for m in mappings)
+        assert any(m["name"] == "Work & Projekte" for m in mappings)
+        # Check mount check enrichment
+        first = mappings[0]
+        assert "mount_check" in first
+
+
+def test_save_sync_mapping():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        payload = {
+            "name": "Test Sync Pair",
+            "drive_folder_path": "/TestDrive",
+            "local_path": "/media/test-local",
+            "direction": "bidirectional",
+            "include_patterns": ["*.pdf"],
+            "exclude_patterns": ["*.tmp"],
+        }
+        res = client.post("/api/plugins/auto-organizer/sync/mappings", json=payload)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["mapping"]["name"] == "Test Sync Pair"
+        assert data["mapping"]["drive_folder_path"] == "/TestDrive"
+        assert "mount_check" in data["mapping"]
+
+
+def test_toggle_and_plan_sync_mapping():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # Toggle
+        res = client.post("/api/plugins/auto-organizer/sync/mappings/toggle", json={
+            "id": "11111111-2222-3333-4444-555555555551",
+            "is_active": False
+        })
+        assert res.status_code == 200
+        assert res.json()["is_active"] is False
+
+        # Plan
+        res_plan = client.post("/api/plugins/auto-organizer/sync/plan", json={
+            "mapping_id": "11111111-2222-3333-4444-555555555551"
+        })
+        assert res_plan.status_code == 200
+        plan_data = res_plan.json()
+        assert plan_data["ok"] is True
+        assert "summary" in plan_data
+        assert "items" in plan_data
+
+        # Execute
+        res_exec = client.post("/api/plugins/auto-organizer/sync/execute", json={
+            "mapping_id": "11111111-2222-3333-4444-555555555551"
+        })
+        assert res_exec.status_code == 200
+        assert res_exec.json()["ok"] is True
+        assert "synced_at" in res_exec.json()
+
+
+def test_delete_sync_mapping():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.delete("/api/plugins/auto-organizer/sync/mappings/11111111-2222-3333-4444-555555555553")
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
