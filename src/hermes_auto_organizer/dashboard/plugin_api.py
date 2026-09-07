@@ -56,6 +56,38 @@ DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 _DRY_RUN_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
+def to_user_path(p: Optional[str]) -> str:
+    """Translates container mount paths (e.g. /opt/data/...) to user host paths."""
+    if not p:
+        return ""
+    if p.startswith("gdrive://") or p.startswith("trash://"):
+        return p
+    h = docker_mount_service.translate_to_host_path(p)
+    if h:
+        return h
+    # Direct fallback substitutions for known mounts
+    res = str(p)
+    substitutions = [
+        ("/opt/data/privat-buero", "/media/privat-data/10_PrivatBüro"),
+        ("/opt/data/work-data", "/media/work-data"),
+        ("/opt/data/downloads", "/home/mb/Downloads"),
+        ("/opt/data/desktop", "/home/mb/Schreibtisch"),
+        ("/opt/data/bilder", "/home/mb/Bilder"),
+        ("/opt/data/dokumente", "/home/mb/Dokumente"),
+        ("/opt/data/videos", "/home/mb/Videos"),
+        ("/opt/data/knowledge-base", "/media/xchg/ai-knowledge-base"),
+        ("/opt/data/tools-data", "/media/xchg/ai-tools-data"),
+        ("/opt/data/graph-data", "/media/xchg/ai-graph"),
+        ("/opt/data/cloud", "gdrive://creatiVision"),
+        ("/opt/data", "/media/xchg/ai-agents-workspaces/hermes/.hermes"),
+    ]
+    for c_prefix, h_prefix in substitutions:
+        if res.startswith(c_prefix):
+            res = h_prefix + res[len(c_prefix):]
+            break
+    return res
+
+
 async def _get_connection() -> Optional[asyncpg.Connection]:
     try:
         conn = await asyncio.wait_for(asyncpg.connect(DSN), timeout=2.5)
@@ -89,7 +121,7 @@ class ModularRuleCreateRequest(BaseModel):
 class RuleTestRequest(BaseModel):
     match_mode: str = "all"
     conditions: List[Dict[str, Any]] = Field(default_factory=list)
-    target_path_template: str = "/media/privat-buero/Archiv/{year}/"
+    target_path_template: str = "/media/privat-data/10_PrivatBüro/Archiv/{year}/"
     max_items: int = 20
 
 
@@ -100,6 +132,7 @@ class DryRunRequest(BaseModel):
 
 class ExecuteRequest(BaseModel):
     dry_run_batch_id: str
+    approved_group_ids: Optional[List[str]] = None
 
 
 class RollbackRequest(BaseModel):
@@ -857,6 +890,101 @@ async def dry_run_simulation(req: DryRunRequest) -> Dict[str, Any]:
                     })
                     break
 
+        # Synthesize abstract semantic execution groups with user-facing intents
+        groups_map: Dict[str, Dict[str, Any]] = {}
+        rule_meta = {
+            "Rechnungen & Steuerbelege archivieren": {
+                "id": "grp_tax",
+                "title": "📄 Alle PDFs & Dokumente mit Rechnungsinhalten aus 2025/2026",
+                "intent": "Automatische Erkennung und Ablage aller steuerrelevanten Belege und Rechnungen direkt in die Jahresordner des PrivatBüros",
+                "source_label": "Downloads & Arbeitsordner",
+                "target_label": "PrivatBüro / Steuern & Finanzen",
+                "icon": "📊",
+            },
+            "Verträge & Policen konsolidieren": {
+                "id": "grp_contracts",
+                "title": "⚖️ Verträge, Versicherungspolicen & Vereinbarungen",
+                "intent": "Zentrale Bündelung aller Policen, Serviceverträge und Rechtsdokumente an einem geschützten Ort",
+                "source_label": "Downloads & Dumpzones",
+                "target_label": "PrivatBüro / Verträge",
+                "icon": "⚖️",
+            },
+            "Entwicklungsprojekte & Codebasen": {
+                "id": "grp_code",
+                "title": "💻 Entwicklungsprojekte, Codebasen & Dokumentation",
+                "intent": "Source-Code, Markdown-Dokumentationen und Projektdateien strukturiert nach Projektname bündeln",
+                "source_label": "Knowledge-Base & Arbeitsbereiche",
+                "target_label": "Work Data / Projekte",
+                "icon": "💼",
+            },
+            "Medien & Kreativ-Assets bündeln": {
+                "id": "grp_media",
+                "title": "🎨 Mediendateien, Grafiken & Screencast-Videos",
+                "intent": "Bilder, Icons, SVGs und Video-Tutorials nach Jahresarchiv unter Assets strukturieren",
+                "source_label": "Downloads & Arbeitsbereiche",
+                "target_label": "Work Data / Assets",
+                "icon": "🎨",
+            },
+            "Downloads-Dumpzone bereinigen (send2trash)": {
+                "id": "grp_cleanup",
+                "title": "🧹 Downloads-Dumpzone: Temporäre Installer & Duplikate",
+                "intent": "Temporäre Downloads, doppelten Ballast und Installer sicher via send2trash in den Papierkorb verschieben",
+                "source_label": "Downloads (Dumpzone)",
+                "target_label": "Papierkorb (trash://)",
+                "icon": "🧹",
+            },
+        }
+
+        for act in actions:
+            r_name = act["rule_name"]
+            meta = rule_meta.get(r_name, {
+                "id": f"grp_{abs(hash(r_name)) % 10000}",
+                "title": f"📁 {r_name}",
+                "intent": f"Dateien gemäß Regel '{r_name}' verschieben",
+                "source_label": to_user_path(act["source_path"]),
+                "target_label": to_user_path(act["destination_path"]),
+                "icon": "📁",
+            })
+            gid = meta["id"]
+            if gid not in groups_map:
+                groups_map[gid] = {
+                    "group_id": gid,
+                    "title": meta["title"],
+                    "intent": meta["intent"],
+                    "icon": meta["icon"],
+                    "source_label": meta["source_label"],
+                    "target_label": meta["target_label"],
+                    "target_template": to_user_path(act["destination_path"]),
+                    "rule_name": r_name,
+                    "file_count": 0,
+                    "total_size_kb": 0.0,
+                    "safe_count": 0,
+                    "is_approved": True,
+                    "status": "APPROVED",
+                    "sample_files": [],
+                }
+            g = groups_map[gid]
+            g["file_count"] += 1
+            g["total_size_kb"] += round(act["size_bytes"] / 1024, 1)
+            if act["safe_to_execute"]:
+                g["safe_count"] += 1
+            if len(g["sample_files"]) < 10:
+                g["sample_files"].append({
+                    "file_name": act["file_name"],
+                    "size_kb": round(act["size_bytes"] / 1024, 1),
+                    "source_path": to_user_path(act["source_path"]),
+                    "destination_path": to_user_path(act["destination_path"]),
+                })
+            act["group_id"] = gid
+
+            # Retain container paths for execution, replace paths with clean host paths for UI
+            act["container_source_path"] = act["source_path"]
+            act["container_destination_path"] = act["destination_path"]
+            act["source_path"] = to_user_path(act["source_path"])
+            act["destination_path"] = to_user_path(act["destination_path"])
+
+        semantic_groups = list(groups_map.values())
+
         result = {
             "batch_id": batch_id,
             "actions_count": len(actions),
@@ -864,6 +992,7 @@ async def dry_run_simulation(req: DryRunRequest) -> Dict[str, Any]:
             "unmounted_count": sum(1 for a in actions if not a.get("mount_valid", True)),
             "safe_count": sum(1 for a in actions if a["safe_to_execute"]),
             "actions": actions,
+            "semantic_groups": semantic_groups,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -885,6 +1014,10 @@ async def execute_batch(req: ExecuteRequest) -> Dict[str, Any]:
     if not actions:
         return {"ok": True, "executed": 0, "message": "No actions to execute"}
 
+    approved_gids = set(req.approved_group_ids) if req.approved_group_ids is not None else None
+    if approved_gids is not None:
+        actions = [a for a in actions if a.get("group_id") in approved_gids or not a.get("group_id")]
+
     conn = await _get_connection()
     executed_count = 0
     failed_count = 0
@@ -899,8 +1032,8 @@ async def execute_batch(req: ExecuteRequest) -> Dict[str, Any]:
         if not act.get("safe_to_execute"):
             continue
 
-        src = Path(act["source_path"])
-        dst = Path(act["destination_path"])
+        src = Path(act.get("container_source_path", act["source_path"]))
+        dst = Path(act.get("container_destination_path", act["destination_path"]))
         file_id = UUID(act["file_id"])
 
         if not src.exists():
@@ -1910,7 +2043,7 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
             "file_count": 89,
             "detected_keywords": ["Steuern", "Krankenkasse", "Versicherungen", "Wohnung", "Bescheide", "Gehalt"],
             "data_evidence": "Natürlich erkannt aus 89 Dokumenten in /media/privat-data/10_PrivatBüro mit Steuer- & Abrechnungsbezug.",
-            "target_path_template": "/opt/data/privat-buero/{year}/{category}/",
+            "target_path_template": "/media/privat-data/10_PrivatBüro/{year}/{category}/",
             "confidence": 0.96,
             "icon": "🏠",
         },
@@ -1921,7 +2054,7 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
             "file_count": 142,
             "detected_keywords": ["Ausgangsrechnungen", "Eingangsrechnungen", "BWA", "USt-Voranmeldung", "Verträge", "Bankbelege"],
             "data_evidence": "Natürlich erkannt aus 142 Dateien in /media/work-data/001_cv-bookaccount mit USt-IdNr, Firmenbelegen und Buchhaltungsdaten.",
-            "target_path_template": "/opt/data/work-data/001_cv-bookaccount/{year}/{type}/",
+            "target_path_template": "/media/work-data/001_cv-bookaccount/{year}/{type}/",
             "confidence": 0.98,
             "icon": "💼",
         },
@@ -1932,7 +2065,7 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
             "file_count": 210,
             "detected_keywords": ["Repositories", "Webdesign", "WordPress", "Python", "UI-Assets", "Agent-Skills"],
             "data_evidence": "Natürlich erkannt aus 210 Dateien in /media/work-data/002_cv-projects mit Git-Repositories, Web-Layouts und Codebasen.",
-            "target_path_template": "/opt/data/work-data/002_cv-projects/{project_name}/",
+            "target_path_template": "/media/work-data/002_cv-projects/{project_name}/",
             "confidence": 0.94,
             "icon": "🚀",
         },
@@ -1943,7 +2076,7 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
             "file_count": 75,
             "detected_keywords": ["Jahresarchiv", "Postgres-Dump", "Syncthing-Snapshots", "Cold-Storage"],
             "data_evidence": "Natürlich erkannt aus 75 Archivdateien (.tar, .sql.gz, historische Jahresordner) in /media/xchg/backup und GDrive.",
-            "target_path_template": "/opt/data/knowledge-base/Archiv/{year}/",
+            "target_path_template": "/media/xchg/ai-knowledge-base/Archiv/{year}/",
             "confidence": 0.91,
             "icon": "📦",
         },
@@ -1992,7 +2125,7 @@ async def get_cross_drive_reconciliation() -> Dict[str, Any]:
             "locations": [
                 {
                     "drive": "Arbeitsdateien (work-data)",
-                    "path": "/opt/data/work-data/001_cv-bookaccount/cv_accounting_2025/Rechnungen_Q4.pdf",
+                    "path": "/media/work-data/001_cv-bookaccount/cv_accounting_2025/Rechnungen_Q4.pdf",
                     "role": "primary",
                     "mtime": "2026-09-05T14:30:00Z",
                 },
@@ -2016,13 +2149,13 @@ async def get_cross_drive_reconciliation() -> Dict[str, Any]:
             "locations": [
                 {
                     "drive": "PrivatBüro",
-                    "path": "/opt/data/privat-buero/2024/Steuern/steuerbescheid_2024.pdf",
+                    "path": "/media/privat-data/10_PrivatBüro/2024/Steuern/steuerbescheid_2024.pdf",
                     "role": "primary",
                     "mtime": "2025-11-12T10:00:00Z",
                 },
                 {
                     "drive": "Downloads (Dumpzone)",
-                    "path": "/opt/data/downloads/steuerbescheid_2024_einkommensteuer.pdf",
+                    "path": "/home/mb/Downloads/steuerbescheid_2024_einkommensteuer.pdf",
                     "role": "clutter_copy",
                     "mtime": "2026-08-15T09:12:00Z",
                 },
@@ -2040,7 +2173,7 @@ async def get_cross_drive_reconciliation() -> Dict[str, Any]:
             "locations": [
                 {
                     "drive": "Arbeitsdateien (work-data)",
-                    "path": "/opt/data/work-data/002_cv-projects/webdesign-wp-lc-ps/assets/logo.svg",
+                    "path": "/media/work-data/002_cv-projects/webdesign-wp-lc-ps/assets/logo.svg",
                     "role": "project_local",
                     "mtime": "2026-08-20T16:00:00Z",
                 },
