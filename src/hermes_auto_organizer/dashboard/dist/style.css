@@ -124,10 +124,10 @@
   color: #ffffff !important;
 }
 
-/* 4-Step Guided Stepper */
+/* 5-Step Guided Stepper */
 .auto-org-stepper {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.75rem;
   background: rgba(15, 23, 42, 0.75);
   padding: 0.6rem;
@@ -135,13 +135,19 @@
   border: 1px solid #334155;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1360px) {
+  .auto-org-stepper {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
   .auto-org-stepper {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 580px) {
   .auto-org-stepper {
     grid-template-columns: 1fr;
   }
@@ -858,4 +864,67 @@
   align-items: center;
   font-size: 0.8125rem;
 }
+
+/* Locked / Gated Step Cards */
+.auto-org-step-card.disabled,
+.auto-org-step-card.locked {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  border-style: dashed !important;
+  border-color: #475569 !important;
+  filter: grayscale(0.5);
+}
+
+.auto-org-step-card.locked:hover {
+  background: rgba(30, 41, 59, 0.65) !important;
+  border-color: #475569 !important;
+}
+
+/* Proactive Suggested Rules Grid & Cards */
+.auto-org-suggested-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.auto-org-suggested-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: all 0.15s ease;
+}
+
+.auto-org-suggested-card:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: #3b82f6;
+}
+
+.auto-org-evidence-box {
+  background: rgba(15, 23, 42, 0.95);
+  border-left: 3px solid #3b82f6;
+  border-radius: 0.25rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.auto-org-sample-pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  background: rgba(51, 65, 85, 0.5);
+  border: 1px solid #475569;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: #cbd5e1 !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
