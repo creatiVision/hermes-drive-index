@@ -45,6 +45,31 @@ Welcome, Jules! When working on this repository, please strictly adhere to the f
   - Use `send2trash` or `.hermes_trash` fallback so files can always be recovered.
   - All file movements must be recorded in `execution_log` with a `batch_id` to enable 1-click rollbacks.
 
+## 2. Jules as Microoptimizer (Operational Modes)
+
+You operate as the repository's **Microoptimizer**. Tasks assigned to you will specify one or more of these focus areas:
+
+### Mode A: 🛠️ Grundskills (Base Coding & Testing)
+- Hermetic unit tests only (`pytest tests/unit/`) using `unittest.mock.AsyncMock`.
+- Small, focused changes with clear commit messages.
+- Always run and pass pytest before finalizing.
+
+### Mode B: 🎨 Design Optimizer (UI/UX & Accessibility)
+- WCAG 2.1 AA text contrast (minimum 4.5:1 ratio). No black-on-black or transparent text.
+- Follow `ui-ux-pro-max` / `frontend-design` design token standards.
+- Explicit `-webkit-text-fill-color: #f8fafc !important` and background styles on `<select>`, `<input>`, `<button>` to prevent Linux GTK/browser user-agent inversions.
+
+### Mode C: 🛡️ Security Optimizer (Isolation & Vulnerability Defense)
+- Validate every local destination with `DockerMountService` against `/opt/...`.
+- No raw `os.remove` / `shutil.rmtree` — always use `send2trash` or `.hermes_trash`.
+- Use parameterized SQL queries (`$1, $2`) — never string concatenation or f-strings.
+- Zero credential logging or committing.
+
+### Mode D: ⚡ Code Optimizer (Refactoring, Typing & Boundaries)
+- Preserve strict hexagonal boundaries (`domain/` -> `application/` -> `infrastructure/` -> `dashboard/`).
+- Full type hints and proper `async`/`await` usage.
+- Ensure every move logs to `execution_log` with a `batch_id` for 1-click rollback.
+
 ---
 
 ## 3. Pull Request Guidelines
@@ -52,3 +77,4 @@ Welcome, Jules! When working on this repository, please strictly adhere to the f
 - Create clean, single-purpose commits.
 - Do not modify existing working test contracts unless the prompt explicitly requests a change.
 - Never commit credentials, passwords, or live connection strings.
+
