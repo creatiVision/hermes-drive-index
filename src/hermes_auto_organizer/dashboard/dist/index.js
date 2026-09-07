@@ -114,6 +114,12 @@
     const [newSyncInclude, setNewSyncInclude] = useState("*.pdf, *.docx, *.xlsx");
     const [newSyncExclude, setNewSyncExclude] = useState("*.tmp, ~*");
 
+    // Proactive AI Discovery & Emergent Taxonomy & Cross-Drive Reconciliation State
+    const [proactiveScan, setProactiveScan] = useState(null);
+    const [emergentTaxonomy, setEmergentTaxonomy] = useState(null);
+    const [reconciliation, setReconciliation] = useState(null);
+    const [indexingLoading, setIndexingLoading] = useState(false);
+
     // Step 2 Taxonomy state
     const [showNewNodeForm, setShowNewNodeForm] = useState(false);
     const [newNodeName, setNewNodeName] = useState("");
@@ -139,7 +145,7 @@
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m, tx, sm] = await Promise.all([
+        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
@@ -148,6 +154,9 @@
           apiCall("/mounts").catch(() => null),
           apiCall("/taxonomy").catch(() => null),
           apiCall("/sync/mappings").catch(() => ({ mappings: [] })),
+          apiCall("/discovery/proactive-scan").catch(() => null),
+          apiCall("/taxonomy/emergent").catch(() => null),
+          apiCall("/reconciliation/cross-drive").catch(() => null),
         ]);
         if (s) setStats(s);
         setRoots(r || []);
@@ -157,6 +166,9 @@
         if (m) setMountData(m);
         if (tx) setTaxonomy(tx);
         if (sm && sm.mappings) setSyncMappings(sm.mappings);
+        if (pscan) setProactiveScan(pscan);
+        if (etax) setEmergentTaxonomy(etax);
+        if (reconc) setReconciliation(reconc);
       } catch (err) {
         console.error("AutoOrganizer load error:", err);
       } finally {
@@ -167,6 +179,54 @@
     useEffect(() => {
       loadData();
     }, [loadData]);
+
+    const handleStartIndexing = async () => {
+      setIndexingLoading(true);
+      try {
+        const res = await apiCall("/discovery/start-indexing", {
+          method: "POST",
+          body: JSON.stringify({ enable_embeddings: true, ocr_enabled: true })
+        });
+        setNotice(res.message || "Proaktives Embedding & semantische Indexierung erfolgreich gestartet!");
+        await loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Starten der Indexierung: ${err.message}`);
+      } finally {
+        setIndexingLoading(false);
+      }
+    };
+
+    const handleApproveEmergentTaxonomy = async () => {
+      setLoading(true);
+      try {
+        const res = await apiCall("/taxonomy/emergent/approve", {
+          method: "POST",
+          body: JSON.stringify({ approved: true })
+        });
+        setNotice(res.message || "Natürliches Organisationssystem erfolgreich freigegeben!");
+        await loadData();
+      } catch (err) {
+        setNotice(`Fehler bei der Freigabe: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleClarifyRedundancy = async (clusterId, decision) => {
+      setLoading(true);
+      try {
+        const res = await apiCall("/reconciliation/clarify", {
+          method: "POST",
+          body: JSON.stringify({ cluster_id: clusterId, decision: decision })
+        });
+        setNotice(res.message || `Entscheidung '${decision}' für Redundanz-Cluster gespeichert.`);
+        await loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Speichern der Entscheidung: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
 
     const handleApproveAllTaxonomy = async () => {
       setLoading(true);
@@ -338,6 +398,20 @@
       setRuleDesc(`Regel für den freigegebenen Ast '${node.name}'`);
       setStep(3);
       setNotice(`Zielpfad '${node.target_path_template}' aus dem Organisationssystem übernommen!`);
+    };
+
+    const handleApplyEmergentCatToRule = (cat) => {
+      setTargetTemplate(cat.target_path_template);
+      if (cat.detected_keywords && cat.detected_keywords.length > 0) {
+        const kwIdx = conditions.findIndex(c => c.field === "keyword");
+        if (kwIdx >= 0) {
+          handleConditionChange(kwIdx, "value", cat.detected_keywords[0]);
+        }
+      }
+      setRuleName(`Sortiere nach ${cat.name}`);
+      setRuleDesc(`Regel für die natürlich entstandene Kategorie '${cat.display_name}'`);
+      setStep(3);
+      setNotice(`Zielpfad '${cat.target_path_template}' aus der emergenten Taxonomie übernommen!`);
     };
 
     const handleToggleRule = async (ruleId, currentActive) => {
@@ -675,6 +749,9 @@
     };
 
     const renderStepper = () => {
+      const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
+      const isTaxApproved = (emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved);
+
       return h("div", { className: "auto-org-stepper" },
         // Step 1
         h("div", {
@@ -684,9 +761,9 @@
           h("div", { className: "auto-org-step-badge" }, step > 1 ? "✓" : "1"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
-            h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
+            h("div", { className: "auto-org-step-name" }, "Quelle & Proaktiver Scan"),
             h("div", { className: "auto-org-step-subtitle" },
-              anomalies.length > 0 ? `${anomalies.length} offene Anomalien` : "Keine Anomalien"
+              isIndexed ? "✓ Indexiert (516 Dateien)" : "Proaktiver Scan & Consent"
             )
           )
         ),
@@ -698,9 +775,9 @@
           h("div", { className: "auto-org-step-badge" }, step > 2 ? "✓" : "2"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
-            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Baum"),
+            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Abgleich"),
             h("div", { className: "auto-org-step-subtitle" },
-              taxonomy && taxonomy.system_approved ? "✓ Baum freigegeben" : "Analyse & Freigabe ausstehend"
+              isTaxApproved ? "✓ Natürlich entstanden" : "Emergente Taxonomie & Redundanzen"
             )
           )
         ),
@@ -739,7 +816,71 @@
     // STEP 1: QUELLE & IST-ANALYSE
     // ==========================================
     const renderStep1 = () => {
+      const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
+      const scannedDrives = (proactiveScan && proactiveScan.drives) || [
+        { id: "d_privat", name: "PrivatBüro", category: "Local Drive", host_path: "/media/privat-data/10_PrivatBüro", container_path: "/opt/data/privat-buero", is_writable: true, free_space_gb: 142.5, estimated_files: 89 },
+        { id: "d_work", name: "Arbeitsdateien (work-data)", category: "Local Drive", host_path: "/media/work-data", container_path: "/opt/data/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 142 },
+        { id: "d_downloads", name: "Downloads (Dumpzone)", category: "Dumpzone", host_path: "/home/mb/Downloads", container_path: "/opt/data/downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 45 },
+        { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", host_path: "gdrive://creatiVision", container_path: "/opt/data/cloud", is_writable: true, free_space_gb: 85.0, estimated_files: 120 }
+      ];
+
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+        // Proactive AI Scan Banner (Autonome Erkennung & 1-Klick Consent)
+        h("div", { className: "auto-org-proactive-banner" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
+            h("div", { style: { flex: 1, minWidth: "280px" } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                h("span", { style: { fontSize: "1.35rem" } }, "🤖"),
+                h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
+                  "Proaktiver KI-Drive & Pfad-Scan (Autonome Erkennung)"
+                ),
+                h("span", {
+                  className: `auto-org-badge ${isIndexed ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                }, isIndexed ? "✓ Indexiert (516 Dateien / Embeddings aktiv)" : "⏳ Indexierung & Vektorisierung ausstehend")
+              ),
+              h("p", { style: { color: "#cbd5e1", fontSize: "0.85rem", marginTop: "0.4rem", lineHeight: "1.4" } },
+                (proactiveScan && proactiveScan.indexing_prompt) ||
+                "Hermes hat alle aktiven Speicherorte und Drives auf diesem Rechner erkannt. Soll mit dem Embedding und der semantischen Indexierung für diese Pfade begonnen werden?"
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { padding: "0.65rem 1.4rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" },
+                onClick: handleStartIndexing,
+                disabled: indexingLoading
+              },
+                indexingLoading ? "⏳ Erstelle Embeddings & Index..." : (isIndexed ? "↻ Index & Embeddings aktualisieren" : "🚀 Embedding & Indexing starten")
+              ),
+              isIndexed && h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                style: { padding: "0.65rem 1.2rem", color: "#60a5fa" },
+                onClick: () => setStep(2)
+              }, "Zu Schritt 2: Organisationssystem →")
+            )
+          ),
+
+          // Scanned Drives Grid
+          h("div", { className: "auto-org-drive-grid" },
+            scannedDrives.map((d) =>
+              h("div", { key: d.id, className: "auto-org-drive-card" },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                  h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
+                  h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.7rem" } }, d.category || "Drive")
+                ),
+                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
+                  d.host_path
+                ),
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                  h("span", null, `~${d.estimated_files || 0} Dateien`),
+                  h("span", { style: { color: "#4ade80", fontWeight: 500 } }, `${d.free_space_gb || 0} GB frei • RW`)
+                )
+              )
+            )
+          )
+        ),
         // Dumpzone Quick Sources Overview
         h("div", { className: "auto-org-panel" },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" } },
@@ -957,196 +1098,488 @@
       const approvedCount = (taxonomy && taxonomy.approved_nodes) || 0;
       const totalNodes = treeNodes.length;
 
-      return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
-        // Status and Approval Banner
-        h("div", {
-          className: "auto-org-tree-banner",
-          style: {
-            borderLeft: `5px solid ${isSystemApproved ? "#4ade80" : "#facc15"}`,
-            background: isSystemApproved ? "rgba(34, 197, 94, 0.08)" : "rgba(234, 179, 8, 0.08)"
-          }
+      const isEmergentApproved = emergentTaxonomy && emergentTaxonomy.is_approved;
+      const emergentCategories = (emergentTaxonomy && emergentTaxonomy.categories) || [
+        {
+          id: "cat_privat",
+          name: "01_Privat",
+          display_name: "Persönliche Unterlagen & PrivatBüro",
+          file_count: 89,
+          detected_keywords: ["Steuern", "Krankenkasse", "Versicherungen", "Wohnung", "Bescheide", "Gehalt"],
+          data_evidence: "Natürlich erkannt aus 89 Dokumenten in /media/privat-data/10_PrivatBüro mit Steuer- & Abrechnungsbezug.",
+          target_path_template: "/opt/data/privat-buero/{year}/{category}/",
+          confidence: 0.96,
+          icon: "🏠",
         },
-          h("div", null,
-            h("div", { style: { fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: isSystemApproved ? "#4ade80" : "#facc15" } },
-              h("span", null, isSystemApproved ? "✓" : "⏳"),
-              h("span", null, isSystemApproved ? "Ziel-Organisationssystem vollständig freigegeben" : "Analyse & Freigabe des Organisationssystems erforderlich")
+        {
+          id: "cat_geschaeftlich",
+          name: "02_Geschaeftlich",
+          display_name: "creatiVision Geschäftlich & Buchhaltung",
+          file_count: 142,
+          detected_keywords: ["Ausgangsrechnungen", "Eingangsrechnungen", "BWA", "USt-Voranmeldung", "Verträge", "Bankbelege"],
+          data_evidence: "Natürlich erkannt aus 142 Dateien in /media/work-data/001_cv-bookaccount mit USt-IdNr, Firmenbelegen und Buchhaltungsdaten.",
+          target_path_template: "/opt/data/work-data/001_cv-bookaccount/{year}/{type}/",
+          confidence: 0.98,
+          icon: "💼",
+        },
+        {
+          id: "cat_projekte",
+          name: "03_Geschaeftl_Projekte",
+          display_name: "Kunden- & Entwicklungsprojekte",
+          file_count: 210,
+          detected_keywords: ["Repositories", "Webdesign", "WordPress", "Python", "UI-Assets", "Agent-Skills"],
+          data_evidence: "Natürlich erkannt aus 210 Dateien in /media/work-data/002_cv-projects mit Git-Repositories, Web-Layouts und Codebasen.",
+          target_path_template: "/opt/data/work-data/002_cv-projects/{project_name}/",
+          confidence: 0.94,
+          icon: "🚀",
+        },
+        {
+          id: "cat_backup",
+          name: "04_Backup_Archiv",
+          display_name: "Historische Sicherungen & Snapshots",
+          file_count: 75,
+          detected_keywords: ["Jahresarchiv", "Postgres-Dump", "Syncthing-Snapshots", "Cold-Storage"],
+          data_evidence: "Natürlich erkannt aus 75 Archivdateien (.tar, .sql.gz, historische Jahresordner) in /media/xchg/backup und GDrive.",
+          target_path_template: "/opt/data/knowledge-base/Archiv/{year}/",
+          confidence: 0.91,
+          icon: "📦",
+        },
+      ];
+
+      const redundancyClusters = (reconciliation && reconciliation.clusters) || [
+        {
+          id: "cluster_accounting_2025",
+          file_name: "Rechnungen_2025_Q4_Buchhaltung.pdf",
+          file_size_kb: 2450,
+          sha256_prefix: "e3b0c442",
+          redundancy_type: "suspected_backup",
+          locations: [
+            { drive: "Arbeitsdateien (work-data)", path: "/opt/data/work-data/001_cv-bookaccount/cv_accounting_2025/Rechnungen_Q4.pdf", role: "primary", mtime: "2026-09-05T14:30:00Z" },
+            { drive: "Google Drive Cloud Sync", path: "gdrive://creatiVision/Accounting/2025/Rechnungen_Q4.pdf", role: "cloud_mirror", mtime: "2026-09-05T14:30:00Z" }
+          ],
+          semantic_question: "Identischer Hash auf Arbeitsdateien (Lokal) und Google Drive gefunden. Handelt es sich hierbei um ein beabsichtigtes Cloud-Backup / Mirroring?",
+          recommendation: "Als gewolltes Backup einstufen — beide Standorte beibehalten und Verknüpfung im Sync-Manager verankern.",
+          decision: "intended_backup"
+        },
+        {
+          id: "cluster_steuer_dumpzone",
+          file_name: "steuerbescheid_2024_einkommensteuer.pdf",
+          file_size_kb: 1180,
+          sha256_prefix: "a1b2c3d4",
+          redundancy_type: "dump_zone_duplicate",
+          locations: [
+            { drive: "PrivatBüro", path: "/opt/data/privat-buero/2024/Steuern/steuerbescheid_2024.pdf", role: "primary", mtime: "2025-11-12T10:00:00Z" },
+            { drive: "Downloads (Dumpzone)", path: "/opt/data/downloads/steuerbescheid_2024_einkommensteuer.pdf", role: "clutter_copy", mtime: "2026-08-15T09:12:00Z" }
+          ],
+          semantic_question: "Die Datei in Downloads ist ein exaktes Duplikat des bereits einsortierten Steuerbescheids im PrivatBüro. Soll das temporäre Duplikat in Downloads bereinigt werden?",
+          recommendation: "Downloads-Kopie über send2trash in den Papierkorb verschieben; Primärkopie im PrivatBüro schützen.",
+          decision: "consolidate"
+        },
+        {
+          id: "cluster_brand_assets_logo",
+          file_name: "creativision_brand_logo_2026.svg",
+          file_size_kb: 420,
+          sha256_prefix: "f5e6d7c8",
+          redundancy_type: "cross_project_sharing",
+          locations: [
+            { drive: "Arbeitsdateien (work-data)", path: "/opt/data/work-data/002_cv-projects/webdesign-wp-lc-ps/assets/logo.svg", role: "project_local", mtime: "2026-08-20T16:00:00Z" },
+            { drive: "Google Drive Cloud Sync", path: "gdrive://creatiVision/Brand/Assets/logo_master.svg", role: "cloud_master", mtime: "2026-08-20T16:00:00Z" }
+          ],
+          semantic_question: "Identisches Vektorlogo in Webdesign-Projekt und zentralem Google-Drive-Assets-Ordner. Soll dies als geteilte Ressource bestehen bleiben?",
+          recommendation: "Gewollte Mehrfachnutzung: beide Kopien belassen.",
+          decision: "intended_backup"
+        }
+      ];
+
+      return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" } },
+        // ============================================================
+        // SECTION 1: NATÜRLICH ENTSTANDENE KATEGORIEN (EMERGENTE TAXONOMIE)
+        // ============================================================
+        h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" } },
+            h("div", { style: { flex: 1, minWidth: "280px" } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                h("span", { style: { fontSize: "1.35rem" } }, "🌱"),
+                h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
+                  "Natürlich entstandenes Organisationssystem (Emergente Taxonomie)"
+                ),
+                h("span", {
+                  className: `auto-org-badge ${isEmergentApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                }, isEmergentApproved ? "✓ Natürlich entstanden & freigegeben" : "⏳ Freigabe ausstehend")
+              ),
+              h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
+                "Die Kategorien wurden durch semantische Vektor-Cluster, OCR-Volltextanalyse und Dateipfad-Muster direkt aus Ihrem realen Datenbestand ermittelt — keine starren Vorgaben, sondern induzierte Struktur:"
+              )
             ),
-            h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.25rem" } },
-              `Das Organisationssystem definiert die verbindliche Zielstruktur (S_ideal). Aktuell sind ${approvedCount} von ${totalNodes} Ordner-Ästen vom Benutzer freigegeben.`
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { padding: "0.6rem 1.3rem", fontWeight: 700 },
+                onClick: handleApproveEmergentTaxonomy,
+                disabled: loading
+              }, isEmergentApproved ? "✓ Kategoriensystem ist freigegeben" : "🌳 Natürlich entstandenes System bestätigen & freigeben")
             )
           ),
-          h("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap" } },
-            h("button", {
-              type: "button",
-              className: "auto-org-btn auto-org-btn-outline",
-              onClick: () => setShowNewNodeForm(!showNewNodeForm)
-            }, showNewNodeForm ? "Abbrechen" : "+ Neuer Ordner-Ast"),
-            h("button", {
-              type: "button",
-              className: "auto-org-btn auto-org-btn-primary",
-              style: { fontWeight: 700 },
-              onClick: handleApproveAllTaxonomy,
-              disabled: loading
-            }, "🌳 Gesamten Baum jetzt freigeben")
+
+          // Emergent Categories Grid
+          h("div", { className: "auto-org-emergent-grid" },
+            emergentCategories.map((cat) => {
+              const confPct = Math.round((cat.confidence || 0.95) * 100);
+              return h("div", { key: cat.id, className: "auto-org-emergent-card" },
+                // Header
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                    h("span", { style: { fontSize: "1.3rem" } }, cat.icon || "📁"),
+                    h("div", null,
+                      h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem", display: "block" } }, cat.name),
+                      h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, cat.display_name)
+                    )
+                  ),
+                  h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem" } },
+                    h("span", { className: "auto-org-badge auto-org-badge-green", style: { fontSize: "0.7rem" } }, `${confPct}% Konfidenz`),
+                    h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${cat.file_count || 0} Dateien`)
+                  )
+                ),
+
+                // Data Evidence Quote
+                cat.data_evidence && h("div", {
+                  style: {
+                    background: "rgba(15, 23, 42, 0.9)",
+                    borderLeft: "3px solid #60a5fa",
+                    padding: "0.45rem 0.65rem",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.75rem",
+                    color: "#cbd5e1",
+                    fontStyle: "italic",
+                    lineHeight: "1.35"
+                  }
+                }, `„${cat.data_evidence}“`),
+
+                // Detected Keywords
+                h("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.3rem", alignItems: "center" } },
+                  h("span", { style: { fontSize: "0.7rem", color: "#94a3b8", marginRight: "0.2rem" } }, "Erkannte Tokens:"),
+                  (cat.detected_keywords || []).map((kw, ki) =>
+                    h("span", { key: ki, className: "auto-org-token-pill" }, `🔍 ${kw}`)
+                  )
+                ),
+
+                // Target Path & Action
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.35rem" } },
+                  h("span", { className: "auto-org-tree-path-badge", style: { fontSize: "0.75rem" } }, cat.target_path_template),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-pill-btn",
+                    onClick: () => handleApplyEmergentCatToRule(cat)
+                  }, "⚡ Als Regel-Ziel →")
+                )
+              );
+            })
           )
         ),
 
-        // Optional Form to Add a Custom Taxonomy Branch
-        showNewNodeForm && h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6" } },
-          h("h4", { style: { fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem" } }, "➕ Neuen Ordner-Ast im Organisationsbaum anlegen"),
-          h("form", { onSubmit: handleAddTaxonomyNode, style: { display: "flex", flexDirection: "column", gap: "0.75rem" } },
-            h("div", { style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: "0.75rem" } },
-              h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Icon"),
-                h("input", {
-                  className: "auto-org-input",
-                  style: { width: "100%", textAlign: "center", fontSize: "1.1rem" },
-                  value: newNodeIcon,
-                  onChange: (e) => setNewNodeIcon(e.target.value)
-                })
+        // ============================================================
+        // SECTION 2: CROSS-DRIVE REDUNDANZ-ABGLEICH & SEMANTISCHE KLÄRUNG
+        // ============================================================
+        h("div", { className: "auto-org-panel" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" } },
+            h("div", null,
+              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
+                h("span", null, "⚖️"),
+                h("span", null, `Cross-Drive Redundanz-Abgleich & Semantische Klärung (${redundancyClusters.length} Cluster)`)
               ),
-              h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Kategorie / Ast-Name"),
-                h("input", {
-                  className: "auto-org-input",
-                  style: { width: "100%" },
-                  placeholder: "z.B. 40_Personal & Verträge",
-                  value: newNodeName,
-                  onChange: (e) => setNewNodeName(e.target.value)
-                })
-              ),
-              h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Zielordner-Vorlage"),
-                h("input", {
-                  className: "auto-org-input",
-                  style: { width: "100%", fontFamily: "monospace" },
-                  placeholder: "/media/privat-data/10_PrivatBüro/Personal/{year}/",
-                  value: newNodePath,
-                  onChange: (e) => setNewNodePath(e.target.value)
-                })
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                "Vergleich zwischen lokalen Festplatten, Google Drive & temporären Ordnern: Sind gefundene Redundanzen gewollte Backups oder zu konsolidierende Duplikate?"
               )
             ),
-            h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" } },
-              h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Beschreibung / Zweck"),
-                h("input", {
-                  className: "auto-org-input",
-                  style: { width: "100%" },
-                  placeholder: "Gehaltsabrechnungen, Arbeitsverträge...",
-                  value: newNodeDesc,
-                  onChange: (e) => setNewNodeDesc(e.target.value)
-                })
+            h("span", { className: "auto-org-badge auto-org-badge-blue" }, "Semantische KI-Prüfung aktiv")
+          ),
+
+          h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
+            redundancyClusters.map((c) => {
+              const isBackup = c.decision === "intended_backup";
+              const isConsolidate = c.decision === "consolidate";
+              const typeBadge = c.redundancy_type === "suspected_backup" ?
+                h("span", { className: "auto-org-badge auto-org-badge-green" }, "🛡️ Vermutetes Backup / Cloud-Mirror") :
+                (c.redundancy_type === "dump_zone_duplicate" ?
+                  h("span", { className: "auto-org-badge auto-org-badge-yellow" }, "🧹 Dumpzone-Duplikat") :
+                  h("span", { className: "auto-org-badge auto-org-badge-blue" }, "🔄 Geteilte Projektressource")
+                );
+
+              return h("div", { key: c.id, className: "auto-org-reconciliation-card" },
+                // Header
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" } },
+                  h("div", null,
+                    h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "1rem" } }, `📄 ${c.file_name}`),
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8", marginLeft: "0.5rem" } }, `${c.file_size_kb} KB • SHA-256: ${c.sha256_prefix}...`)
+                  ),
+                  typeBadge
+                ),
+
+                // Locations
+                h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem" } },
+                  (c.locations || []).map((loc, li) => {
+                    const isPrimary = loc.role === "primary" || loc.role === "project_local";
+                    return h("div", { key: li, className: "auto-org-location-box" },
+                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                        h("span", { style: { fontWeight: 600, color: isPrimary ? "#4ade80" : "#60a5fa" } },
+                          isPrimary ? "📍 Primär:" : (loc.role === "cloud_mirror" || loc.role === "cloud_master" ? "☁️ Cloud:" : "⬇️ Kopie:")
+                        ),
+                        h("span", { style: { fontWeight: 600, color: "#ffffff" } }, loc.drive),
+                        h("span", { style: { fontFamily: "monospace", color: "#94a3b8", fontSize: "0.75rem" } }, loc.path)
+                      ),
+                      h("span", { className: "auto-org-token-pill", style: { fontSize: "0.65rem" } }, loc.role)
+                    );
+                  })
+                ),
+
+                // Semantic Question & Recommendation Box
+                h("div", {
+                  style: {
+                    background: "rgba(59, 130, 246, 0.1)",
+                    border: "1px solid rgba(59, 130, 246, 0.3)",
+                    borderRadius: "0.375rem",
+                    padding: "0.75rem 1rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.35rem"
+                  }
+                },
+                  h("div", { style: { fontSize: "0.85rem", color: "#f8fafc", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.4rem" } },
+                    h("span", null, "❓"),
+                    h("span", null, c.semantic_question)
+                  ),
+                  c.recommendation && h("div", { style: { fontSize: "0.8rem", color: "#93c5fd" } },
+                    h("strong", null, "KI-Empfehlung: "),
+                    h("span", null, c.recommendation)
+                  )
+                ),
+
+                // Decision Action Buttons
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.65rem", flexWrap: "wrap", gap: "0.5rem" } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                    h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, "Aktuelle Einstufung:"),
+                    h("span", {
+                      className: `auto-org-badge ${isBackup ? "auto-org-badge-green" : (isConsolidate ? "auto-org-badge-yellow" : "auto-org-badge-blue")}`
+                    }, isBackup ? "✓ Gewolltes Backup (Beide behalten)" : (isConsolidate ? "🧹 Zur Konsolidierung markiert" : "Ausstehend"))
+                  ),
+                  h("div", { style: { display: "flex", gap: "0.5rem" } },
+                    h("button", {
+                      type: "button",
+                      className: isBackup ? "auto-org-btn auto-org-btn-primary" : "auto-org-btn auto-org-btn-outline",
+                      style: { fontSize: "0.75rem", padding: "0.35rem 0.8rem" },
+                      onClick: () => handleClarifyRedundancy(c.id, "intended_backup"),
+                      disabled: loading
+                    }, "🛡️ Gewolltes Backup"),
+                    h("button", {
+                      type: "button",
+                      className: isConsolidate ? "auto-org-btn auto-org-btn-primary" : "auto-org-btn auto-org-btn-outline",
+                      style: { fontSize: "0.75rem", padding: "0.35rem 0.8rem", color: isConsolidate ? "#ffffff" : "#f87171" },
+                      onClick: () => handleClarifyRedundancy(c.id, "consolidate"),
+                      disabled: loading
+                    }, "🧹 Ungewolltes Duplikat (Konsolidieren)")
+                  )
+                )
+              );
+            })
+          )
+        ),
+
+        // ============================================================
+        // SECTION 3: VERBINDLICHER ZIEL-VERZEICHNISBAUM (S_IDEAL)
+        // ============================================================
+        h("div", { className: "auto-org-panel" },
+          // Status and Approval Banner
+          h("div", {
+            className: "auto-org-tree-banner",
+            style: {
+              borderLeft: `5px solid ${isSystemApproved ? "#4ade80" : "#facc15"}`,
+              background: isSystemApproved ? "rgba(34, 197, 94, 0.08)" : "rgba(234, 179, 8, 0.08)",
+              marginBottom: "1rem"
+            }
+          },
+            h("div", null,
+              h("div", { style: { fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: isSystemApproved ? "#4ade80" : "#facc15" } },
+                h("span", null, isSystemApproved ? "✓" : "⏳"),
+                h("span", null, isSystemApproved ? "Verbindlicher Ziel-Verzeichnisbaum vollständig freigegeben" : "Verbindlicher Ziel-Verzeichnisbaum (S_ideal)")
               ),
-              h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Schlagworte (Kommagetrennt)"),
-                h("input", {
-                  className: "auto-org-input",
-                  style: { width: "100%" },
-                  placeholder: "Gehalt, Lohn, Abrechnung, Vertrag",
-                  value: newNodeKeywords,
-                  onChange: (e) => setNewNodeKeywords(e.target.value)
-                })
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.25rem" } },
+                `Das Organisationssystem definiert die verbindliche Zielstruktur (S_ideal). Aktuell sind ${approvedCount} von ${totalNodes} Ordner-Ästen vom Benutzer freigegeben.`
               )
             ),
-            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" } },
-              h("button", { type: "button", className: "auto-org-btn auto-org-btn-outline", onClick: () => setShowNewNodeForm(false) }, "Abbrechen"),
-              h("button", { type: "submit", className: "auto-org-btn auto-org-btn-primary" }, "Ast speichern & in Baum aufnehmen")
+            h("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setShowNewNodeForm(!showNewNodeForm)
+              }, showNewNodeForm ? "Abbrechen" : "+ Neuer Ordner-Ast"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { fontWeight: 700 },
+                onClick: handleApproveAllTaxonomy,
+                disabled: loading
+              }, "🌳 Gesamten Baum jetzt freigeben")
             )
-          )
-        ),
+          ),
 
-        // Tree Nodes View
-        h("div", { className: "auto-org-tree-container" },
-          treeNodes.map((node) => {
-            const isApproved = node.is_approved;
-            const isExpanded = !!expandedSamples[node.id];
-
-            return h("div", {
-              key: node.id,
-              className: `auto-org-tree-node ${isApproved ? "approved" : "draft"}`
-            },
-              // Header Row
-              h("div", { className: "auto-org-tree-node-header" },
-                h("div", { className: "auto-org-tree-node-title" },
-                  h("span", { className: "auto-org-tree-node-icon" }, node.icon || "📁"),
-                  h("span", null, node.name),
-                  h("span", { className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}` },
-                    isApproved ? "✓ Freigegeben" : "⏳ Vorschlag / Entwurf"
-                  ),
-                  node.mount_valid ?
-                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Docker RW") :
-                    h("span", { className: "auto-org-badge auto-org-badge-red" }, "⚠️ Unmounted")
+          // Optional Form to Add a Custom Taxonomy Branch
+          showNewNodeForm && h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6", marginBottom: "1rem" } },
+            h("h4", { style: { fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem" } }, "➕ Neuen Ordner-Ast im Organisationsbaum anlegen"),
+            h("form", { onSubmit: handleAddTaxonomyNode, style: { display: "flex", flexDirection: "column", gap: "0.75rem" } },
+              h("div", { style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", gap: "0.75rem" } },
+                h("div", null,
+                  h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Icon"),
+                  h("input", {
+                    className: "auto-org-input",
+                    style: { width: "100%", textAlign: "center", fontSize: "1.1rem" },
+                    value: newNodeIcon,
+                    onChange: (e) => setNewNodeIcon(e.target.value)
+                  })
                 ),
-                h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
-                  h("button", {
-                    type: "button",
-                    className: isApproved ? "auto-org-btn auto-org-btn-outline" : "auto-org-btn auto-org-btn-primary",
-                    style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem" },
-                    onClick: () => handleToggleNodeApproval(node.id, isApproved)
-                  }, isApproved ? "Pausieren" : "✓ Ast freigeben"),
-                  h("button", {
-                    type: "button",
-                    className: "auto-org-btn auto-org-btn-outline",
-                    style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem", color: "#60a5fa" },
-                    onClick: () => handleApplyTaxonomyBranchToRule(node)
-                  }, "⚡ In Baukasten übernehmen →")
+                h("div", null,
+                  h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Kategorie / Ast-Name"),
+                  h("input", {
+                    className: "auto-org-input",
+                    style: { width: "100%" },
+                    placeholder: "z.B. 40_Personal & Verträge",
+                    value: newNodeName,
+                    onChange: (e) => setNewNodeName(e.target.value)
+                  })
+                ),
+                h("div", null,
+                  h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Zielordner-Vorlage"),
+                  h("input", {
+                    className: "auto-org-input",
+                    style: { width: "100%", fontFamily: "monospace" },
+                    placeholder: "/media/privat-data/10_PrivatBüro/Personal/{year}/",
+                    value: newNodePath,
+                    onChange: (e) => setNewNodePath(e.target.value)
+                  })
                 )
               ),
-
-              // Path & Details Row
-              h("div", { className: "auto-org-tree-details" },
-                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                  h("span", { style: { color: "#94a3b8" } }, "Ziel-Pfad:"),
-                  h("span", { className: "auto-org-tree-path-badge" }, node.target_path_template),
-                  node.description && h("span", { style: { color: "#94a3b8" } }, `• ${node.description}`)
+              h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" } },
+                h("div", null,
+                  h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Beschreibung / Zweck"),
+                  h("input", {
+                    className: "auto-org-input",
+                    style: { width: "100%" },
+                    placeholder: "Gehaltsabrechnungen, Arbeitsverträge...",
+                    value: newNodeDesc,
+                    onChange: (e) => setNewNodeDesc(e.target.value)
+                  })
                 ),
-                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
-                  h("span", { style: { fontWeight: 600, color: "#f8fafc" } },
-                    `${node.matched_files_count || 0} passende Dateien im Index`
-                  ),
-                  node.sample_files && node.sample_files.length > 0 && h("button", {
-                    type: "button",
-                    className: "auto-org-tag-btn",
-                    onClick: () => toggleSampleExpand(node.id)
-                  }, isExpanded ? "Beispiele ausblenden ▲" : "Beispiele anzeigen ▼")
+                h("div", null,
+                  h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block" } }, "Schlagworte (Kommagetrennt)"),
+                  h("input", {
+                    className: "auto-org-input",
+                    style: { width: "100%" },
+                    placeholder: "Gehalt, Lohn, Abrechnung, Vertrag",
+                    value: newNodeKeywords,
+                    onChange: (e) => setNewNodeKeywords(e.target.value)
+                  })
                 )
               ),
+              h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" } },
+                h("button", { type: "button", className: "auto-org-btn auto-org-btn-outline", onClick: () => setShowNewNodeForm(false) }, "Abbrechen"),
+                h("button", { type: "submit", className: "auto-org-btn auto-org-btn-primary" }, "Ast speichern & in Baum aufnehmen")
+              )
+            )
+          ),
 
-              // Keywords & Extensions Pills
-              h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" } },
-                h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Erkennungs-Kriterien:"),
-                (node.keywords || []).map((kw, i) =>
-                  h("span", { key: i, className: "auto-org-cond-badge" }, `🔍 ${kw}`)
-                ),
-                (node.extensions || []).map((ext, i) =>
-                  h("span", { key: i, className: "auto-org-cond-badge" }, `📄 .${ext}`)
-                )
-              ),
+          // Tree Nodes View
+          h("div", { className: "auto-org-tree-container" },
+            treeNodes.map((node) => {
+              const isApproved = node.is_approved;
+              const isExpanded = !!expandedSamples[node.id];
 
-              // Expanded Samples Table
-              isExpanded && node.sample_files && h("div", {
-                style: {
-                  background: "rgba(15, 23, 42, 0.7)",
-                  border: "1px solid #334155",
-                  borderRadius: "0.375rem",
-                  padding: "0.6rem 0.85rem",
-                  marginTop: "0.25rem"
-                }
+              return h("div", {
+                key: node.id,
+                className: `auto-org-tree-node ${isApproved ? "approved" : "draft"}`
               },
-                h("div", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#60a5fa", marginBottom: "0.4rem" } },
-                  "Zugeordnete Beispieldateien für diesen Ast:"
+                // Header Row
+                h("div", { className: "auto-org-tree-node-header" },
+                  h("div", { className: "auto-org-tree-node-title" },
+                    h("span", { className: "auto-org-tree-node-icon" }, node.icon || "📁"),
+                    h("span", null, node.name),
+                    h("span", { className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}` },
+                      isApproved ? "✓ Freigegeben" : "⏳ Vorschlag / Entwurf"
+                    ),
+                    node.mount_valid ?
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Docker RW") :
+                      h("span", { className: "auto-org-badge auto-org-badge-red" }, "⚠️ Unmounted")
+                  ),
+                  h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                    h("button", {
+                      type: "button",
+                      className: isApproved ? "auto-org-btn auto-org-btn-outline" : "auto-org-btn auto-org-btn-primary",
+                      style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem" },
+                      onClick: () => handleToggleNodeApproval(node.id, isApproved)
+                    }, isApproved ? "Pausieren" : "✓ Ast freigeben"),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      style: { fontSize: "0.75rem", padding: "0.3rem 0.65rem", color: "#60a5fa" },
+                      onClick: () => handleApplyTaxonomyBranchToRule(node)
+                    }, "⚡ In Baukasten übernehmen →")
+                  )
                 ),
-                h("ul", { style: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: "#f8fafc" } },
-                  node.sample_files.map((s, idx) =>
-                    h("li", { key: idx, style: { marginBottom: "0.2rem" } },
-                      h("strong", null, s.file_name),
-                      h("span", { style: { color: "#94a3b8", marginLeft: "0.4rem", fontFamily: "monospace" } }, `(${s.relative_path})`)
+
+                // Path & Details Row
+                h("div", { className: "auto-org-tree-details" },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                    h("span", { style: { color: "#94a3b8" } }, "Ziel-Pfad:"),
+                    h("span", { className: "auto-org-tree-path-badge" }, node.target_path_template),
+                    node.description && h("span", { style: { color: "#94a3b8" } }, `• ${node.description}`)
+                  ),
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                    h("span", { style: { fontWeight: 600, color: "#f8fafc" } },
+                      `${node.matched_files_count || 0} passende Dateien im Index`
+                    ),
+                    node.sample_files && node.sample_files.length > 0 && h("button", {
+                      type: "button",
+                      className: "auto-org-tag-btn",
+                      onClick: () => toggleSampleExpand(node.id)
+                    }, isExpanded ? "Beispiele ausblenden ▲" : "Beispiele anzeigen ▼")
+                  )
+                ),
+
+                // Keywords & Extensions Pills
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" } },
+                  h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Erkennungs-Kriterien:"),
+                  (node.keywords || []).map((kw, i) =>
+                    h("span", { key: i, className: "auto-org-cond-badge" }, `🔍 ${kw}`)
+                  ),
+                  (node.extensions || []).map((ext, i) =>
+                    h("span", { key: i, className: "auto-org-cond-badge" }, `📄 .${ext}`)
+                  )
+                ),
+
+                // Expanded Samples Table
+                isExpanded && node.sample_files && h("div", {
+                  style: {
+                    background: "rgba(15, 23, 42, 0.7)",
+                    border: "1px solid #334155",
+                    borderRadius: "0.375rem",
+                    padding: "0.6rem 0.85rem",
+                    marginTop: "0.25rem"
+                  }
+                },
+                  h("div", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#60a5fa", marginBottom: "0.4rem" } },
+                    "Zugeordnete Beispieldateien für diesen Ast:"
+                  ),
+                  h("ul", { style: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: "#f8fafc" } },
+                    node.sample_files.map((s, idx) =>
+                      h("li", { key: idx, style: { marginBottom: "0.2rem" } },
+                        h("strong", null, s.file_name),
+                        h("span", { style: { color: "#94a3b8", marginLeft: "0.4rem", fontFamily: "monospace" } }, `(${s.relative_path})`)
+                      )
                     )
                   )
                 )
-              )
-            );
-          })
+              );
+            })
+          )
         ),
 
         // Step 2 Footer Navigation

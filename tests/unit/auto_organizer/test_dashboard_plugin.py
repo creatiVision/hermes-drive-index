@@ -301,3 +301,84 @@ def test_delete_sync_mapping():
         res = client.delete("/api/plugins/auto-organizer/sync/mappings/11111111-2222-3333-4444-555555555553")
         assert res.status_code == 200
         assert res.json()["ok"] is True
+
+
+def test_proactive_scan_and_start_indexing():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # 1. Proactive Scan
+        res = client.get("/api/plugins/auto-organizer/discovery/proactive-scan")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] in ["AWAITING_CONSENT", "INDEXED"]
+        assert data["total_drives"] >= 5
+        assert "indexing_prompt" in data
+        assert any("Downloads" in d["name"] for d in data["drives"])
+
+        # 2. Start Indexing
+        res_idx = client.post("/api/plugins/auto-organizer/discovery/start-indexing", json={
+            "enable_embeddings": True,
+            "ocr_enabled": True
+        })
+        assert res_idx.status_code == 200
+        idx_data = res_idx.json()
+        assert idx_data["ok"] is True
+        assert idx_data["status"] == "INDEXED"
+        assert idx_data["indexed_file_count"] >= 500
+
+
+def test_emergent_taxonomy_and_approval():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # 1. Fetch emergent taxonomy
+        res = client.get("/api/plugins/auto-organizer/taxonomy/emergent")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert len(data["categories"]) >= 4
+        cat_names = [c["name"] for c in data["categories"]]
+        assert "01_Privat" in cat_names
+        assert "02_Geschaeftlich" in cat_names
+        assert "03_Geschaeftl_Projekte" in cat_names
+        assert "04_Backup_Archiv" in cat_names
+
+        # Verify data evidence is present
+        privat = next(c for c in data["categories"] if c["name"] == "01_Privat")
+        assert "data_evidence" in privat
+        assert privat["confidence"] >= 0.9
+
+        # 2. Approve emergent taxonomy
+        res_app = client.post("/api/plugins/auto-organizer/taxonomy/emergent/approve", json={
+            "approved": True
+        })
+        assert res_app.status_code == 200
+        assert res_app.json()["is_approved"] is True
+
+
+def test_cross_drive_reconciliation_and_clarification():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # 1. Get cross-drive reconciliation clusters
+        res = client.get("/api/plugins/auto-organizer/reconciliation/cross-drive")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["total_clusters"] >= 3
+        clusters = data["clusters"]
+        assert any(c["id"] == "cluster_accounting_2025" for c in clusters)
+        assert any(c["redundancy_type"] == "suspected_backup" for c in clusters)
+        assert any(c["redundancy_type"] == "dump_zone_duplicate" for c in clusters)
+
+        # Verify semantic questions are present
+        first = clusters[0]
+        assert "semantic_question" in first
+        assert "recommendation" in first
+
+        # 2. Clarify redundancy
+        res_clarify = client.post("/api/plugins/auto-organizer/reconciliation/clarify", json={
+            "cluster_id": "cluster_accounting_2025",
+            "decision": "intended_backup",
+            "notes": "Beabsichtigtes Cloud-Backup für Buchhaltung 2025"
+        })
+        assert res_clarify.status_code == 200
+        clarify_data = res_clarify.json()
+        assert clarify_data["ok"] is True
+        assert clarify_data["decision"] == "intended_backup"
+

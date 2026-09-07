@@ -3,7 +3,7 @@
   "label": "Auto Organizer",
   "description": "Autonomous file management, semantic clustering, and storage reorganization for Hermes Agent.",
   "icon": "FolderTree",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "tab": {
     "path": "/organizer",
     "position": "after:kanban"
