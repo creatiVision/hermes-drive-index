@@ -465,3 +465,61 @@ def test_filesystem_tree_rescan_endpoint():
     assert data["ok"] is True
     assert "message" in data
 
+
+def test_suggested_rule_switch_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # Approve
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "approved"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "approved"
+        assert "rule_test_1" in data["approved_rules"]
+
+        # Exclude
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "excluded"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "excluded"
+        assert "rule_test_1" in data["excluded_rules"]
+        assert "rule_test_1" not in data["approved_rules"]
+
+        # Reset to proposed
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "proposed"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "proposed"
+        assert "rule_test_1" not in data["approved_rules"]
+        assert "rule_test_1" not in data["excluded_rules"]
+
+
+def test_emergent_category_switch_endpoint():
+    # Approve category
+    res = client.post("/api/plugins/auto-organizer/taxonomy/emergent/category-switch", json={"category_id": "cat_test_fin", "state": "approved"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "approved"
+    assert "cat_test_fin" in data["approved_category_ids"]
+
+    # Exclude category
+    res = client.post("/api/plugins/auto-organizer/taxonomy/emergent/category-switch", json={"category_id": "cat_test_fin", "state": "excluded"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "excluded"
+    assert "cat_test_fin" in data["excluded_category_ids"]
+    assert "cat_test_fin" not in data["approved_category_ids"]
+
+
+def test_adopt_suggested_rules_offline_fallback():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.post("/api/plugins/auto-organizer/rules/adopt-suggested", json={"adopt_all": True})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["adopted_count"] >= 1
+
+

@@ -2984,17 +2984,292 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     );
   }
 
+  // File extension badge helper
+  function getFileExtBadge(filename) {
+    const ext = ((filename || "").split('.').pop() || '').toLowerCase();
+    let cls = 'code';
+    if (['pdf'].includes(ext)) cls = 'pdf';
+    else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) cls = 'sheet';
+    else if (['zip', 'tar', 'gz', 'bz2', '7z', 'deb'].includes(ext)) cls = 'archive';
+    else if (['png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov', 'svg'].includes(ext)) cls = 'media';
+    return h('span', { className: `auto-org-ext-badge ${cls}` }, ext ? `.${ext}` : 'datei');
+  }
+
+  // Segmented Switch Button: Overlaying "Freigeben" (Green) and "Ausschließen" (Red)
+  function OverlaySwitchButton({ status = "proposed", onApprove, onExclude, onReset, size = "md", disabled = false }) {
+    // status: "approved" | "excluded" | "proposed"
+    return h("div", { className: `auto-org-overlay-switch ${size === "sm" ? "sm" : ""}` },
+      // Left: Freigeben (Green)
+      h("button", {
+        type: "button",
+        className: `auto-org-switch-segment ${status === "approved" ? "active-approve" : ""}`,
+        title: status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)",
+        disabled: disabled,
+        onClick: (e) => {
+          e.stopPropagation();
+          if (status === "approved" && onReset) onReset();
+          else if (onApprove) onApprove();
+        }
+      },
+        h("span", null, status === "approved" ? "✓ Freigegeben" : "🟢 Freigeben")
+      ),
+      // Middle: Vorschlag indicator (when proposed / neutral)
+      status === "proposed" && h("span", {
+        className: "auto-org-switch-segment status-proposed",
+        title: "Ausstehender Vorschlag — Treffen Sie Ihre Entscheidung (Freigeben oder Ausschließen)"
+      }, "🟡 Vorschlag"),
+      // Right: Ausschließen (Red)
+      h("button", {
+        type: "button",
+        className: `auto-org-switch-segment ${status === "excluded" ? "active-exclude" : ""}`,
+        title: status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)",
+        disabled: disabled,
+        onClick: (e) => {
+          e.stopPropagation();
+          if (status === "excluded" && onReset) onReset();
+          else if (onExclude) onExclude();
+        }
+      },
+        h("span", null, status === "excluded" ? "✕ Ausgeschlossen" : "🔴 Ausschließen")
+      )
+    );
+  }
+
+  // Visual File Path Tree Component (Authentic hierarchical tree with branch connectors)
+  function VisualFilePathTree({ sourcePath, targetPath, files = null, defaultExpanded = true, showSwitch = false, switchStatus = "proposed", onApprove = null, onExclude = null, title = null }) {
+    const [expanded, setExpanded] = useState(defaultExpanded);
+
+    // Mode A: Multi-file list tree (grouping files by directory with connector lines)
+    if (files && files.length > 0) {
+      const srcDir = (sourcePath || (files[0].source_path ? files[0].source_path.substring(0, files[0].source_path.lastIndexOf('/')) : '/home/mb/Downloads'));
+      const tgtDir = (targetPath || (files[0].destination_path ? files[0].destination_path.substring(0, files[0].destination_path.lastIndexOf('/')) : '/media/work-data/'));
+
+      return h("div", { className: "auto-org-visual-tree-container" },
+        h("div", { className: "auto-org-tree-header" },
+          h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
+            h("span", null, expanded ? "▼" : "▶"),
+            h("span", { style: { fontSize: "1.1rem" } }, "🌳"),
+            h("span", null, title || `Visueller Dateibaum (${files.length} Dateien)`)
+          ),
+          showSwitch && h(OverlaySwitchButton, {
+            status: switchStatus,
+            onApprove: onApprove,
+            onExclude: onExclude,
+            size: "sm"
+          })
+        ),
+        expanded && h("div", null,
+          // Source directory root
+          h("div", { className: "auto-org-tree-root-item" },
+            h("span", { className: "auto-org-tree-node-icon" }, "📥"),
+            h("span", { className: "auto-org-tree-node-name", style: { color: "#93c5fd" } }, formatUserPath(srcDir))
+          ),
+          // File branches
+          h("div", { className: "auto-org-tree-children" },
+            files.map((f, idx) => {
+              const isLast = idx === files.length - 1;
+              const connector = isLast ? "└── " : "├── ";
+              const fname = f.file_name || (f.source_path ? f.source_path.split('/').pop() : `file_${idx}`);
+              const tgt = formatUserPath(f.destination_path || f.suggested_target || tgtDir);
+
+              return h("div", { key: idx, className: "auto-org-tree-branch-line" },
+                h("span", { className: "auto-org-tree-branch-connector" }, connector),
+                h("span", { className: "auto-org-tree-node-icon" }, "📄"),
+                getFileExtBadge(fname),
+                h("span", { className: "auto-org-tree-node-name" }, fname),
+                f.size_kb && h("span", { style: { color: "#64748b", fontSize: "0.7rem" } }, `${f.size_kb} KB`),
+                h("span", { className: "auto-org-tree-move-arrow" }, "──▶"),
+                h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.72rem", fontFamily: "monospace" } }, tgt)
+              );
+            })
+          ),
+          // Target directory destination branch
+          tgtDir && h("div", { style: { marginTop: "0.5rem" } },
+            h("div", { className: "auto-org-tree-root-item", style: { color: "#4ade80" } },
+              h("span", { className: "auto-org-tree-node-icon" }, "🎯"),
+              h("span", { className: "auto-org-tree-node-name", style: { color: "#86efac" } }, `Ziel-Hierarchie: ${formatUserPath(tgtDir)}`)
+            )
+          )
+        )
+      );
+    }
+
+    // Mode B: Single path or source -> target path tree
+    const srcClean = formatUserPath(sourcePath || "");
+    const tgtClean = formatUserPath(targetPath || "");
+    const tgtParts = tgtClean.split('/').filter(Boolean);
+
+    return h("div", { className: "auto-org-visual-tree-container" },
+      h("div", { className: "auto-org-tree-header" },
+        h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
+          h("span", null, expanded ? "▼" : "▶"),
+          h("span", null, "🌳"),
+          h("span", null, title || "Visuelle Pfad-Hierarchie")
+        ),
+        showSwitch && h(OverlaySwitchButton, {
+          status: switchStatus,
+          onApprove: onApprove,
+          onExclude: onExclude,
+          size: "sm"
+        })
+      ),
+      expanded && h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem" } },
+        // Source Tree
+        srcClean && h("div", null,
+          h("div", { className: "auto-org-tree-root-item" },
+            h("span", null, "📁 Herkunft:"),
+            h("span", { style: { color: "#f87171" } }, srcClean)
+          )
+        ),
+        // Animated Connection
+        tgtClean && h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", color: "#38bdf8", paddingLeft: "1rem" } },
+          h("span", { style: { fontWeight: 800 } }, "│"),
+          h("span", { className: "auto-org-tree-move-arrow" }, "▼ Reorganisieren nach:")
+        ),
+        // Target Tree (Hierarchical branches)
+        tgtClean && h("div", null,
+          tgtParts.map((part, pidx) => {
+            const isDrive = pidx === 0 || part.startsWith("media") || part.includes("data") || part.includes("work");
+            const isLeaf = pidx === tgtParts.length - 1;
+            const indent = pidx * 1.2;
+
+            return h("div", {
+              key: pidx,
+              style: {
+                paddingLeft: `${indent}rem`,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                color: isLeaf ? "#4ade80" : (isDrive ? "#38bdf8" : "#93c5fd"),
+                fontWeight: isDrive || isLeaf ? 700 : 500,
+                fontSize: "0.78rem"
+              }
+            },
+              h("span", { style: { color: "#64748b", fontFamily: "monospace" } }, pidx > 0 ? "├── " : ""),
+              h("span", null, pidx === 0 ? "💽 /" + part : (isLeaf ? "🎯 " + part : "📁 " + part))
+            );
+          })
+        )
+      )
+    );
+  }
+
+  // Visual Dry Run Path Tree (Complete hierarchical filesystem tree for Step 4)
+  function VisualDryRunPathTree({ actions = [], groups = [], approvedGroupIds, excludedGroupIds, onSwitchGroup }) {
+    const [filterText, setFilterText] = useState("");
+    const [expandedFolders, setExpandedFolders] = useState({});
+
+    // Filter actions
+    const filteredActions = filterText.trim() ?
+      actions.filter(a => (a.file_name || "").toLowerCase().includes(filterText.toLowerCase()) ||
+                          (a.source_path || "").toLowerCase().includes(filterText.toLowerCase()) ||
+                          (a.destination_path || "").toLowerCase().includes(filterText.toLowerCase())) :
+      actions;
+
+    // Group actions by source directory
+    const treeByDir = {};
+    filteredActions.forEach(act => {
+      const src = act.source_path || "";
+      const dir = src.substring(0, src.lastIndexOf('/')) || "/";
+      if (!treeByDir[dir]) treeByDir[dir] = [];
+      treeByDir[dir].push(act);
+    });
+
+    const dirs = Object.keys(treeByDir).sort();
+
+    return h("div", { className: "auto-org-visual-tree-container", style: { padding: "1.25rem", borderRadius: "0.75rem" } },
+      // Top Controls
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("span", { style: { fontSize: "1.3rem" } }, "🌳"),
+          h("div", null,
+            h("strong", { style: { color: "#ffffff", fontSize: "1.05rem" } }, "Visueller Reorganisations-Pfadbaum"),
+            h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+              `${actions.length} Dateien in ${dirs.length} Quell-Verzeichnissen geordnet nach Zielstruktur`
+            )
+          )
+        ),
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("input", {
+            type: "text",
+            className: "auto-org-input",
+            placeholder: "🔍 Dateipfad / Name filtern...",
+            style: { width: "220px", fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+            value: filterText,
+            onChange: (e) => setFilterText(e.target.value)
+          })
+        )
+      ),
+
+      // Tree Nodes by Directory
+      dirs.length === 0 ?
+      h("div", { style: { textAlign: "center", color: "#94a3b8", padding: "2rem" } }, "Keine Dateien im Pfadbaum gefunden.") :
+      dirs.map((dir, didx) => {
+        const dirFiles = treeByDir[dir];
+        const isDirExpanded = expandedFolders[dir] !== false; // expanded by default
+
+        return h("div", { key: didx, style: { marginBottom: "1rem", background: "rgba(30, 41, 59, 0.4)", borderRadius: "0.5rem", padding: "0.5rem 0.75rem", border: "1px solid #334155" } },
+          // Directory Header
+          h("div", {
+            style: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "0.2rem 0" },
+            onClick: () => setExpandedFolders(prev => Object.assign({}, prev, { [dir]: !isDirExpanded }))
+          },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+              h("span", { style: { color: "#60a5fa", fontWeight: 800, fontSize: "0.85rem" } }, isDirExpanded ? "▼" : "▶"),
+              h("span", { style: { fontSize: "1.1rem" } }, "📁"),
+              h("strong", { style: { color: "#93c5fd", fontSize: "0.9rem", fontFamily: "monospace" } }, formatUserPath(dir)),
+              h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, `${dirFiles.length} Dateien`)
+            )
+          ),
+
+          // File Branches inside Directory
+          isDirExpanded && h("div", { className: "auto-org-tree-children", style: { marginTop: "0.4rem" } },
+            dirFiles.map((act, fidx) => {
+              const isLast = fidx === dirFiles.length - 1;
+              const fname = act.file_name || (act.source_path ? act.source_path.split('/').pop() : `file_${fidx}`);
+              const tgt = formatUserPath(act.destination_path);
+
+              return h("div", {
+                key: fidx,
+                className: "auto-org-tree-branch-line",
+                style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }
+              },
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, minWidth: "300px" } },
+                  h("span", { className: "auto-org-tree-branch-connector" }, isLast ? "└── " : "├── "),
+                  h("span", { className: "auto-org-tree-node-icon" }, "📄"),
+                  getFileExtBadge(fname),
+                  h("span", { className: "auto-org-tree-node-name" }, fname),
+                  act.size_kb && h("span", { style: { color: "#64748b", fontSize: "0.7rem" } }, `${act.size_kb} KB`),
+                  h("span", { className: "auto-org-tree-move-arrow" }, "──▶"),
+                  h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.75rem", fontFamily: "monospace" } }, tgt)
+                ),
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                  act.rule_name && h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, act.rule_name),
+                  h("span", { className: `auto-org-badge ${act.safe_to_execute ? "auto-org-badge-green" : "auto-org-badge-red"}`, style: { fontSize: "0.68rem" } },
+                    act.safe_to_execute ? "✓ Bereit" : "⚠️ Prüfen"
+                  )
+                )
+              );
+            })
+          )
+        );
+      })
+    );
+  }
+
   // Multi-Level Tree Explorer Component for Step 2
-  function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule }) {
+  function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule, approvedCategoryIds, excludedCategoryIds, onSwitchCategory }) {
     return h("div", { className: "auto-org-tree-explorer" },
       categories.map((cat) => {
         const isExpanded = expandedBranches.has(cat.id);
         const confPct = Math.round((cat.confidence || 0.95) * 100);
         const subBranches = cat.sub_branches || [];
+        const catStatus = approvedCategoryIds && approvedCategoryIds.has(cat.id) ? "approved" :
+          (excludedCategoryIds && excludedCategoryIds.has(cat.id) ? "excluded" : (isApproved ? "approved" : "proposed"));
 
         return h("div", {
           key: cat.id,
-          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""}`
+          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""} ${catStatus === "approved" ? "auto-org-card-approved" : (catStatus === "excluded" ? "auto-org-card-excluded" : "")}`
         },
           // Root Header Row
           h("div", {
@@ -3016,19 +3291,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("span", { className: "auto-org-neural-dot" }),
                 h("span", null, `⚡ ${confPct}%`)
               ),
-              h("button", {
-                type: "button",
-                className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
-                style: { cursor: "pointer" },
-                title: isApproved ? "Freigabe zurücknehmen" : "Kategorie freigeben",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  onToggleApproveCategory && onToggleApproveCategory(cat.id);
-                }
-              },
-                h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag (Klicken zum Freigeben)"
-              )
+              h(OverlaySwitchButton, {
+                status: catStatus,
+                onApprove: () => onSwitchCategory ? onSwitchCategory(cat.id, "approved") : (onToggleApproveCategory && onToggleApproveCategory(cat.id)),
+                onExclude: () => onSwitchCategory ? onSwitchCategory(cat.id, "excluded") : null,
+                onReset: () => onSwitchCategory ? onSwitchCategory(cat.id, "proposed") : null,
+                size: "sm"
+              })
             )
           ),
 
@@ -3178,8 +3447,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [testing, setTesting] = useState(false);
 
     // Step 4 Abstract Semantic Groups & Execution Approval State
-    const [step4ViewMode, setStep4ViewMode] = useState("groups"); // "groups" | "graph" | "table"
+    const [step4ViewMode, setStep4ViewMode] = useState("groups"); // "groups" | "tree" | "graph" | "table"
     const [approvedGroupIds, setApprovedGroupIds] = useState(new Set());
+    const [excludedGroupIds, setExcludedGroupIds] = useState(new Set());
     const [expandedGroups, setExpandedGroups] = useState({});
 
     // Step 1 Drive Approval, Dismiss, and Tree-Position Hover State
@@ -3189,10 +3459,18 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [showExcludedDrives, setShowExcludedDrives] = useState(false);
     const [anomalyViewMode, setAnomalyViewMode] = useState("groups"); // "groups" | "table"
     const [approvedAnomalyGroupIds, setApprovedAnomalyGroupIds] = useState(new Set());
+    const [excludedAnomalyGroupIds, setExcludedAnomalyGroupIds] = useState(new Set());
     const [expandedAnomalyGroups, setExpandedAnomalyGroups] = useState({});
 
-    // Step 2 Multi-Level Tree Branch Expansion State
+    // Step 2 Multi-Level Tree Branch Expansion and Category Approval State
     const [expandedBranches, setExpandedBranches] = useState(new Set(["cat_privat", "cat_geschaeftlich"]));
+    const [approvedCategoryIds, setApprovedCategoryIds] = useState(new Set());
+    const [excludedCategoryIds, setExcludedCategoryIds] = useState(new Set());
+    const [isEmergentApproved, setIsEmergentApproved] = useState(false);
+
+    // Step 3 Rules Approval and Exclusion State
+    const [approvedRuleIds, setApprovedRuleIds] = useState(new Set());
+    const [excludedRuleIds, setExcludedRuleIds] = useState(new Set());
 
     const loadData = useCallback(async () => {
       setLoading(true);
@@ -3232,10 +3510,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             });
           }
         }
-        if (etax) setEmergentTaxonomy(etax);
+        if (etax) {
+          setEmergentTaxonomy(etax);
+          setIsEmergentApproved(Boolean(etax.is_approved));
+          if (etax.approved_category_ids) setApprovedCategoryIds(new Set(etax.approved_category_ids));
+          if (etax.excluded_category_ids) setExcludedCategoryIds(new Set(etax.excluded_category_ids));
+        }
         if (reconc) setReconciliation(reconc);
         if (srules && srules.suggested_rules) {
           setSuggestedRules(srules);
+          const activeIds = srules.suggested_rules.filter(r => r.is_already_active).map(r => r.id);
+          const exclIds = srules.suggested_rules.filter(r => r.is_excluded).map(r => r.id);
+          if (activeIds.length > 0) setApprovedRuleIds(prev => new Set([...prev, ...activeIds]));
+          if (exclIds.length > 0) setExcludedRuleIds(prev => new Set([...prev, ...exclIds]));
           const unadopted = srules.suggested_rules.filter(r => !r.is_already_active).map(r => r.id);
           setSelectedSuggestedRuleIds(new Set(unadopted.length > 0 ? unadopted : srules.suggested_rules.map(r => r.id)));
         }
@@ -3253,11 +3540,11 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     // Strict Gating Enforcement: steps 3, 4, 5 require Step 1 Done AND Step 2 Approved
     useEffect(() => {
       const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
-      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved));
+      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || isEmergentApproved || (taxonomy && taxonomy.system_approved));
       if (step > 2 && !isStep2Approved) {
         setStep(2);
       }
-    }, [step, proactiveScan, stats, emergentTaxonomy, taxonomy]);
+    }, [step, proactiveScan, stats, emergentTaxonomy, isEmergentApproved, taxonomy]);
 
     const handleAdoptSuggestedRules = async (ruleIds = null) => {
       setAdoptingRules(true);
@@ -3410,10 +3697,111 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       }
     };
 
+    const handleSwitchRule = async (ruleId, targetState) => {
+      // Optimistic UI update immediately turns button to green/red!
+      setApprovedRuleIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(ruleId);
+        else next.delete(ruleId);
+        return next;
+      });
+      setExcludedRuleIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(ruleId);
+        else next.delete(ruleId);
+        return next;
+      });
+
+      try {
+        if (targetState === "approved") {
+          await apiCall("/rules/adopt-suggested", {
+            method: "POST",
+            body: JSON.stringify({ rule_ids: [ruleId] })
+          }).catch(() => null);
+        }
+        await apiCall("/rules/suggested/switch", {
+          method: "POST",
+          body: JSON.stringify({ rule_id: ruleId, state: targetState })
+        }).catch(() => null);
+      } catch (err) {
+        console.warn("Rule switch sync:", err);
+      }
+    };
+
+    const handleSwitchCategory = async (catId, targetState) => {
+      setApprovedCategoryIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(catId);
+        else next.delete(catId);
+        return next;
+      });
+      setExcludedCategoryIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(catId);
+        else next.delete(catId);
+        return next;
+      });
+
+      try {
+        await apiCall("/taxonomy/emergent/category-switch", {
+          method: "POST",
+          body: JSON.stringify({ category_id: catId, state: targetState })
+        }).catch(() => null);
+      } catch (err) {
+        console.warn("Category switch sync:", err);
+      }
+    };
+
+    const handleSwitchDrive = (id, targetState) => {
+      setApprovedDriveIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      setExcludedDriveIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    };
+
+    const handleSwitchAnomalyGroup = (grpId, targetState) => {
+      setApprovedAnomalyGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(grpId);
+        else next.delete(grpId);
+        return next;
+      });
+      setExcludedAnomalyGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(grpId);
+        else next.delete(grpId);
+        return next;
+      });
+    };
+
+    const handleSwitchGroup = (groupId, targetState) => {
+      setApprovedGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(groupId);
+        else next.delete(groupId);
+        return next;
+      });
+      setExcludedGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(groupId);
+        else next.delete(groupId);
+        return next;
+      });
+    };
+
     const handleApproveEmergentTaxonomy = async () => {
       setLoading(true);
+      const nextApproved = !isEmergentApproved;
+      setIsEmergentApproved(nextApproved); // immediate optimistic update!
       try {
-        const nextApproved = !isEmergentApproved;
         const res = await apiCall("/taxonomy/emergent/approve", {
           method: "POST",
           body: JSON.stringify({ approved: nextApproved })
@@ -4187,8 +4575,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 onMouseEnter: () => setHoveredDriveId(d.id),
                 onMouseLeave: () => setHoveredDriveId(null)
               },
-                // Card Header: Checkbox, Name, Ampel, Dismiss
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                // Card Header: Checkbox, Name, and Segmented Switch
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" } },
                   h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0 } },
                     h("input", {
                       type: "checkbox",
@@ -4199,36 +4587,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
                     h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive")
                   ),
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                    h("button", {
-                      type: "button",
-                      className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
-                      style: { cursor: "pointer" },
-                      title: isApproved ? "Klicken zum Zurückstellen (auf Gelb/Vorschlag)" : "Klicken zum Freigeben (auf Grün)",
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        toggleApproveDrive(d.id);
-                      }
-                    },
-                      h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                      isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag"
-                    ),
-                    h("button", {
-                      type: "button",
-                      className: "auto-org-dismiss-btn",
-                      title: "Diesen Ordner nicht in die Indizierung aufnehmen (Ausschließen)",
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        handleDismissDrive(d.id);
-                      }
-                    }, "✕ Ausschließen")
-                  )
+                  h(OverlaySwitchButton, {
+                    status: isApproved ? "approved" : (excludedDriveIds.has(d.id) ? "excluded" : "proposed"),
+                    onApprove: () => handleSwitchDrive(d.id, "approved"),
+                    onExclude: () => handleSwitchDrive(d.id, "excluded"),
+                    onReset: () => handleSwitchDrive(d.id, "proposed"),
+                    size: "sm"
+                  })
                 ),
 
-                // Host Path in Monospace
-                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
-                  formatUserPath(d.host_path)
-                ),
+                // Visual Tree representation of the Drive Path
+                h(VisualFilePathTree, {
+                  sourcePath: d.host_path,
+                  title: `${d.name} (${formatUserPath(d.host_path)})`,
+                  defaultExpanded: true
+                }),
 
                 // Stats line
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
@@ -4426,21 +4799,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                         h("h4", { style: { fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 } }, grp.title),
                         h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.files.length} Dateien`)
                       ),
-                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                        h("button", {
-                          type: "button",
-                          className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
-                          style: { cursor: "pointer" },
-                          title: isApproved ? "Klicken zum Zurückstellen (auf Gelb/Vorschlag)" : "Klicken zum Freigeben (auf Grün)",
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            toggleApproveAnomalyGroup(grp.id);
-                          }
-                        },
-                          h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                          isApproved ? "🟢 Freigegeben zur Sortierung" : "🟡 Vorschlag (Ausstehend)"
-                        )
-                      )
+                      h(OverlaySwitchButton, {
+                        status: isApproved ? "approved" : (excludedAnomalyGroupIds.has(grp.id) ? "excluded" : "proposed"),
+                        onApprove: () => handleSwitchAnomalyGroup(grp.id, "approved"),
+                        onExclude: () => handleSwitchAnomalyGroup(grp.id, "excluded"),
+                        onReset: () => handleSwitchAnomalyGroup(grp.id, "proposed"),
+                        size: "sm"
+                      })
                     ),
 
                     // Animated "Von wo nach wo" Flow Route
@@ -4455,42 +4820,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                       }
                     }),
 
-                    // Visual Tree Slice Pipeline
-                    h(VisualBranchPipeline, {
+                    // Visual Tree of Anomaly File Relocations
+                    h(VisualFilePathTree, {
+                      files: grp.files.map(sf => ({
+                        file_name: sf.file_name,
+                        source_path: sf.physical_path,
+                        destination_path: sf.suggested_target,
+                        size_kb: sf.size_kb
+                      })),
                       sourcePath: grp.source_path,
                       targetPath: grp.target_path,
-                      treeSlice: grp.tree_slice,
-                      confidence: grp.confidence,
-                      onFocusGraph: () => {
-                        setStep(2);
-                        setStep2ViewMode("graph");
-                      }
+                      title: `${grp.title} — Visueller Pfad-Baum (${grp.files.length} Dateien)`,
+                      defaultExpanded: true
                     }),
-
-                    // Collapsible Sample Files Drawer (Kleingedruckt)
-                    h("div", null,
-                      h("button", {
-                        type: "button",
-                        className: "auto-org-tag-btn",
-                        style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
-                        onClick: () => toggleExpandAnomalyGroup(grp.id)
-                      }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.files.length} Beispieldateien anzeigen (kleingedruckt)`),
-
-                      isExpanded && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
-                        grp.files.map((sf, idx) =>
-                          h("div", {
-                            key: idx,
-                            style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" }
-                          },
-                            h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
-                            h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
-                            h("span", { style: { color: "#94a3b8", fontSize: "0.7rem", fontFamily: "monospace" } },
-                              `${formatUserPath(sf.physical_path)} → ${formatUserPath(sf.suggested_target)}`
-                            )
-                          )
-                        )
-                      )
-                    ),
 
                     // Group Footer Actions
                     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem", marginTop: "0.25rem" } },
@@ -4715,19 +5057,18 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
                   "Natürlich entstandenes Organisationssystem (Emergente Taxonomie)"
                 ),
-                h("button", {
-                  type: "button",
-                  className: `auto-org-ampel-badge ${isEmergentApproved ? "green" : "yellow"}`,
-                  style: { cursor: "pointer" },
-                  title: isEmergentApproved ? "Klicken, um Freigabe zurückzuziehen (auf Gelb/Vorschlag)" : "Klicken, um Kategoriensystem freizugeben (auf Grün)",
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleApproveEmergentTaxonomy();
+                h(OverlaySwitchButton, {
+                  status: isEmergentApproved ? "approved" : "proposed",
+                  onApprove: () => {
+                    if (!isEmergentApproved) handleApproveEmergentTaxonomy();
+                  },
+                  onExclude: () => {
+                    if (isEmergentApproved) handleApproveEmergentTaxonomy();
+                  },
+                  onReset: () => {
+                    if (isEmergentApproved) handleApproveEmergentTaxonomy();
                   }
-                },
-                  h("span", { className: `auto-org-ampel-dot ${isEmergentApproved ? "green" : "yellow"}` }),
-                  isEmergentApproved ? "🟢 Freigegeben vom User & Aktiv" : "🟡 Vorschlag (Klicken zum Freigeben)"
-                )
+                })
               ),
               h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
                 "Die Kategorien wurden durch semantische Vektor-Cluster, OCR-Volltextanalyse und Dateipfad-Muster direkt aus Ihrem realen Datenbestand ermittelt — keine starren Vorgaben, sondern induzierte Struktur:"
@@ -4748,6 +5089,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h(MultiLevelTreeExplorer, {
             categories: emergentCategories,
             isApproved: isEmergentApproved,
+            approvedCategoryIds: approvedCategoryIds,
+            excludedCategoryIds: excludedCategoryIds,
+            onSwitchCategory: handleSwitchCategory,
             onToggleApproveCategory: handleApproveEmergentTaxonomy,
             onFocusGraph: (branchId) => {
               setStep2ViewMode("graph");
@@ -5498,19 +5842,22 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         h("div", { className: "auto-org-suggested-grid" },
           sRules.map((sr) => {
             const confPct = Math.round((sr.confidence || 0.95) * 100);
-            const isActive = sr.is_already_active;
+            const isApproved = approvedRuleIds.has(sr.id) || (sr.is_already_active && !excludedRuleIds.has(sr.id));
+            const isExcluded = excludedRuleIds.has(sr.id);
+            const ruleStatus = isApproved ? "approved" : (isExcluded ? "excluded" : "proposed");
+            const isActive = isApproved;
             const isChecked = selectedSuggestedRuleIds.has(sr.id);
 
             return h("div", {
               key: sr.id,
-              className: "auto-org-suggested-card",
+              className: `auto-org-suggested-card ${ruleStatus === "approved" ? "auto-org-card-approved" : (ruleStatus === "excluded" ? "auto-org-card-excluded" : "")}`,
               style: {
-                borderColor: isActive ? "#22c55e" : (isChecked ? "#3b82f6" : "#eab308"),
+                borderColor: isActive ? "#22c55e" : (isExcluded ? "#ef4444" : (isChecked ? "#3b82f6" : "#eab308")),
                 boxShadow: isActive ? "0 0 10px rgba(34, 197, 94, 0.15)" : "none"
               }
             },
-              // Header Row with Checkbox & Ampel Badge
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+              // Header Row with Checkbox & Segmented Switch
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" } },
                 h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                   h("input", {
                     type: "checkbox",
@@ -5525,22 +5872,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   )
                 ),
                 h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" } },
-                  h("button", {
-                    type: "button",
-                    className: `auto-org-ampel-badge ${isActive ? "green" : "yellow"}`,
-                    style: { cursor: "pointer" },
-                    title: isActive ? "Regel ist aktiv im System" : "Klicken, um Regel sofort freizugeben und auf Grün zu schalten",
-                    disabled: adoptingRules,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      if (!isActive) {
-                        handleAdoptSuggestedRules([sr.id]);
-                      }
-                    }
-                  },
-                    h("span", { className: `auto-org-ampel-dot ${isActive ? "green" : "yellow"}` }),
-                    isActive ? "🟢 Freigegeben vom User" : "🟡 Vorschlag (Klicken zum Freigeben)"
-                  ),
+                  h(OverlaySwitchButton, {
+                    status: ruleStatus,
+                    onApprove: () => handleSwitchRule(sr.id, "approved"),
+                    onExclude: () => handleSwitchRule(sr.id, "excluded"),
+                    onReset: () => handleSwitchRule(sr.id, "proposed"),
+                    size: "sm"
+                  }),
                   h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${sr.matched_files_count || 0} Dateien • ${confPct}% Konfidenz`)
                 )
               ),
@@ -5565,17 +5903,18 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 }
               }),
 
-              // Visual Branch Pipeline inside Card
-              h(VisualBranchPipeline, {
+              // Visual File Path Tree inside Rule Card
+              h(VisualFilePathTree, {
                 sourcePath: "/home/mb/Downloads",
                 targetPath: formatUserPath(sr.target_template),
-                treeSlice: sr.tree_slice,
-                confidence: sr.confidence,
-                branchId: sr.branch_id,
-                onFocusGraph: () => {
-                  setStep(2);
-                  setStep2ViewMode("graph");
-                }
+                files: (sr.sample_files || []).map((sf, sidx) => ({
+                  file_name: sf,
+                  source_path: `/home/mb/Downloads/${sf}`,
+                  destination_path: `${formatUserPath(sr.target_template).replace('{year}', '2026')}${sf}`,
+                  size_kb: 45 + sidx * 20
+                })),
+                title: `Visueller Pfad-Baum: ${sr.name}`,
+                defaultExpanded: true
               }),
 
               // AI Reasoning Drawer (Context & Tokens)
@@ -5605,9 +5944,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   type: "button",
                   className: `auto-org-btn ${isActive ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
                   style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600, background: isActive ? "transparent" : "#16a34a", borderColor: isActive ? "#334155" : "#22c55e" },
-                  disabled: adoptingRules || isActive,
-                  onClick: () => handleAdoptSuggestedRules([sr.id])
-                }, isActive ? "✓ Aktiv im System" : "🟢 Regel freigeben")
+                  onClick: () => handleSwitchRule(sr.id, isActive ? "proposed" : "approved")
+                }, isActive ? "✓ Aktiv / Freigegeben" : "🟢 Regel freigeben")
               )
             );
           })
@@ -5780,6 +6118,11 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 }, `📑 Abstrakte Ausführungsgruppen (${totalGroups})`),
                 h("button", {
                   type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "tree" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("tree")
+                }, `🌳 Visueller Pfad-Baum (${dryRun.actions.length} Dateien)`),
+                h("button", {
+                  type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "graph" ? "active" : ""}`,
                   onClick: () => setStep4ViewMode("graph")
                 }, "🕸️ Animierter Obsidian-Transfer-Graph"),
@@ -5797,14 +6140,23 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
               ),
 
-              // TAB 1: Obsidian Transfer Graph
+              // TAB 1: Visual Reorganization Path Tree
+              step4ViewMode === "tree" && h(VisualDryRunPathTree, {
+                actions: dryRun.actions || [],
+                groups: dryRun.semantic_groups || [],
+                approvedGroupIds: approvedGroupIds,
+                excludedGroupIds: excludedGroupIds,
+                onSwitchGroup: handleSwitchGroup
+              }),
+
+              // TAB 2: Obsidian Transfer Graph
               step4ViewMode === "graph" && h(ObsidianFlowGraph, {
                 isPaused: obsidianPaused,
                 speedMultiplier: obsidianSpeed,
                 onTogglePause: () => setObsidianPaused(p => !p)
               }),
 
-              // TAB 2: Abstract Semantic Groups (DEFAULT)
+              // TAB 3: Abstract Semantic Groups (DEFAULT)
               step4ViewMode === "groups" && h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
                 // User Approval & Bulk Selection Toolbar
                 h("div", { className: "auto-org-approval-bar" },
@@ -5837,13 +6189,15 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("div", { className: "auto-org-group-grid" },
                   groups.map((grp) => {
                     const isApproved = approvedGroupIds.has(grp.group_id);
+                    const isExcluded = excludedGroupIds.has(grp.group_id);
+                    const groupStatus = isApproved ? "approved" : (isExcluded ? "excluded" : "proposed");
                     const isExpanded = !!expandedGroups[grp.group_id];
 
                     return h("div", {
                       key: grp.group_id,
-                      className: `auto-org-group-card ${isApproved ? "approved" : "pending"}`
+                      className: `auto-org-group-card ${groupStatus === "approved" ? "auto-org-card-approved" : (groupStatus === "excluded" ? "auto-org-card-excluded" : "pending")}`
                     },
-                      // Card Header Row: Checkbox, Title, Badges, Ampelsystem
+                      // Card Header Row: Checkbox, Title, Badges, Segmented Switch
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
                         h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                           h("input", {
@@ -5859,19 +6213,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                           )
                         ),
                         h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                          h("button", {
-                            type: "button",
-                            className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
-                            style: { cursor: "pointer" },
-                            title: isApproved ? "Freigabe zurücknehmen (auf Gelb/Zurückgestellt)" : "Klicken zum Freigeben zur Ausführung (auf Grün)",
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              toggleGroupApproval(grp.group_id);
-                            }
-                          },
-                            h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                            isApproved ? "🟢 Freigegeben zur Ausführung" : "🟡 Vorschlag (Klicken zum Freigeben)"
-                          ),
+                          h(OverlaySwitchButton, {
+                            status: groupStatus,
+                            onApprove: () => handleSwitchGroup(grp.group_id, "approved"),
+                            onExclude: () => handleSwitchGroup(grp.group_id, "excluded"),
+                            onReset: () => handleSwitchGroup(grp.group_id, "proposed")
+                          }),
                           h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.file_count} Dateien`),
                           h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, `${grp.total_size_kb} KB`)
                         )
@@ -5892,50 +6239,25 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                         onFocusGraph: () => setStep4ViewMode("graph")
                       }),
 
-                      // Visual Branch Pipeline inside Card
-                      h(VisualBranchPipeline, {
+                      // Visual File Path Tree inside Group Card
+                      h(VisualFilePathTree, {
+                        files: grp.sample_files || [],
                         sourcePath: grp.source_label,
                         targetPath: grp.target_label,
-                        treeSlice: grp.tree_slice,
-                        confidence: 0.98,
-                        onFocusGraph: () => setStep4ViewMode("graph")
+                        defaultExpanded: true,
+                        title: `${grp.title} — Visueller Pfad-Baum (${grp.file_count} Dateien)`
                       }),
-
-                      // Kleingedruckter Datei-Auszug (Collapsible Monospace Drawer)
-                      h("div", null,
-                        h("button", {
-                          type: "button",
-                          className: "auto-org-tag-btn",
-                          style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
-                          onClick: () => toggleExpandGroup(grp.group_id)
-                        }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.sample_files ? grp.sample_files.length : 0} Beispieldateien anzeigen (kleingedruckt)`),
-
-                        isExpanded && grp.sample_files && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
-                          h("div", { style: { fontSize: "0.7rem", color: "#60a5fa", marginBottom: "0.3rem", fontWeight: 600 } },
-                            "Dateiauszug (Detailansicht):"
-                          ),
-                          grp.sample_files.map((sf, sidx) =>
-                            h("div", { key: sidx, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" } },
-                              h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
-                              h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
-                              h("span", { style: { color: "#94a3b8", fontSize: "0.7rem" } },
-                                `${formatUserPath(sf.source_path)} → ${formatUserPath(sf.destination_path)}`
-                              )
-                            )
-                          )
-                        )
-                      ),
 
                       // Footer Action
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem" } },
                         h("span", { style: { fontSize: "0.75rem", color: isApproved ? "#4ade80" : "#facc15", fontWeight: 600 } },
-                          isApproved ? "✓ Freigabe durch Benutzer erteilt" : "Ausführung für diese Gruppe zurückgestellt"
+                          isApproved ? "✓ Freigabe durch Benutzer erteilt" : (isExcluded ? "Ausgeschlossen (wird nicht ausgeführt)" : "Ausführung für diese Gruppe zurückgestellt")
                         ),
                         h("button", {
                           type: "button",
                           className: `auto-org-btn ${isApproved ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
                           style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem" },
-                          onClick: () => toggleGroupApproval(grp.group_id)
+                          onClick: () => handleSwitchGroup(grp.group_id, isApproved ? "proposed" : "approved")
                         }, isApproved ? "Pausieren / Zurückstellen" : "🟢 Gruppe freigeben")
                       )
                     );

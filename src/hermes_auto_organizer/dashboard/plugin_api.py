@@ -109,6 +109,16 @@ class AdoptSuggestedRulesRequest(BaseModel):
     adopt_all: bool = False
 
 
+class RuleSwitchRequest(BaseModel):
+    rule_id: str
+    state: str = "approved"  # "approved", "excluded", "proposed"
+
+
+class CategorySwitchRequest(BaseModel):
+    category_id: str
+    state: str = "approved"  # "approved", "excluded", "proposed"
+
+
 class ModularRuleCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -540,6 +550,10 @@ async def toggle_rule(req: RuleToggleRequest) -> Dict[str, Any]:
         await conn.close()
 
 
+_ACTIVE_SUGGESTED_RULE_IDS: Set[str] = set()
+_EXCLUDED_SUGGESTED_RULE_IDS: Set[str] = set()
+
+
 @router.get("/rules/suggested")
 async def get_suggested_rules() -> Dict[str, Any]:
     """
@@ -815,7 +829,8 @@ async def get_suggested_rules() -> Dict[str, Any]:
 
     for s in suggestions:
         aliases = name_aliases.get(s["name"], {s["name"]})
-        s["is_already_active"] = bool(aliases.intersection(active_names))
+        s["is_already_active"] = bool(aliases.intersection(active_names)) or (s["id"] in _ACTIVE_SUGGESTED_RULE_IDS)
+        s["is_excluded"] = s["id"] in _EXCLUDED_SUGGESTED_RULE_IDS
 
     return {
         "ok": True,
@@ -827,59 +842,101 @@ async def get_suggested_rules() -> Dict[str, Any]:
 
 @router.post("/rules/adopt-suggested")
 async def adopt_suggested_rules(req: AdoptSuggestedRulesRequest) -> Dict[str, Any]:
-    """Adopt proactive rule suggestions into active organization_rules."""
+    """Adopt proactive rule suggestions into active organization_rules with in-memory fallback."""
+    sug_resp = await get_suggested_rules()
+    suggestions = sug_resp.get("suggested_rules", [])
+
+    name_aliases = {
+        "Verträge & Policen konsolidieren": ["Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"],
+        "Medien & Kreativ-Assets bündeln": ["Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"],
+        "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": ["Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"],
+    }
+
+    adopted = 0
     conn = await _get_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database unavailable")
 
     try:
-        sug_resp = await get_suggested_rules()
-        suggestions = sug_resp.get("suggested_rules", [])
-
-        name_aliases = {
-            "Verträge & Policen konsolidieren": ["Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"],
-            "Medien & Kreativ-Assets bündeln": ["Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"],
-            "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": ["Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"],
-        }
-
-        adopted = 0
         for s in suggestions:
             if req.adopt_all or (req.rule_ids and s["id"] in req.rule_ids):
-                aliases = name_aliases.get(s["name"], [s["name"]])
-                existing = await conn.fetchval(
-                    "SELECT id FROM organization_rules WHERE rule_name = ANY($1::text[])", aliases
-                )
-                if existing:
-                    await conn.execute(
-                        "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
-                        existing
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        INSERT INTO organization_rules (
-                            id, rule_name, description, source_pattern, condition_json,
-                            target_path_template, state, dry_run_last_count, created_at, updated_at
-                        ) VALUES (
-                            $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
-                        )
-                        """,
-                        uuid4(),
-                        s["name"],
-                        s["description"],
-                        json.dumps(s["condition_json"]),
-                        s["target_template"],
-                        s["matched_files_count"],
-                    )
+                _ACTIVE_SUGGESTED_RULE_IDS.add(s["id"])
+                _EXCLUDED_SUGGESTED_RULE_IDS.discard(s["id"])
                 adopted += 1
+
+                if conn:
+                    aliases = name_aliases.get(s["name"], [s["name"]])
+                    existing = await conn.fetchval(
+                        "SELECT id FROM organization_rules WHERE rule_name = ANY($1::text[])", aliases
+                    )
+                    if existing:
+                        await conn.execute(
+                            "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
+                            existing
+                        )
+                    else:
+                        await conn.execute(
+                            """
+                            INSERT INTO organization_rules (
+                                id, rule_name, description, source_pattern, condition_json,
+                                target_path_template, state, dry_run_last_count, created_at, updated_at
+                            ) VALUES (
+                                $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
+                            )
+                            """,
+                            uuid4(),
+                            s["name"],
+                            s["description"],
+                            json.dumps(s["condition_json"]),
+                            s["target_template"],
+                            s["matched_files_count"],
+                        )
 
         return {
             "ok": True,
             "adopted_count": adopted,
-            "message": f"{adopted} proaktive Filter-Regel(n) erfolgreich übernommen und aktiviert!"
+            "message": f"{adopted} proaktive Filter-Regel(n) erfolgreich übernommen und freigegeben!"
         }
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
+
+
+@router.post("/rules/suggested/switch")
+async def switch_suggested_rule(req: RuleSwitchRequest) -> Dict[str, Any]:
+    """Switches a suggested rule state between 'approved' (Freigeben), 'excluded' (Ausschließen), and 'proposed'."""
+    if req.state == "approved":
+        _ACTIVE_SUGGESTED_RULE_IDS.add(req.rule_id)
+        _EXCLUDED_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' freigegeben und auf Grün geschaltet."
+    elif req.state == "excluded":
+        _EXCLUDED_SUGGESTED_RULE_IDS.add(req.rule_id)
+        _ACTIVE_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' ausgeschlossen (rot)."
+    else:
+        _ACTIVE_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        _EXCLUDED_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' auf Vorschlag zurückgestellt."
+
+    conn = await _get_connection()
+    if conn:
+        try:
+            db_state = "USER_APPROVED" if req.state == "approved" else ("DISABLED" if req.state == "excluded" else "PROPOSED")
+            await conn.execute(
+                "UPDATE organization_rules SET state = $1, updated_at = NOW() WHERE id::text = $2 OR rule_name = $2",
+                db_state, req.rule_id
+            )
+        except Exception:
+            pass
+        finally:
+            await conn.close()
+
+    return {
+        "ok": True,
+        "rule_id": req.rule_id,
+        "state": req.state,
+        "approved_rules": list(_ACTIVE_SUGGESTED_RULE_IDS),
+        "excluded_rules": list(_EXCLUDED_SUGGESTED_RULE_IDS),
+        "message": msg
+    }
 
 
 @router.post("/rules")
@@ -2151,6 +2208,8 @@ _EMERGENT_TAXONOMY_STATE: Dict[str, Any] = {
     "approved": False,
     "approved_at": None,
     "custom_categories": [],
+    "approved_category_ids": set(),
+    "excluded_category_ids": set(),
 }
 
 _REDUNDANCY_DECISIONS: Dict[str, Dict[str, Any]] = {
@@ -2595,10 +2654,16 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
         },
     ]
 
+    for c in emergent_categories:
+        c["is_approved"] = _EMERGENT_TAXONOMY_STATE["approved"] or (c["id"] in _EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set()))
+        c["is_excluded"] = c["id"] in _EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())
+
     return {
         "ok": True,
         "is_approved": _EMERGENT_TAXONOMY_STATE["approved"],
         "approved_at": _EMERGENT_TAXONOMY_STATE["approved_at"],
+        "approved_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set())),
+        "excluded_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())),
         "induction_method": "Semantic Clustering & File Distribution Analysis",
         "total_files_analyzed": sum(c["file_count"] for c in emergent_categories),
         "categories": emergent_categories,
@@ -2618,7 +2683,38 @@ async def approve_emergent_taxonomy(req: ApproveEmergentTaxonomyRequest) -> Dict
         "ok": True,
         "is_approved": _EMERGENT_TAXONOMY_STATE["approved"],
         "approved_at": _EMERGENT_TAXONOMY_STATE["approved_at"],
-        "message": "Natürliches Organisationssystem erfolgreich freigegeben!",
+        "approved_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set())),
+        "excluded_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())),
+        "message": "Natürliches Organisationssystem erfolgreich freigegeben!" if req.approved else "Freigabe zurückgestellt.",
+    }
+
+
+@router.post("/taxonomy/emergent/category-switch")
+async def switch_emergent_category(req: CategorySwitchRequest) -> Dict[str, Any]:
+    """Switches an individual emergent category state between 'approved', 'excluded', and 'proposed'."""
+    appr = _EMERGENT_TAXONOMY_STATE.setdefault("approved_category_ids", set())
+    excl = _EMERGENT_TAXONOMY_STATE.setdefault("excluded_category_ids", set())
+
+    if req.state == "approved":
+        appr.add(req.category_id)
+        excl.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' freigegeben (grün)."
+    elif req.state == "excluded":
+        excl.add(req.category_id)
+        appr.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' ausgeschlossen (rot)."
+    else:
+        appr.discard(req.category_id)
+        excl.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' auf Vorschlag zurückgestellt."
+
+    return {
+        "ok": True,
+        "category_id": req.category_id,
+        "state": req.state,
+        "approved_category_ids": list(appr),
+        "excluded_category_ids": list(excl),
+        "message": msg
     }
 
 
