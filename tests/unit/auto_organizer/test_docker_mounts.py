@@ -109,20 +109,21 @@ def test_validate_destination_path_unmounted():
 
 
 def test_mounts_api_endpoints():
-    # GET /mounts
-    res = client.get("/api/plugins/auto-organizer/mounts")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["ok"] is True
-    assert data["total_mounts"] >= 10
-    assert data["writable_mounts"] >= 8
-    assert len(data["mounts"]) == data["total_mounts"]
+    with patch("os.path.exists", return_value=True), patch("os.access", return_value=True):
+        # GET /mounts
+        res = client.get("/api/plugins/auto-organizer/mounts")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["total_mounts"] >= 10
+        assert data["writable_mounts"] >= 8
+        assert len(data["mounts"]) == data["total_mounts"]
 
-    # POST /mounts/check (valid)
-    chk_res = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/home/mb/Downloads/test"})
-    assert chk_res.status_code == 200
-    chk_data = chk_res.json()
-    assert chk_data["valid"] is True
+        # POST /mounts/check (valid)
+        chk_res = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/home/mb/Downloads/test"})
+        assert chk_res.status_code == 200
+        chk_data = chk_res.json()
+        assert chk_data["valid"] is True
 
     # POST /mounts/check (invalid / outside container)
     chk_invalid = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/root/secret"})

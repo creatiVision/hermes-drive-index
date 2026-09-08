@@ -443,13 +443,19 @@ def test_filesystem_tree_full_endpoint():
 
 
 def test_filesystem_tree_browse_endpoint():
-    res = client.get("/api/plugins/auto-organizer/filesystem-tree/browse?path=/media/work-data")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["ok"] is True
-    assert data["path"] == "/media/work-data"
-    assert "children" in data
-    assert isinstance(data["children"], list)
+    from unittest.mock import MagicMock
+    mock_scandir = MagicMock()
+    mock_scandir.__enter__.return_value = []
+    with patch("os.path.exists", return_value=True), \
+         patch("os.path.isdir", return_value=True), \
+         patch("os.scandir", return_value=mock_scandir):
+        res = client.get("/api/plugins/auto-organizer/filesystem-tree/browse?path=/media/work-data")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["path"] == "/media/work-data"
+        assert "children" in data
+        assert isinstance(data["children"], list)
 
 
 def test_filesystem_tree_rescan_endpoint():

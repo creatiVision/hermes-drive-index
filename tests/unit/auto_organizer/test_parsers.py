@@ -71,11 +71,13 @@ def test_image_parser_support(tmp_path: Path):
     parser = ImageParser()
     img_file = tmp_path / "invoice.png"
     img_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
-    assert parser.supports(img_file) is True
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"):
+        assert parser.supports(img_file) is True
 
     txt_file = tmp_path / "doc.txt"
     txt_file.write_text("hello", encoding="utf-8")
-    assert parser.supports(txt_file) is False
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"):
+        assert parser.supports(txt_file) is False
 
 
 def test_image_parser_extract_content_ocr(tmp_path: Path):
@@ -87,7 +89,8 @@ def test_image_parser_extract_content_ocr(tmp_path: Path):
     mock_proc.stdout = "Rechnung 2026-09-07 Netto 120,00 EUR"
     mock_proc.returncode = 0
 
-    with patch("subprocess.run", return_value=mock_proc):
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"), \
+         patch("subprocess.run", return_value=mock_proc):
         extraction = asyncio.run(parser.extract_content(img_file))
 
     assert extraction.extraction_strategy == "ocr_tesseract"
@@ -101,7 +104,8 @@ def test_image_parser_timeout(tmp_path: Path):
     img_file = tmp_path / "heavy.tiff"
     img_file.write_bytes(b"II*\x00" + b"\x00" * 30)
 
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="tesseract", timeout=5)):
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"), \
+         patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="tesseract", timeout=5)):
         extraction = asyncio.run(parser.extract_content(img_file))
 
     assert extraction.extraction_strategy == "ocr_timeout"
@@ -143,7 +147,8 @@ def test_composite_extractor_routes_image(tmp_path: Path):
     mock_proc.stdout = "Architekturdiagramm Ebene 1"
     mock_proc.returncode = 0
 
-    with patch("subprocess.run", return_value=mock_proc):
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"), \
+         patch("subprocess.run", return_value=mock_proc):
         extraction = asyncio.run(composite.extract_content(img_file))
 
     assert extraction.extraction_strategy == "ocr_tesseract"
