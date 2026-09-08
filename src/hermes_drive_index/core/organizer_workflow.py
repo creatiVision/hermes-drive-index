@@ -319,30 +319,40 @@ def propose_plan(
 
 
 def format_plan_presentation(plan: OrganizerPlan) -> str:
-    """Format the plan presentation as required by SKILL.md."""
+    """Format the plan presentation with clear icons and readable paths."""
+    base_path = Path(plan.folder_path)
+
+    def _rel(p_str: str | None) -> str:
+        if not p_str:
+            return ""
+        try:
+            return str(Path(p_str).relative_to(base_path))
+        except ValueError:
+            return p_str
+
     lines = [
-        f"**Totals**: {plan.counts['renamed']} renamed, {plan.counts['moved']} moved, "
+        f"📋 **Summary Totals**: {plan.counts['renamed']} renamed, {plan.counts['moved']} moved, "
         f"{plan.counts['folders_created']} folders created, {plan.counts['deleted']} deleted",
         "",
-        "### Proposed Actions:",
+        "### 🎯 Proposed Actions:",
     ]
     for i, a in enumerate(plan.actions[:30], 1):
         if a.action_type == "create_folder":
-            lines.append(f"{i}. [CREATE FOLDER] `{a.source}` ({a.purpose})")
+            lines.append(f"{i}. 📁 [CREATE FOLDER] `{_rel(a.source)}/` ({a.purpose})")
         elif a.action_type == "move":
-            lines.append(f"{i}. [MOVE] `{Path(a.source).name}` -> `{a.target}`")
+            lines.append(f"{i}. 📦 [MOVE] `{Path(a.source).name}` ➔ `{_rel(a.target)}`")
         elif a.action_type == "rename":
-            lines.append(f"{i}. [RENAME] `{Path(a.source).name}` -> `{Path(a.target or '').name}`")
+            lines.append(f"{i}. ✏️ [RENAME] `{Path(a.source).name}` ➔ `{Path(a.target or '').name}`")
         elif a.action_type == "delete":
-            lines.append(f"{i}. [DELETE/TRASH] `{a.source}` ({a.purpose})")
+            lines.append(f"{i}. 🗑️ [DELETE/TRASH] `{_rel(a.source)}` ({a.purpose})")
 
     if len(plan.actions) > 30:
         lines.append(f"... and {len(plan.actions) - 30} more actions.")
 
     lines.append("")
     lines.append(
-        "This is a proposal - nothing has been changed yet. "
-        "Reply 'approve' or 'go ahead' to execute, or tell me what to change."
+        "💡 *This is a proposal - nothing has been changed on disk yet.*\n"
+        "Reply **'approve'** or **'go ahead'** to execute, or specify adjustments."
     )
     return "\n".join(lines)
 
