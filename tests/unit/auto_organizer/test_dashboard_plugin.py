@@ -382,3 +382,37 @@ def test_cross_drive_reconciliation_and_clarification():
         assert clarify_data["ok"] is True
         assert clarify_data["decision"] == "intended_backup"
 
+
+def test_system_tree_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.get("/api/plugins/auto-organizer/system-tree")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert "summary" in data
+        assert data["summary"]["total_hosts"] == 5
+        assert "hosts" in data
+        assert len(data["hosts"]) == 5
+        assert "syncthing" in data
+        assert "backup_registry" in data
+        assert "docker_backup" in data["backup_registry"]
+        assert "pg_backup" in data["backup_registry"]
+        assert "tree" in data
+        assert len(data["tree"]) == 5
+
+        # Check laptop node
+        laptop = next((h for h in data["tree"] if h["computer_id"] == "kimi-laptop"), None)
+        assert laptop is not None
+        assert laptop["status"]["symbol"] == "🟢"
+        assert len(laptop["children"]) >= 4
+
+        # Check debian1 node
+        debian = next((h for h in data["tree"] if h["computer_id"] == "kimi-debian1"), None)
+        assert debian is not None
+        assert any(c["id"] == "drive_debian1_docker" for c in debian["children"])
+
+        # Check mobile node
+        mobile = next((h for h in data["tree"] if h["computer_id"] == "note14new"), None)
+        assert mobile is not None
+        assert any(c["id"] == "drive_mobile_share" for c in mobile["children"])
+

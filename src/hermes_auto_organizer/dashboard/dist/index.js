@@ -972,7 +972,1243 @@
           formatUserPath(tooltipData.node.path)
         ),
         h("div", { style: { fontSize: "0.72rem", color: "#94a3b8" } },
-          `${tooltipData.node.count} Dateien • Realer Speicherpfad`
+        )
+      )
+    );
+  }
+
+  // Default Fallback Tree Data for Multi-Computer File Tree & Radar
+  const DEFAULT_SYSTEM_TREE = [
+    {
+      id: "comp_laptop",
+      name: "💻 kimi-laptop",
+      path: "host://kimi-laptop",
+      node_type: "computer",
+      computer_id: "kimi-laptop",
+      role: "Haupt-Workstation & Kontrollzentrum",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Online & Synchronisiert" },
+      syncthing: { synced: true, folder_id: null, label: "Syncthing Node (laptop)", type: "mesh", peers: ["debian1", "Note14new"], status: "SYNCED" },
+      backup: { protected: true, program: "pg-backup.sh, docker-backup.sh, rclone", schedule: "Täglich + Boot", target: "/media/xchg/ai-tools-data/", retention: "7 Tage daily / 12 Monate" },
+      file_count: 5240,
+      size_mb: 14250.0,
+      children: [
+        {
+          id: "drive_laptop_xchg",
+          name: "📁 /media/xchg (Shared Exchange)",
+          path: "/media/xchg",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Vollständig indexiert & P2P geteilt" },
+          syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1", "Note14new"], status: "SYNCED" },
+          backup: { protected: true, program: "Syncthing Mesh + pg/docker backup Dumps", schedule: "Echtzeit P2P", target: "kimi-debian1 / Note14new", retention: "Permanent" },
+          file_count: 1840,
+          size_mb: 4820.0,
+          children: [
+            {
+              id: "node_xchg_workspaces",
+              name: "ai-agents-workspaces",
+              path: "/media/xchg/ai-agents-workspaces",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Aktiv" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+              backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich", target: "/media/xchg/ai-agents-workspaces/hermes/backups", retention: "24h Snapshot" },
+              file_count: 480,
+              size_mb: 940.0,
+              children: [
+                { id: "node_xchg_hermes", name: "hermes (.hermes Core & Plugins)", path: "/media/xchg/ai-agents-workspaces/hermes", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Live" }, syncthing: { synced: true, peers: ["debian1"] }, backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich" }, file_count: 310, size_mb: 620.0, children: [] },
+                { id: "node_xchg_kimi", name: "kimi (Kimi-Code CLI Workspace)", path: "/media/xchg/ai-agents-workspaces/kimi", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Live" }, syncthing: { synced: true, peers: ["debian1"] }, backup: { protected: true, program: "Syncthing Mesh" }, file_count: 120, size_mb: 210.0, children: [] }
+              ]
+            },
+            {
+              id: "node_xchg_knowledge",
+              name: "ai-knowledge-base (Obsidian Vault)",
+              path: "/media/xchg/ai-knowledge-base",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Graph-Indexiert" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1", "Note14new"], status: "SYNCED" },
+              backup: { protected: true, program: "graphify-index-obsidian.py", schedule: "Täglich 04:00", target: "/media/xchg/ai-graph", retention: "Knowledge Graph" },
+              file_count: 620,
+              size_mb: 1150.0,
+              children: []
+            },
+            {
+              id: "node_xchg_tools",
+              name: "ai-tools-data (MCP & Backups)",
+              path: "/media/xchg/ai-tools-data",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Backup Depot" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+              backup: { protected: true, program: "pg-backup.sh & docker-backup.sh", schedule: "Täglich 03:00 / Boot", target: "Lokales Tausch-Depot", retention: "7 Tage daily / 12 Monate monthly" },
+              file_count: 390,
+              size_mb: 2180.0,
+              children: [
+                { id: "node_xchg_pg_backups", name: "postgres-backups (SQL Dumps)", path: "/media/xchg/ai-tools-data/postgres-backups", node_type: "backup_archive", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Sicherungsarchiv" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup.sh", schedule: "03:00 / Boot" }, file_count: 28, size_mb: 1120.0, children: [] },
+                { id: "node_xchg_docker_backups", name: "docker-backups (Volume Tars)", path: "/media/xchg/ai-tools-data/docker-backups", node_type: "backup_archive", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Sicherungsarchiv" }, syncthing: { synced: true }, backup: { protected: true, program: "docker-backup.sh", schedule: "Täglich 03:00" }, file_count: 14, size_mb: 840.0, children: [] }
+              ]
+            },
+            {
+              id: "node_xchg_handy",
+              name: "Handy (P2P Dropzone Smartphone)",
+              path: "/media/xchg/Handy",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "Mobil Synchronisiert" },
+              syncthing: { synced: true, folder_id: "6yrmn-6pvpe", label: "Handy-Share", type: "sendreceive", peers: ["Note14new"], status: "SYNCED" },
+              backup: { protected: true, program: "Syncthing P2P", schedule: "Echtzeit" },
+              file_count: 350,
+              size_mb: 550.0,
+              children: [
+                { id: "node_handy_share", name: "xx_handy_share (Direktaustausch)", path: "/media/xchg/Handy/xx_handy_share", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "In Sync" }, syncthing: { synced: true, folder_id: "6yrmn-6pvpe", peers: ["Note14new"] }, backup: { protected: false }, file_count: 12, size_mb: 45.0, children: [] },
+                { id: "node_handy_dcim", name: "xx_handy_Bilder(DCIM) (Kamera)", path: "/media/xchg/Handy/xx_handy_Bilder(DCIM)", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "In Sync" }, syncthing: { synced: true, folder_id: "awwa2-tvdxp", peers: ["Note14new"] }, backup: { protected: false }, file_count: 310, size_mb: 460.0, children: [] }
+              ]
+            }
+          ]
+        },
+        {
+          id: "drive_laptop_workdata",
+          name: "💼 /media/work-data (Projekte & Buchhaltung)",
+          path: "/media/work-data",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Strukturiert & Cloud-Gespiegelt" },
+          syncthing: { synced: true, folder_id: "szf3z-s9szj", label: "work-data", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: true, program: "rclone gdrive + pg-backup", schedule: "Periodisch & PG Dump", target: "gdrive://creatiVision", retention: "Cloud Versioning" },
+          file_count: 1420,
+          size_mb: 3840.0,
+          children: [
+            {
+              id: "node_work_bookaccount",
+              name: "001_cv-bookaccount (Buchhaltung & Finanzen)",
+              path: "/media/work-data/001_cv-bookaccount",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Offsite Cloud-Spiegelung" },
+              syncthing: { synced: true, folder_id: "szf3z-s9szj", label: "work-data", type: "sendreceive", peers: ["debian1"] },
+              backup: { protected: true, program: "rclone gdrive sync", schedule: "Periodisch", target: "gdrive://creatiVision/Accounting", retention: "Unbegrenzt (Audit-Proof)" },
+              file_count: 480,
+              size_mb: 1250.0,
+              children: [
+                { id: "node_bookaccount_2025", name: "2025 (Ausgangs- & Eingangsrechnungen)", path: "/media/work-data/001_cv-bookaccount/2025", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Vollständig freigegeben" }, syncthing: { synced: true }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 180, size_mb: 420.0, children: [] },
+                { id: "node_bookaccount_2026", name: "2026 (Laufendes Geschäftsjahr)", path: "/media/work-data/001_cv-bookaccount/2026", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "PENDING", color: "#eab308", symbol: "🟡", label: "Laufende Zuordnung" }, syncthing: { synced: true }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 65, size_mb: 110.0, children: [] }
+              ]
+            },
+            {
+              id: "node_work_projects",
+              name: "002_cv-projects (Webdesign & Kunden)",
+              path: "/media/work-data/002_cv-projects",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "In Arbeit / Synchron" },
+              syncthing: { synced: true, folder_id: "szf3z-s9szj", peers: ["debian1"] },
+              backup: { protected: true, program: "Syncthing Mesh (laptop ↔ debian1)" },
+              file_count: 780,
+              size_mb: 2100.0,
+              children: [
+                { id: "node_projects_stulz", name: "stulz (Kundenportal Stulz)", path: "/media/work-data/002_cv-projects/stulz", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Synchron" }, syncthing: { synced: true }, backup: { protected: true }, file_count: 320, size_mb: 950.0, children: [] },
+                { id: "node_projects_wp", name: "webdesign-wp-lc-ps (WordPress Frameworks)", path: "/media/work-data/002_cv-projects/webdesign-wp-lc-ps", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Synchron" }, syncthing: { synced: true }, backup: { protected: true }, file_count: 460, size_mb: 1150.0, children: [] }
+              ]
+            }
+          ]
+        },
+        {
+          id: "drive_laptop_privat",
+          name: "📁 /media/privat-data (10_PrivatBüro)",
+          path: "/media/privat-data/10_PrivatBüro",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Taxonomie freigegeben & geschützt" },
+          syncthing: { synced: true, folder_id: "qm5k5-dm6p4", label: "privat", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: true, program: "pg-backup + rclone gdrive", schedule: "Monatlich + Cloud", target: "gdrive://creatiVision/PrivatBüro", retention: "Permanent" },
+          file_count: 890,
+          size_mb: 2480.0,
+          children: [
+            { id: "node_privat_steuern", name: "Steuern (Steuerbescheide & Erklärungen)", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#10b981", symbol: "🟢", label: "Archiviert & Bereinigt" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup + Cloud" }, file_count: 140, size_mb: 340.0, children: [] },
+            { id: "node_privat_vertraege", name: "Versicherungen_Vertraege (Policen & Verträge)", path: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege", node_type: "folder", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#10b981", symbol: "🟢", label: "Archiviert & Bereinigt" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup + Cloud" }, file_count: 95, size_mb: 280.0, children: [] }
+          ]
+        },
+        {
+          id: "drive_laptop_downloads",
+          name: "⬇️ /home/mb/Downloads (Dumpzone)",
+          path: "/home/mb/Downloads",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "DUMPZONE", color: "#ef4444", symbol: "🔴", label: "Dumpzone (45 unsortierte Dateien)" },
+          syncthing: { synced: true, folder_id: "downloads", label: "home-mb-Downloads", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: false, program: null, schedule: "Nicht gesichert (Flüchtige Eingangszone)", target: "Reorganisation in Zielordner empfohlen", retention: "Temporär" },
+          file_count: 45,
+          size_mb: 620.0,
+          children: [
+            { id: "node_dl_invoices", name: "Rechnungen & Belege (→ 001_cv)", path: "/home/mb/Downloads/*.pdf (Belege)", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "PENDING", color: "#eab308", symbol: "🟡", label: "Verschiebung vorgeschlagen" }, syncthing: { synced: true }, backup: { protected: false }, file_count: 22, size_mb: 180.0, children: [] },
+            { id: "node_dl_installer", name: "Installer & Archive (→ Papierkorb)", path: "/home/mb/Downloads/*.deb, *.tar.gz", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "DUMPZONE", color: "#ef4444", symbol: "🔴", label: "Veraltete Installer" }, syncthing: { synced: true }, backup: { protected: false }, file_count: 9, size_mb: 325.0, children: [] }
+          ]
+        }
+      ]
+    },
+    {
+      id: "comp_debian1",
+      name: "🖥️ kimi-debian1 (Server)",
+      path: "host://192.168.178.111",
+      node_type: "computer",
+      computer_id: "kimi-debian1",
+      role: "PostgreSQL 16, pgvector & Docker Server",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Online & Docker Engine Aktiv" },
+      syncthing: { synced: true, folder_id: null, label: "Syncthing Node (debian1)", type: "mesh", peers: ["laptop"], status: "SYNCED" },
+      backup: { protected: true, program: "docker-backup.sh, pg-backup.sh", schedule: "Täglich 03:00 / Boot", target: "/media/xchg/ai-tools-data/", retention: "7 Tage daily / 12 Monate monthly" },
+      file_count: 4120,
+      size_mb: 8640.0,
+      children: [
+        {
+          id: "drive_debian1_xchg",
+          name: "📁 /media/xchg (P2P Replikation)",
+          path: "/media/xchg",
+          node_type: "drive",
+          computer_id: "kimi-debian1",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "P2P Spiegel" },
+          syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", peers: ["laptop"], status: "SYNCED" },
+          backup: { protected: true, program: "Syncthing Mesh" },
+          file_count: 1840,
+          size_mb: 4820.0,
+          children: []
+        },
+        {
+          id: "drive_debian1_docker",
+          name: "🐳 /var/lib/docker/volumes (Container Data)",
+          path: "/var/lib/docker/volumes",
+          node_type: "drive",
+          computer_id: "kimi-debian1",
+          status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich 03:00 Gesichert" },
+          syncthing: { synced: false, peers: [] },
+          backup: { protected: true, program: "docker-backup.sh", schedule: "Täglich 03:00", target: "/media/xchg/ai-tools-data/docker-backups", retention: "7 Tage" },
+          file_count: 1650,
+          size_mb: 2400.0,
+          children: [
+            { id: "node_debian1_shared_pg", name: "shared-pg_data (PostgreSQL 16 + pgvector)", path: "/var/lib/docker/volumes/shared-pg_data", node_type: "subfolder", computer_id: "kimi-debian1", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "DB-Gesichert" }, syncthing: { synced: false }, backup: { protected: true, program: "pg-backup.sh", schedule: "Boot + 03:00" }, file_count: 420, size_mb: 1100.0, children: [] },
+            { id: "node_debian1_n8n", name: "n8n_data (Workflows & Execution States)", path: "/var/lib/docker/volumes/n8n_data", node_type: "subfolder", computer_id: "kimi-debian1", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich gesichert" }, syncthing: { synced: false }, backup: { protected: true, program: "docker-backup.sh" }, file_count: 1230, size_mb: 1300.0, children: [] }
+          ]
+        },
+        {
+          id: "drive_debian1_pg_backups",
+          name: "📦 /var/backups/postgres (Lokale SQL-Dumps)",
+          path: "/var/backups/postgres",
+          node_type: "backup_archive",
+          computer_id: "kimi-debian1",
+          status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Konsistente Dumps" },
+          syncthing: { synced: false, peers: [] },
+          backup: { protected: true, program: "pg-backup.sh" },
+          file_count: 28,
+          size_mb: 1420.0,
+          children: []
+        }
+      ]
+    },
+    {
+      id: "comp_hermes",
+      name: "🤖 hermes-laptop (KI-Agent)",
+      path: "host://hermes-laptop",
+      node_type: "computer",
+      computer_id: "hermes-laptop",
+      role: "Autonome Reorganisation, Vektorisierung & Plugin Host",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Gateway & Watchdog Aktiv" },
+      syncthing: { synced: true, folder_id: null, label: "Shared via xchg", type: "mesh", peers: ["laptop", "debian1"], status: "SYNCED" },
+      backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich", target: "/media/xchg/ai-agents-workspaces/hermes/backups", retention: "24h Snapshots" },
+      file_count: 930,
+      size_mb: 1770.0,
+      children: [
+        { id: "drive_hermes_workspace", name: "🧠 .hermes Core & Plugins", path: "/media/xchg/ai-agents-workspaces/hermes/.hermes", node_type: "drive", computer_id: "hermes-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Aktiv" }, syncthing: { synced: true }, backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich" }, file_count: 310, size_mb: 620.0, children: [] },
+        { id: "drive_hermes_graphify", name: "🌐 Graphify Knowledge Base Index", path: "/media/xchg/ai-graph", node_type: "drive", computer_id: "hermes-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich 04:00 neu indiziert" }, syncthing: { synced: true }, backup: { protected: true, program: "graphify-index-obsidian.py" }, file_count: 620, size_mb: 1150.0, children: [] }
+      ]
+    },
+    {
+      id: "comp_gdrive",
+      name: "☁️ Google Drive (Cloud Mirror)",
+      path: "gdrive://creatiVision",
+      node_type: "cloud",
+      computer_id: "gdrive",
+      role: "Offsite Cloud-Tresor & Freigabe-Portal",
+      status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Offsite Geschützt & Versioniert" },
+      syncthing: { synced: false, label: "Cloud Connector", type: "cloud", peers: ["laptop"], status: "CLOUD_SYNC" },
+      backup: { protected: true, program: "rclone / gdrive sync", schedule: "Periodisch via Sync-Manager", target: "gdrive://creatiVision", retention: "Google Workspace Drive Versioning" },
+      file_count: 2150,
+      size_mb: 12400.0,
+      children: [
+        { id: "drive_gdrive_accounting", name: "📊 Accounting (Buchhaltung Cloud-Mirror)", path: "gdrive://creatiVision/Accounting", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Spiegelung Aktiv" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 480, size_mb: 1250.0, children: [] },
+        { id: "drive_gdrive_brand", name: "🎨 Brand & Assets (Master Medien)", path: "gdrive://creatiVision/Brand", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Master-Depot" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 820, size_mb: 3450.0, children: [] },
+        { id: "drive_gdrive_backups", name: "📦 Backups (Verschlüsselte Offsite Dumps)", path: "gdrive://creatiVision/Backups", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Georedundant" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 850, size_mb: 7700.0, children: [] }
+      ]
+    },
+    {
+      id: "comp_mobile",
+      name: "📱 Note14new (Smartphone)",
+      path: "mobile://192.168.178.127",
+      node_type: "computer",
+      computer_id: "note14new",
+      role: "Mobiles Endgerät & Kamera-Upload",
+      status: { state: "INDEXED", color: "#06b6d4", symbol: "🟢", label: "P2P Verbunden (192.168.178.127:22000)" },
+      syncthing: { synced: true, folder_id: "6yrmn-6pvpe", label: "Syncthing Node (Note14new)", type: "p2p_device", peers: ["laptop"], status: "SYNCED" },
+      backup: { protected: true, program: "Syncthing Auto-Replication", schedule: "Echtzeit bei WLAN-Verbindung", target: "/media/xchg/Handy/", retention: "Permanent auf Laptop archiviert" },
+      file_count: 322,
+      size_mb: 505.0,
+      children: [
+        { id: "drive_mobile_share", name: "📤 Handy-Share (Transfer-Ordner)", path: "mobile://Handy-Share", node_type: "drive", computer_id: "note14new", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "P2P Synchron" }, syncthing: { synced: true, folder_id: "6yrmn-6pvpe", peers: ["laptop"] }, backup: { protected: true, program: "Syncthing P2P Replikation" }, file_count: 12, size_mb: 45.0, children: [] },
+        { id: "drive_mobile_dcim", name: "📷 Handy-Bilder (DCIM Kamera-Stream)", path: "mobile://DCIM", node_type: "drive", computer_id: "note14new", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "P2P Synchron" }, syncthing: { synced: true, folder_id: "awwa2-tvdxp", peers: ["laptop"] }, backup: { protected: true, program: "Syncthing P2P Replikation" }, file_count: 310, size_mb: 460.0, children: [] }
+      ]
+    }
+  ];
+
+  // Multi-Computer File Tree & Backup/Sync Radar Window Component
+  function MultiComputerTreeWindow({ onClose }) {
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [systemTree, setSystemTree] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [activeLayer, setActiveLayer] = useState("all"); // "all" | "syncthing" | "backup" | "traffic_light"
+    const [expandedIds, setExpandedIds] = useState(() => new Set([
+      "comp_laptop", "comp_debian1", "comp_hermes", "comp_gdrive", "comp_mobile",
+      "drive_laptop_xchg", "drive_laptop_workdata", "drive_laptop_privat", "drive_laptop_downloads",
+      "drive_debian1_docker", "drive_mobile_share"
+    ]));
+    const [selectedNode, setSelectedNode] = useState(null);
+    const [hoveredNode, setHoveredNode] = useState(null);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isPaused, setIsPaused] = useState(false);
+
+    // Viewport transform
+    const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const hasDraggedRef = useRef(false);
+
+    // Fetch /system-tree on mount
+    useEffect(() => {
+      let mounted = true;
+      apiCall("/system-tree")
+        .then((data) => {
+          if (mounted && data && data.ok && data.tree) {
+            setSystemTree(data);
+            if (data.tree.length > 0 && !selectedNode) {
+              setSelectedNode(data.tree[0]);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load /system-tree:", err);
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
+      return () => { mounted = false; };
+    }, []);
+
+    const hostsTree = (systemTree && systemTree.tree) || DEFAULT_SYSTEM_TREE;
+
+    // Toggle node expand/collapse
+    const toggleExpand = useCallback((nodeId) => {
+      setExpandedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+    }, []);
+
+    const expandAll = useCallback(() => {
+      const all = new Set();
+      function collect(nodes) {
+        nodes.forEach(n => {
+          all.add(n.id);
+          if (n.children && n.children.length > 0) collect(n.children);
+        });
+      }
+      collect(hostsTree);
+      setExpandedIds(all);
+    }, [hostsTree]);
+
+    const collapseAll = useCallback(() => {
+      setExpandedIds(new Set());
+    }, []);
+
+    const setLevel = useCallback((lvl) => {
+      const ids = new Set();
+      function collect(nodes, curLvl) {
+        nodes.forEach(n => {
+          if (curLvl < lvl) {
+            ids.add(n.id);
+            if (n.children) collect(n.children, curLvl + 1);
+          }
+        });
+      }
+      collect(hostsTree, 1);
+      setExpandedIds(ids);
+    }, [hostsTree]);
+
+    // Center node in viewport
+    const centerNode = useCallback((node) => {
+      if (!node || !canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const w = canvas.clientWidth || 1000;
+      const h = canvas.clientHeight || 650;
+      const s = 1.15;
+      const px = (w / 2) - (node.x * s);
+      const py = (h / 2) - (node.y * s);
+      setTransform({ scale: s, panX: px, panY: py });
+    }, []);
+
+    // Compute Layout Positions
+    const layout = useMemo(() => {
+      const canvas = canvasRef.current;
+      const width = canvas ? canvas.clientWidth : 1100;
+      const height = canvas ? canvas.clientHeight : 680;
+      const cx = width / 2;
+      const cy = height / 2;
+
+      const nodes = [];
+      const links = [];
+      const crossLinks = [];
+
+      // Central Backbone Hub
+      const centralHub = {
+        id: "hub_lan_backbone",
+        name: "🌐 LAN Mesh & Sync Backbone",
+        path: "LAN 192.168.178.0/24 • Syncthing Ring • Offsite Cloud",
+        node_type: "hub",
+        computer_id: "backbone",
+        x: cx,
+        y: cy,
+        radius: 26,
+        color: "#6366f1",
+        icon: "🌐",
+        isHub: true,
+        visible: true,
+        status: { state: "PROTECTED", color: "#6366f1", symbol: "🌐", label: "Backbone Aktiv" },
+        file_count: 12800,
+        size_mb: 28400.0,
+        syncthing: { synced: true, label: "P2P Mesh", type: "mesh", peers: ["laptop", "debian1", "Note14new"] },
+        backup: { protected: true, program: "pg-backup.sh, docker-backup.sh", schedule: "Täglich + Boot" }
+      };
+      nodes.push(centralHub);
+
+      // Host Positions (Radial Circle around Backbone)
+      const hostAngles = {
+        "comp_laptop": -0.75 * Math.PI,
+        "comp_gdrive": -0.22 * Math.PI,
+        "comp_debian1": 0.15 * Math.PI,
+        "comp_mobile": 0.52 * Math.PI,
+        "comp_hermes": 0.92 * Math.PI
+      };
+      const hostRadius = 175;
+
+      hostsTree.forEach((host, hIdx) => {
+        const hAngle = hostAngles[host.id] !== undefined ? hostAngles[host.id] : (-0.8 * Math.PI + (hIdx * 0.4 * Math.PI));
+        const hx = cx + Math.cos(hAngle) * hostRadius;
+        const hy = cy + Math.sin(hAngle) * hostRadius;
+
+        const hostNode = Object.assign({}, host, {
+          x: hx,
+          y: hy,
+          radius: 24,
+          angle: hAngle,
+          visible: true,
+          collapsedCount: host.children ? host.children.length : 0,
+          isExpanded: expandedIds.has(host.id)
+        });
+        nodes.push(hostNode);
+
+        // Link Hub -> Host
+        links.push({
+          sourceId: centralHub.id,
+          targetId: hostNode.id,
+          p0: { x: centralHub.x, y: centralHub.y },
+          p1: { x: hostNode.x, y: hostNode.y },
+          color: hostNode.status.color,
+          type: "backbone"
+        });
+
+        // Child Drives
+        if (host.children && host.children.length > 0) {
+          const isHostExpanded = expandedIds.has(host.id);
+          const driveCount = host.children.length;
+          const driveSpan = Math.min(Math.PI * 0.75, 0.28 * driveCount);
+          const driveDist = 135;
+
+          host.children.forEach((drive, dIdx) => {
+            const driveAngle = driveCount === 1 ? hAngle : (hAngle - driveSpan / 2 + (dIdx * driveSpan) / (driveCount - 1));
+            const dx = hx + Math.cos(driveAngle) * driveDist;
+            const dy = hy + Math.sin(driveAngle) * driveDist;
+
+            const isDriveExpanded = isHostExpanded && expandedIds.has(drive.id);
+            const driveNode = Object.assign({}, drive, {
+              x: dx,
+              y: dy,
+              radius: 18,
+              angle: driveAngle,
+              visible: isHostExpanded,
+              collapsedCount: drive.children ? drive.children.length : 0,
+              isExpanded: isDriveExpanded
+            });
+            nodes.push(driveNode);
+
+            if (isHostExpanded) {
+              links.push({
+                sourceId: hostNode.id,
+                targetId: driveNode.id,
+                p0: { x: hostNode.x, y: hostNode.y },
+                p1: { x: driveNode.x, y: driveNode.y },
+                color: driveNode.status.color,
+                type: "tree"
+              });
+            }
+
+            // Folders / Subfolders
+            if (drive.children && drive.children.length > 0) {
+              const folderCount = drive.children.length;
+              const folderSpan = Math.min(Math.PI * 0.5, 0.22 * folderCount);
+              const folderDist = 110;
+
+              drive.children.forEach((folder, fIdx) => {
+                const folderAngle = folderCount === 1 ? driveAngle : (driveAngle - folderSpan / 2 + (fIdx * folderSpan) / (folderCount - 1));
+                const fx = dx + Math.cos(folderAngle) * folderDist;
+                const fy = dy + Math.sin(folderAngle) * folderDist;
+
+                const isFolderExpanded = isDriveExpanded && expandedIds.has(folder.id);
+                const folderNode = Object.assign({}, folder, {
+                  x: fx,
+                  y: fy,
+                  radius: 14,
+                  angle: folderAngle,
+                  visible: isDriveExpanded,
+                  collapsedCount: folder.children ? folder.children.length : 0,
+                  isExpanded: isFolderExpanded
+                });
+                nodes.push(folderNode);
+
+                if (isDriveExpanded) {
+                  links.push({
+                    sourceId: driveNode.id,
+                    targetId: folderNode.id,
+                    p0: { x: driveNode.x, y: driveNode.y },
+                    p1: { x: driveNode.x, y: driveNode.y },
+                    color: folderNode.status.color,
+                    type: "tree"
+                  });
+                }
+
+                // Subfolder leaves
+                if (folder.children && folder.children.length > 0) {
+                  const subCount = folder.children.length;
+                  const subSpan = Math.min(Math.PI * 0.4, 0.18 * subCount);
+                  const subDist = 85;
+
+                  folder.children.forEach((sub, sIdx) => {
+                    const subAngle = subCount === 1 ? folderAngle : (folderAngle - subSpan / 2 + (sIdx * subSpan) / (subCount - 1));
+                    const sx = fx + Math.cos(subAngle) * subDist;
+                    const sy = fy + Math.sin(subAngle) * subDist;
+
+                    const subNode = Object.assign({}, sub, {
+                      x: sx,
+                      y: sy,
+                      radius: 11,
+                      angle: subAngle,
+                      visible: isFolderExpanded,
+                      collapsedCount: 0,
+                      isExpanded: false
+                    });
+                    nodes.push(subNode);
+
+                    if (isFolderExpanded) {
+                      links.push({
+                        sourceId: folderNode.id,
+                        targetId: subNode.id,
+                        p0: { x: folderNode.x, y: folderNode.y },
+                        p1: { x: subNode.x, y: subNode.y },
+                        color: subNode.status.color,
+                        type: "tree"
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Cross-Cutting P2P Syncthing & Backup Links
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+      function addCrossLink(sId, tId, color, type, label) {
+        const s = nodeMap.get(sId);
+        const t = nodeMap.get(tId);
+        if (s && t && s.visible && t.visible) {
+          crossLinks.push({
+            sourceId: sId,
+            targetId: tId,
+            p0: { x: s.x, y: s.y },
+            p1: { x: t.x, y: t.y },
+            color: color,
+            type: type,
+            label: label
+          });
+        }
+      }
+
+      // Syncthing Links (cyan)
+      addCrossLink("drive_laptop_xchg", "drive_debian1_xchg", "#06b6d4", "syncthing", "xchg P2P");
+      addCrossLink("drive_laptop_workdata", "comp_debian1", "#06b6d4", "syncthing", "work-data P2P");
+      addCrossLink("node_handy_share", "drive_mobile_share", "#06b6d4", "syncthing", "Handy-Share P2P");
+      addCrossLink("node_handy_dcim", "drive_mobile_dcim", "#06b6d4", "syncthing", "DCIM Foto P2P");
+
+      // Backup Links (purple/amber)
+      addCrossLink("node_debian1_shared_pg", "node_xchg_pg_backups", "#a855f7", "backup", "pg-backup.sh");
+      addCrossLink("drive_debian1_docker", "node_xchg_docker_backups", "#d97706", "backup", "docker-backup.sh");
+      addCrossLink("node_work_bookaccount", "drive_gdrive_accounting", "#a855f7", "backup", "rclone gdrive");
+      addCrossLink("drive_laptop_privat", "drive_gdrive_backups", "#a855f7", "backup", "rclone gdrive");
+      addCrossLink("node_xchg_knowledge", "drive_hermes_graphify", "#10b981", "backup", "graphify sync");
+
+      return { nodes, links, crossLinks };
+    }, [hostsTree, expandedIds]);
+
+    // Auto-fit to Screen Algorithm
+    const autoFitScreen = useCallback(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const width = canvas.clientWidth || 1000;
+      const height = canvas.clientHeight || 650;
+      const visibleNodes = layout.nodes.filter(n => n.visible);
+      if (visibleNodes.length === 0) return;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      visibleNodes.forEach(n => {
+        const pad = (n.radius || 20) + 40;
+        minX = Math.min(minX, n.x - pad);
+        maxX = Math.max(maxX, n.x + pad);
+        minY = Math.min(minY, n.y - pad);
+        maxY = Math.max(maxY, n.y + pad);
+      });
+
+      const boxW = Math.max(maxX - minX, 150);
+      const boxH = Math.max(maxY - minY, 150);
+      const scaleX = (width - 60) / boxW;
+      const scaleY = (height - 60) / boxH;
+      const newScale = Math.max(0.35, Math.min(scaleX, scaleY, 1.25));
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const newPanX = (width / 2) - (centerX * newScale);
+      const newPanY = (height / 2) - (centerY * newScale);
+
+      setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+    }, [layout]);
+
+    // Trigger autoFitScreen on initial render or resize
+    useEffect(() => {
+      const t = setTimeout(() => {
+        autoFitScreen();
+      }, 45);
+      return () => clearTimeout(t);
+    }, [autoFitScreen]);
+
+    // Canvas Render Loop
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      let animationFrameId;
+      const width = canvas.clientWidth || 1000;
+      const height = canvas.clientHeight || 650;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+
+      const startTime = Date.now();
+
+      function render() {
+        const now = Date.now();
+        const elapsed = isPaused ? 0 : (now - startTime) / 1000;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        // Clear Background with Deep Cosmic Obsidian Theme
+        ctx.fillStyle = "#080c14";
+        ctx.fillRect(0, 0, width, height);
+
+        // Faint Star Grid Dots
+        ctx.fillStyle = "rgba(51, 65, 85, 0.22)";
+        for (let gx = 30; gx < width; gx += 45) {
+          for (let gy = 30; gy < height; gy += 45) {
+            ctx.fillRect(gx, gy, 1.2, 1.2);
+          }
+        }
+
+        // Apply Viewport Pan & Zoom
+        ctx.save();
+        ctx.translate(transformRef.current.panX, transformRef.current.panY);
+        ctx.scale(transformRef.current.scale, transformRef.current.scale);
+
+        // 1. Draw Tree Hierarchy Links
+        layout.links.forEach(link => {
+          ctx.beginPath();
+          ctx.moveTo(link.p0.x, link.p0.y);
+
+          // Subtle curved path
+          const midX = (link.p0.x + link.p1.x) / 2;
+          const midY = (link.p0.y + link.p1.y) / 2;
+          ctx.quadraticCurveTo(midX, midY, link.p1.x, link.p1.y);
+
+          let alpha = 0.45;
+          if (activeLayer === "syncthing") alpha = 0.15;
+          if (activeLayer === "backup") alpha = 0.15;
+
+          ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+        });
+
+        // 2. Draw Cross-Cutting Syncthing P2P Mesh Links (Cyan with Flowing Packets)
+        if (activeLayer === "all" || activeLayer === "syncthing") {
+          layout.crossLinks.filter(cl => cl.type === "syncthing").forEach(cl => {
+            const dx = cl.p1.x - cl.p0.x;
+            const dy = cl.p1.y - cl.p0.y;
+            const cx1 = cl.p0.x + dx * 0.5 - dy * 0.22;
+            const cy1 = cl.p0.y + dy * 0.5 + dx * 0.22;
+
+            ctx.beginPath();
+            ctx.moveTo(cl.p0.x, cl.p0.y);
+            ctx.quadraticCurveTo(cx1, cy1, cl.p1.x, cl.p1.y);
+
+            ctx.strokeStyle = "rgba(6, 182, 212, 0.75)";
+            ctx.lineWidth = 2.4;
+            ctx.setLineDash([5, 4]);
+            ctx.shadowColor = "#06b6d4";
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.shadowBlur = 0;
+
+            // Flowing Cyan Syncthing Data Particles
+            if (!isPaused) {
+              const particleT = (elapsed * 0.35) % 1.0;
+              const inv = 1 - particleT;
+              const px = inv * inv * cl.p0.x + 2 * inv * particleT * cx1 + particleT * particleT * cl.p1.x;
+              const py = inv * inv * cl.p0.y + 2 * inv * particleT * cy1 + particleT * particleT * cl.p1.y;
+
+              ctx.beginPath();
+              ctx.arc(px, py, 3.8, 0, Math.PI * 2);
+              ctx.fillStyle = "#67e8f9";
+              ctx.shadowColor = "#06b6d4";
+              ctx.shadowBlur = 12;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          });
+        }
+
+        // 3. Draw Cross-Cutting Backup Flow Links (Purple/Amber with Flowing Snapshots)
+        if (activeLayer === "all" || activeLayer === "backup") {
+          layout.crossLinks.filter(cl => cl.type === "backup").forEach(cl => {
+            const dx = cl.p1.x - cl.p0.x;
+            const dy = cl.p1.y - cl.p0.y;
+            const cx1 = cl.p0.x + dx * 0.5 + dy * 0.2;
+            const cy1 = cl.p0.y + dy * 0.5 - dx * 0.2;
+
+            ctx.beginPath();
+            ctx.moveTo(cl.p0.x, cl.p0.y);
+            ctx.quadraticCurveTo(cx1, cy1, cl.p1.x, cl.p1.y);
+
+            ctx.strokeStyle = cl.color === "#a855f7" ? "rgba(168, 85, 247, 0.8)" : "rgba(217, 119, 6, 0.8)";
+            ctx.lineWidth = 2.2;
+            ctx.shadowColor = cl.color;
+            ctx.shadowBlur = 9;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Flowing Backup Snapshot Particles
+            if (!isPaused) {
+              const particleT = (elapsed * 0.28) % 1.0;
+              const inv = 1 - particleT;
+              const px = inv * inv * cl.p0.x + 2 * inv * particleT * cx1 + particleT * particleT * cl.p1.x;
+              const py = inv * inv * cl.p0.y + 2 * inv * particleT * cy1 + particleT * particleT * cl.p1.y;
+
+              ctx.beginPath();
+              ctx.arc(px, py, 4.0, 0, Math.PI * 2);
+              ctx.fillStyle = cl.color;
+              ctx.shadowColor = cl.color;
+              ctx.shadowBlur = 14;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          });
+        }
+
+        // 4. Draw Nodes
+        layout.nodes.filter(n => n.visible).forEach(node => {
+          const isSelected = selectedNode && selectedNode.id === node.id;
+          const isHovered = hoveredNode && hoveredNode.id === node.id;
+
+          // Filter Opacity
+          let nodeAlpha = 1.0;
+          if (activeLayer === "syncthing" && (!node.syncthing || !node.syncthing.synced)) {
+            nodeAlpha = 0.22;
+          } else if (activeLayer === "backup" && (!node.backup || !node.backup.protected)) {
+            nodeAlpha = 0.22;
+          }
+
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            const matches = (node.name && node.name.toLowerCase().includes(q)) ||
+                            (node.path && node.path.toLowerCase().includes(q)) ||
+                            (node.computer_id && node.computer_id.toLowerCase().includes(q));
+            if (!matches) nodeAlpha = 0.15;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = nodeAlpha;
+
+          const r = (isHovered || isSelected) ? node.radius + 3 : node.radius;
+
+          // Pulsating Halo Ring
+          if (!isPaused && (node.node_type === "computer" || (node.syncthing && node.syncthing.synced))) {
+            const pulse = Math.sin(elapsed * 2.8 + node.x * 0.01) * 3;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r + 4 + pulse, 0, Math.PI * 2);
+            ctx.fillStyle = `${node.status.color}25`;
+            ctx.fill();
+          }
+
+          // Node Body Circle
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = isSelected ? "#1e293b" : "#0f172a";
+          ctx.shadowColor = node.status.color;
+          ctx.shadowBlur = (isHovered || isSelected) ? 22 : 10;
+          ctx.fill();
+
+          // Border
+          ctx.strokeStyle = isSelected ? "#ffffff" : node.status.color;
+          ctx.lineWidth = (isHovered || isSelected) ? 3.0 : 2.0;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Node Icon
+          ctx.font = `${Math.round(r * 0.88)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(node.icon || "📁", node.x, node.y);
+
+          // Status Traffic Light Pip (Top Right)
+          ctx.beginPath();
+          ctx.arc(node.x + r * 0.72, node.y - r * 0.72, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = node.status.color;
+          ctx.shadowColor = node.status.color;
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = "#080c14";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Collapsed Folder Badge [+N]
+          if (!node.isExpanded && node.collapsedCount > 0) {
+            const badgeTxt = `+${node.collapsedCount}`;
+            ctx.font = "bold 9px monospace";
+            const bw = ctx.measureText(badgeTxt).width + 8;
+            const bh = 14;
+            const bx = node.x + r * 0.75;
+            const by = node.y + r * 0.45;
+
+            ctx.fillStyle = "rgba(59, 130, 246, 0.95)";
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 6);
+            ctx.fill();
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(badgeTxt, bx + bw / 2, by + bh / 2 + 0.5);
+          }
+
+          // Node Label
+          ctx.font = (isHovered || isSelected) ? "bold 11px system-ui" : "600 10.5px system-ui";
+          ctx.fillStyle = (isHovered || isSelected) ? "#ffffff" : "#cbd5e1";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          const maxLblLen = 22;
+          const displayLabel = node.name.length > maxLblLen ? node.name.slice(0, maxLblLen) + "…" : node.name;
+          ctx.fillText(displayLabel, node.x, node.y + r + 5);
+
+          // Sub-Label (Sync or Backup tag)
+          if (activeLayer === "syncthing" && node.syncthing && node.syncthing.synced) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#67e8f9";
+            ctx.fillText(`🔄 ${node.syncthing.label || "In Sync"}`, node.x, node.y + r + 18);
+          } else if (activeLayer === "backup" && node.backup && node.backup.protected) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#d8b4fe";
+            ctx.fillText(`🛡️ ${node.backup.program ? node.backup.program.split(",")[0] : "Gesichert"}`, node.x, node.y + r + 18);
+          } else if (node.file_count) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = node.status.color;
+            ctx.fillText(`${node.file_count} Dat.`, node.x, node.y + r + 18);
+          }
+
+          ctx.restore();
+        });
+
+        ctx.restore();
+
+        animationFrameId = requestAnimationFrame(render);
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+
+      return () => {
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      };
+    }, [layout, activeLayer, searchQuery, isPaused, selectedNode, hoveredNode]);
+
+    // Mouse Interaction Handlers
+    const handleMouseDown = (e) => {
+      isDraggingRef.current = true;
+      hasDraggedRef.current = false;
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseMove = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+
+      if (isDraggingRef.current) {
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          hasDraggedRef.current = true;
+        }
+        setTransform(prev => ({
+          scale: prev.scale,
+          panX: prev.panX + dx,
+          panY: prev.panY + dy
+        }));
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      } else {
+        // Hit-test nodes for hover
+        const mx = (e.clientX - rect.left - transformRef.current.panX) / transformRef.current.scale;
+        const my = (e.clientY - rect.top - transformRef.current.panY) / transformRef.current.scale;
+
+        let found = null;
+        for (const n of layout.nodes.filter(n => n.visible)) {
+          const dist = Math.hypot(n.x - mx, n.y - my);
+          if (dist <= n.radius + 6) {
+            found = n;
+            break;
+          }
+        }
+        setHoveredNode(found);
+      }
+    };
+
+    const handleMouseUp = (e) => {
+      isDraggingRef.current = false;
+      if (!hasDraggedRef.current) {
+        // Handle click on node
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - transformRef.current.panX) / transformRef.current.scale;
+        const my = (e.clientY - rect.top - transformRef.current.panY) / transformRef.current.scale;
+
+        for (const n of layout.nodes.filter(n => n.visible)) {
+          const dist = Math.hypot(n.x - mx, n.y - my);
+          if (dist <= n.radius + 6) {
+            setSelectedNode(n);
+            toggleExpand(n.id);
+            break;
+          }
+        }
+      }
+    };
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      const newScale = Math.max(0.25, Math.min(3.5, transformRef.current.scale * factor));
+      const newPanX = mouseX - (mouseX - transformRef.current.panX) * (newScale / transformRef.current.scale);
+      const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / transformRef.current.scale);
+
+      setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+    };
+
+    return h("div", {
+      className: "auto-org-multi-tree-modal",
+      onClick: (e) => { if (e.target === e.currentTarget) onClose(); }
+    },
+      h("div", {
+        className: `auto-org-multi-tree-window ${isFullscreen ? "fullscreen" : ""}`,
+        ref: containerRef
+      },
+        // Top Header
+        h("div", { className: "auto-org-multi-tree-header" },
+          h("div", { className: "auto-org-multi-tree-title" },
+            h("h3", null,
+              h("span", null, "🌐"),
+              "Multi-Computer File Tree & Backup/Sync Radar"
+            ),
+            h("div", { className: "auto-org-host-chips" },
+              h("span", { className: "auto-org-host-chip online" }, "💻 laptop: 🟢 Online"),
+              h("span", { className: "auto-org-host-chip online" }, "🖥️ debian1: 🟢 Online (192.168.178.111)"),
+              h("span", { className: "auto-org-host-chip online" }, "🤖 hermes: 🟢 Aktiv"),
+              h("span", { className: "auto-org-host-chip cloud" }, "☁️ gdrive: 🟣 Cloud-Vault"),
+              h("span", { className: "auto-org-host-chip mobile" }, "📱 Note14new: 🟢 P2P Sync (192.168.178.127)")
+            )
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+            h("button", {
+              type: "button",
+              className: "auto-org-pill-btn",
+              onClick: () => setIsFullscreen(!isFullscreen),
+              title: isFullscreen ? "Fenster verkleinern" : "Vollbildmodus"
+            }, isFullscreen ? "🗖 Normal" : "⛶ Vollbild"),
+            h("button", {
+              type: "button",
+              className: "auto-org-modal-close",
+              onClick: onClose,
+              title: "Schließen"
+            }, "✕")
+          )
+        ),
+
+        // Controls & Filter Toolbar
+        h("div", { className: "auto-org-multi-tree-toolbar" },
+          // Layer Selector
+          h("div", { className: "auto-org-toolbar-group" },
+            h("span", { className: "auto-org-toolbar-label" }, "Radar-Layer:"),
+            [
+              { id: "all", label: "🔘 Alle Layer" },
+              { id: "syncthing", label: "🔄 Syncthing Sync-Radar" },
+              { id: "backup", label: "🛡️ Backup-Programme" },
+              { id: "traffic_light", label: "🚦 Index-Ampeln" }
+            ].map(layer =>
+              h("button", {
+                key: layer.id,
+                type: "button",
+                className: `auto-org-pill-btn ${activeLayer === layer.id ? "active" : ""}`,
+                onClick: () => setActiveLayer(layer.id)
+              }, layer.label)
+            )
+          ),
+
+          // Tree Folding Controls
+          h("div", { className: "auto-org-toolbar-group" },
+            h("span", { className: "auto-org-toolbar-label" }, "Baum-Faltung:"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen" }, "[+] Alles"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen" }, "[-] Nur Hosts"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen" }, "[2] Laufwerke"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen" }, "[3] Ordner")
+          ),
+
+          // Viewport & Auto-Fit Controls
+          h("div", { className: "auto-org-toolbar-group" },
+            h("button", {
+              type: "button",
+              className: "auto-org-pill-btn fit",
+              onClick: autoFitScreen,
+              title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
+            }, "🎯 Auto-Fit Screen"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern" }, "+"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern" }, "-"),
+            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht" }, "↺ Reset"),
+            h("button", {
+              type: "button",
+              className: "auto-org-pill-btn",
+              onClick: () => setIsPaused(!isPaused),
+              title: isPaused ? "Animation starten" : "Animation pausieren"
+            }, isPaused ? "▶️ Play" : "⏸️ Pause")
+          ),
+
+          // Search Filter
+          h("div", { className: "auto-org-toolbar-group" },
+            h("input", {
+              type: "text",
+              className: "auto-org-input",
+              style: { padding: "0.22rem 0.55rem", fontSize: "0.75rem", width: "160px" },
+              placeholder: "🔍 Pfad / Name filtern...",
+              value: searchQuery,
+              onChange: (e) => setSearchQuery(e.target.value)
+            })
+          )
+        ),
+
+        // Main Body: Canvas + Inspector Drawer
+        h("div", { className: "auto-org-multi-tree-body" },
+          // Canvas Viewport
+          h("div", { className: "auto-org-canvas-viewport" },
+            h("canvas", {
+              ref: canvasRef,
+              className: "auto-org-tree-canvas",
+              onMouseDown: handleMouseDown,
+              onMouseMove: handleMouseMove,
+              onMouseUp: handleMouseUp,
+              onWheel: handleWheel
+            })
+          ),
+
+          // Inspector Drawer
+          selectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
+            h("div", { className: "auto-org-inspector-header" },
+              h("div", null,
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                  h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
+                  h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+                ),
+                h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                  `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
+                )
+              ),
+              h("span", {
+                className: `auto-org-ampel-badge ${selectedNode.status.state === "INDEXED" || selectedNode.status.state === "PROTECTED" ? "green" : selectedNode.status.state === "PENDING" ? "yellow" : "red"}`,
+                style: { fontSize: "0.72rem" }
+              }, `${selectedNode.status.symbol} ${selectedNode.status.state}`)
+            ),
+
+            // Exact Host Path
+            h("div", { className: "auto-org-inspector-section" },
+              h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
+              h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
+                formatUserPath(selectedNode.path)
+              ),
+              h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, selectedNode.status.label)
+            ),
+
+            // Syncthing Radar Details
+            h("div", { className: "auto-org-inspector-section" },
+              h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
+              selectedNode.syncthing && selectedNode.syncthing.synced ?
+                h(React.Fragment, null,
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Status:"),
+                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
+                  ),
+                  selectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
+                    h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, selectedNode.syncthing.folder_id)
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
+                    h("span", { className: "auto-org-meta-val" }, selectedNode.syncthing.type || "sendreceive (beidseitig)")
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
+                    h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
+                      (selectedNode.syncthing.peers && selectedNode.syncthing.peers.length > 0) ? selectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+                    )
+                  )
+                ) :
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
+            ),
+
+            // Backup Details
+            h("div", { className: "auto-org-inspector-section" },
+              h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup-Programme & Schutz"),
+              selectedNode.backup && selectedNode.backup.protected ?
+                h(React.Fragment, null,
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Programm:"),
+                    h("span", { className: "auto-org-badge auto-org-badge-blue" }, selectedNode.backup.program || "Automatisches Backup")
+                  ),
+                  selectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
+                    h("span", { className: "auto-org-meta-val" }, selectedNode.backup.schedule)
+                  ),
+                  selectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
+                    h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, selectedNode.backup.target)
+                  ),
+                  selectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Retention:"),
+                    h("span", { className: "auto-org-meta-val" }, selectedNode.backup.retention)
+                  )
+                ) :
+                h("div", { style: { fontSize: "0.75rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für diesen Ast definiert")
+            ),
+
+            // Volume & File Statistics
+            h("div", { className: "auto-org-inspector-section" },
+              h("div", { className: "auto-org-inspector-section-title" }, "📊 Speicher-Statistiken"),
+              h("div", { className: "auto-org-meta-row" },
+                h("span", { className: "auto-org-meta-label" }, "Dateianzahl:"),
+                h("span", { className: "auto-org-meta-val" }, selectedNode.file_count ? `${selectedNode.file_count.toLocaleString()} Dateien` : "-")
+              ),
+              h("div", { className: "auto-org-meta-row" },
+                h("span", { className: "auto-org-meta-label" }, "Gesamtgröße:"),
+                h("span", { className: "auto-org-meta-val" }, selectedNode.size_mb ? `${selectedNode.size_mb.toLocaleString()} MB` : "-")
+              )
+            ),
+
+            // Quick Actions
+            h("div", { style: { display: "flex", gap: "0.4rem", marginTop: "auto" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                style: { flex: 1, fontSize: "0.75rem" },
+                onClick: () => toggleExpand(selectedNode.id)
+              }, expandedIds.has(selectedNode.id) ? "Ast Einklappen" : "Ast Ausklappen"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { flex: 1, fontSize: "0.75rem" },
+                onClick: () => centerNode(selectedNode)
+              }, "🎯 Zentrieren")
+            )
+          )
+        ),
+
+        // Bottom Legend Footer
+        h("div", { className: "auto-org-multi-tree-footer" },
+          h("div", { className: "auto-org-legend-items" },
+            h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
+            h("div", { className: "auto-org-legend-item" },
+              h("span", { className: "auto-org-legend-dot green" }),
+              h("span", null, "🟢 Indexiert & Bereinigt")
+            ),
+            h("div", { className: "auto-org-legend-item" },
+              h("span", { className: "auto-org-legend-dot yellow" }),
+              h("span", null, "🟡 Vorschlag / Ausstehend")
+            ),
+            h("div", { className: "auto-org-legend-item" },
+              h("span", { className: "auto-org-legend-dot red" }),
+              h("span", null, "🔴 Dumpzone / Unsortiert")
+            ),
+            h("div", { className: "auto-org-legend-item" },
+              h("span", { className: "auto-org-legend-dot purple" }),
+              h("span", null, "🟣 Backup Gesichert (pg/docker/rclone)")
+            ),
+            h("div", { className: "auto-org-legend-item" },
+              h("span", { className: "auto-org-legend-dot cyan" }),
+              h("span", null, "🔄 Syncthing P2P Mesh")
+            )
+          ),
+          h("div", null,
+            "💡 Tipp: Klicken Sie auf einen Knoten zum Auf-/Zuklappen oder 'Auto-Fit Screen' zum Einpassen auf 1 Bildschirm."
+          )
         )
       )
     );
@@ -2106,6 +3342,14 @@
         // Top Toolbar Config Buttons
         h("div", { className: "auto-org-top-toolbar" },
           h("button", {
+            className: `auto-org-config-btn auto-org-radar-btn ${activeModal === "system_tree" ? "active" : ""}`,
+            onClick: () => setActiveModal(activeModal === "system_tree" ? null : "system_tree"),
+            title: "Dediziertes Multi-Computer Dateibaum-, Backup- & Syncthing-Radar-Fenster öffnen"
+          },
+            h("span", null, "🌐 Multi-Computer Tree & Radar"),
+            h("span", { className: "auto-org-badge auto-org-badge-green" }, "5 Hosts")
+          ),
+          h("button", {
             className: `auto-org-config-btn ${activeModal === "mounts" ? "active" : ""}`,
             onClick: () => setActiveModal(activeModal === "mounts" ? null : "mounts"),
             title: "Docker-Mounts, Freispeicher & Pfad-Prüfer"
@@ -2863,7 +4107,7 @@
       ];
 
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" } },
-        // Step 2 View Switcher (Tree vs Obsidian Graph)
+        // Step 2 View Switcher (Tree vs Obsidian Graph vs Multi-Computer Radar)
         h("div", { className: "auto-org-view-tabs" },
           h("button", {
             type: "button",
@@ -2874,7 +4118,14 @@
             type: "button",
             className: `auto-org-view-tab ${step2ViewMode === "graph" ? "active" : ""}`,
             onClick: () => setStep2ViewMode("graph")
-          }, "🕸️ Animierter Obsidian-Graph (Dateifluss & Netzwerk)")
+          }, "🕸️ Animierter Obsidian-Graph (Dateifluss & Netzwerk)"),
+          h("button", {
+            type: "button",
+            className: "auto-org-view-tab auto-org-radar-btn",
+            style: { marginLeft: "auto" },
+            onClick: () => setActiveModal("system_tree"),
+            title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
+          }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
         ),
 
         // Obsidian Graph View if active
@@ -3951,7 +5202,7 @@
               }, "Jetzt Dry-Run starten")
             ) :
             h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
-              // View Switcher Tabs (Groups vs Obsidian Graph vs Table)
+              // View Switcher Tabs (Groups vs Obsidian Graph vs Table vs Multi-Computer Radar)
               h("div", { className: "auto-org-view-tabs" },
                 h("button", {
                   type: "button",
@@ -3967,7 +5218,14 @@
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "table" ? "active" : ""}`,
                   onClick: () => setStep4ViewMode("table")
-                }, `📋 Technische Diff-Tabelle (${dryRun.actions.length} Dateien)`)
+                }, `📋 Technische Diff-Tabelle (${dryRun.actions.length} Dateien)`),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-view-tab auto-org-radar-btn",
+                  style: { marginLeft: "auto" },
+                  onClick: () => setActiveModal("system_tree"),
+                  title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
+                }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
               ),
 
               // TAB 1: Obsidian Transfer Graph
@@ -4459,6 +5717,12 @@
     // ==========================================
     const renderConfigModal = () => {
       if (!activeModal) return null;
+
+      if (activeModal === "system_tree") {
+        return h(MultiComputerTreeWindow, {
+          onClose: () => setActiveModal(null)
+        });
+      }
 
       let title = "";
       let content = null;
