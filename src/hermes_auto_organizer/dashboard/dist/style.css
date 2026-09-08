@@ -124,10 +124,10 @@
   color: #ffffff !important;
 }
 
-/* 4-Step Guided Stepper */
+/* 5-Step Guided Stepper */
 .auto-org-stepper {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.75rem;
   background: rgba(15, 23, 42, 0.75);
   padding: 0.6rem;
@@ -135,13 +135,19 @@
   border: 1px solid #334155;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1360px) {
+  .auto-org-stepper {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
   .auto-org-stepper {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 580px) {
   .auto-org-stepper {
     grid-template-columns: 1fr;
   }
@@ -858,4 +864,784 @@
   align-items: center;
   font-size: 0.8125rem;
 }
+
+/* Locked / Gated Step Cards */
+.auto-org-step-card.disabled,
+.auto-org-step-card.locked {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  border-style: dashed !important;
+  border-color: #475569 !important;
+  filter: grayscale(0.5);
+}
+
+.auto-org-step-card.locked:hover {
+  background: rgba(30, 41, 59, 0.65) !important;
+  border-color: #475569 !important;
+}
+
+/* Proactive Suggested Rules Grid & Cards */
+.auto-org-suggested-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.auto-org-suggested-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: all 0.15s ease;
+}
+
+.auto-org-suggested-card:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: #3b82f6;
+}
+
+.auto-org-evidence-box {
+  background: rgba(15, 23, 42, 0.95);
+  border-left: 3px solid #3b82f6;
+  border-radius: 0.25rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.auto-org-sample-pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  background: rgba(51, 65, 85, 0.5);
+  border: 1px solid #475569;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: #cbd5e1 !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ampelsystem (Traffic Light System) */
+.auto-org-ampel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.auto-org-ampel-badge.yellow {
+  background: rgba(234, 179, 8, 0.15) !important;
+  border: 1px solid #eab308 !important;
+  color: #fde047 !important;
+}
+
+.auto-org-ampel-badge.green {
+  background: rgba(34, 197, 94, 0.15) !important;
+  border: 1px solid #22c55e !important;
+  color: #86efac !important;
+}
+
+.auto-org-ampel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.auto-org-ampel-dot.yellow {
+  background: #eab308;
+  box-shadow: 0 0 6px rgba(234, 179, 8, 0.8);
+}
+
+.auto-org-ampel-dot.green {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
+}
+
+/* User Approval & Checkbox Toolbar */
+.auto-org-approval-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.auto-org-checkbox {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 0.25rem;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+/* Abstract Semantic Execution Groups (Step 4) */
+.auto-org-group-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auto-org-group-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 0.6rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.auto-org-group-card.approved {
+  border-color: #22c55e;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.12);
+}
+
+.auto-org-group-card.pending {
+  border-color: #eab308;
+  background: rgba(15, 23, 42, 0.85);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.08);
+}
+
+.auto-org-intent-box {
+  background: rgba(30, 58, 138, 0.22);
+  border-left: 4px solid #3b82f6;
+  border-radius: 0.25rem;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.875rem;
+  color: #f1f5f9 !important;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.auto-org-flow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.375rem;
+  border: 1px solid #1e293b;
+}
+
+.auto-org-kleingedruckt {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-radius: 0.375rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+/* Obsidian-Style Animated Graph */
+.auto-org-obsidian-container {
+  background: #080c14;
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.auto-org-obsidian-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid #1e293b;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.auto-org-obsidian-legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  flex-wrap: wrap;
+}
+
+.auto-org-obsidian-canvas {
+  width: 100%;
+  height: 460px;
+  display: block;
+  cursor: crosshair;
+}
+
+.auto-org-view-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.auto-org-view-tab {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  transition: all 0.15s ease;
+}
+
+.auto-org-view-tab.active {
+  background: #2563eb !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   Modern AI Cyber Design & Visual Tree Pipeline Styles (Ultra-Modern UI)
+   ========================================================================== */
+
+@keyframes ai-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.3), inset 0 0 8px rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.55), inset 0 0 14px rgba(168, 85, 247, 0.3);
+    border-color: rgba(192, 132, 252, 0.8);
+  }
+}
+
+@keyframes cyber-flow-stream {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Modern AI Card Container */
+.auto-org-ai-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.94) 0%, rgba(26, 36, 56, 0.82) 100%);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: all 0.22s ease-in-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.auto-org-ai-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.6), rgba(168, 85, 247, 0.6), transparent);
+  opacity: 0.7;
+}
+
+.auto-org-ai-card:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 12px 32px rgba(37, 99, 235, 0.2);
+  transform: translateY(-2px);
+}
+
+.auto-org-ai-card.approved {
+  border-color: #22c55e;
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.16);
+}
+
+.auto-org-ai-card.approved::before {
+  background: linear-gradient(90deg, transparent, #22c55e, #10b981, transparent);
+}
+
+.auto-org-ai-card.pending {
+  border-color: #eab308;
+  box-shadow: 0 0 14px rgba(234, 179, 8, 0.12);
+}
+
+.auto-org-ai-card.pending::before {
+  background: linear-gradient(90deg, transparent, #eab308, #f59e0b, transparent);
+}
+
+/* AI Neural Pulse Indicator */
+.auto-org-neural-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #c084fc;
+}
+
+.auto-org-neural-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #c084fc;
+  box-shadow: 0 0 8px #c084fc;
+  animation: ai-pulse-glow 2s infinite ease-in-out;
+}
+
+/* Visual Branch Pipeline (Tree Flow inside Every Card) */
+.auto-org-branch-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  background: rgba(8, 12, 20, 0.8);
+  padding: 0.65rem 0.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(51, 65, 85, 0.7);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.auto-org-pipeline-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.35rem;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid #475569;
+  color: #f8fafc;
+}
+
+.auto-org-pipeline-node.source {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.auto-org-pipeline-node.mid {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.auto-org-pipeline-node.target {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.55);
+  color: #86efac;
+  font-weight: 700;
+}
+
+.auto-org-pipeline-arrow {
+  color: #38bdf8;
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+}
+
+.auto-org-pipeline-focus-btn {
+  margin-left: auto;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  transition: all 0.15s ease;
+}
+
+.auto-org-pipeline-focus-btn:hover {
+  background: rgba(59, 130, 246, 0.4);
+  border-color: #60a5fa;
+  color: #ffffff;
+}
+
+/* Entity NER Chips */
+.auto-org-entity-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.auto-org-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.35rem;
+  background: rgba(30, 58, 138, 0.25);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  font-family: monospace;
+}
+
+/* AI Reasoning Drawer */
+.auto-org-reasoning-drawer {
+  background: rgba(8, 12, 20, 0.95);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.auto-org-reasoning-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  color: #a5b4fc;
+  font-weight: 600;
+  font-size: 0.8rem;
+  user-select: none;
+}
+
+/* Hierarchical Tree Explorer (Step 2) */
+.auto-org-tree-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(11, 17, 33, 0.75);
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.auto-org-tree-root-item {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: all 0.15s ease;
+}
+
+.auto-org-tree-root-item.expanded {
+  border-color: #3b82f6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+}
+
+.auto-org-tree-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-left: 1.5rem;
+  border-left: 2px dashed rgba(59, 130, 246, 0.4);
+  margin-left: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.auto-org-tree-sub-item {
+  background: rgba(8, 12, 20, 0.75);
+  border: 1px solid #1e293b;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.auto-org-tree-sub-item:hover {
+  border-color: #475569;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+/* Graph Branch Filter Pills */
+.auto-org-filter-pill-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.auto-org-filter-pill {
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  background: rgba(15, 23, 42, 0.85);
+  color: #cbd5e1;
+  transition: all 0.15s ease;
+}
+
+.auto-org-filter-pill:hover {
+  border-color: #94a3b8;
+  color: #ffffff;
+}
+
+.auto-org-filter-pill.active {
+  background: rgba(59, 130, 246, 0.25) !important;
+  border-color: #3b82f6 !important;
+  color: #60a5fa !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
+/* Split-View Toggle Bar */
+.auto-org-split-toggle-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 0.5rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid #1e293b;
+}
+
+/* ==========================================================================
+   Step 1: Drive Approval, Dismiss & Tree-Position Hover Visualizer
+   ========================================================================== */
+
+.auto-org-drive-card {
+  position: relative;
+  transition: all 0.2s ease-in-out;
+}
+
+.auto-org-drive-card.pending {
+  border-color: #eab308;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.12);
+}
+
+.auto-org-drive-card.approved {
+  border-color: #22c55e;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.16);
+  background: rgba(15, 28, 42, 0.88);
+}
+
+.auto-org-drive-card.excluded {
+  opacity: 0.55;
+  border-color: #475569;
+  border-style: dashed;
+  filter: grayscale(0.6);
+}
+
+.auto-org-dismiss-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border-radius: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+}
+
+.auto-org-dismiss-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: scale(1.02);
+}
+
+.auto-org-restore-btn {
+  background: transparent;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  border-radius: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.auto-org-restore-btn:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+/* Tree-Position Hover Visualizer (Shows hierarchy inside filesystem tree on hover) */
+.auto-org-tree-hover-preview {
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: rgba(8, 14, 26, 0.95);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  animation: fadeIn 0.18s ease-in-out;
+}
+
+.auto-org-tree-hover-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #93c5fd;
+}
+
+.auto-org-tree-breadcrumb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.auto-org-tree-crumb {
+  background: rgba(30, 41, 59, 0.9);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+}
+
+.auto-org-tree-crumb.active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #60a5fa;
+  color: #93c5fd;
+  font-weight: 700;
+}
+
+.auto-org-tree-crumb.root {
+  background: rgba(234, 179, 8, 0.15);
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #fde047;
+}
+
+/* ==========================================================================
+   Animated Flow Route ("Von wo nach wo" with flowing particle stream)
+   ========================================================================== */
+
+@keyframes autoOrgFlowStreamAnimation {
+  0% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.auto-org-flow-route {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: rgba(10, 15, 28, 0.85);
+  padding: 0.7rem 0.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  position: relative;
+  overflow: hidden;
+}
+
+.auto-org-flow-stream-line {
+  height: 3px;
+  min-width: 40px;
+  flex: 1;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(239, 68, 68, 0.7) 0%,
+    rgba(56, 189, 248, 0.9) 35%,
+    rgba(168, 85, 247, 0.9) 65%,
+    rgba(34, 197, 94, 0.9) 100%
+  );
+  background-size: 200% 100%;
+  animation: autoOrgFlowStreamAnimation 2.2s linear infinite;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+
+.auto-org-flow-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.35rem;
+}
+
+.auto-org-flow-box.source {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-family: monospace;
+}
+
+.auto-org-flow-box.target {
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.55);
+  color: #86efac;
+  font-family: monospace;
+  font-weight: 700;
+}
+
+/* Anomaly Semantic Group Cards */
+.auto-org-anomaly-group-card {
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid #334155;
+  border-radius: 0.65rem;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.auto-org-anomaly-group-card:hover {
+  border-color: #60a5fa;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.6);
+}
+
+.auto-org-anomaly-group-card.pending {
+  border-color: #eab308;
+}
+
+.auto-org-anomaly-group-card.approved {
+  border-color: #22c55e;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.15);
+}
+
+
 

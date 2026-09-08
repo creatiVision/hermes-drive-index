@@ -163,11 +163,13 @@ class _UnixHTTPHandler(urllib.request.AbstractHTTPHandler):
 
 
 def _is_safe_subpath(parent, child):
+    if not parent or not child:
+        return False
     try:
         norm_parent = os.path.abspath(os.path.normpath(parent))
         norm_child = os.path.abspath(os.path.normpath(child))
         return os.path.commonpath([norm_parent, norm_child]) == norm_parent
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 class DockerMountService:

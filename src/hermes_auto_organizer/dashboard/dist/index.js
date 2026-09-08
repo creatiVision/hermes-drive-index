@@ -49,6 +49,220 @@
         background-color: #3b82f6 !important;
         color: #ffffff !important;
       }
+      .auto-org-step-card.disabled, .auto-org-step-card.locked {
+        opacity: 0.42 !important;
+        cursor: not-allowed !important;
+        border-style: dashed !important;
+        border-color: #475569 !important;
+        filter: grayscale(0.5);
+      }
+      .auto-org-step-card.locked:hover {
+        background: rgba(30, 41, 59, 0.65) !important;
+        border-color: #475569 !important;
+      }
+      .auto-org-suggested-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+      }
+      .auto-org-suggested-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid #334155;
+        border-radius: 0.5rem;
+        padding: 1.15rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        transition: all 0.15s ease;
+      }
+      .auto-org-suggested-card:hover {
+        background: rgba(30, 41, 59, 0.75);
+        border-color: #3b82f6;
+      }
+      .auto-org-evidence-box {
+        background: rgba(15, 23, 42, 0.95);
+        border-left: 3px solid #3b82f6;
+        border-radius: 0.25rem;
+        padding: 0.45rem 0.65rem;
+        font-size: 0.75rem;
+        line-height: 1.35;
+      }
+      .auto-org-sample-pill {
+        display: inline-block;
+        padding: 0.15rem 0.45rem;
+        background: rgba(51, 65, 85, 0.5);
+        border: 1px solid #475569;
+        border-radius: 0.25rem;
+        font-size: 0.7rem;
+        font-family: monospace;
+        color: #cbd5e1 !important;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .auto-org-ampel-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+      .auto-org-ampel-badge.yellow {
+        background: rgba(234, 179, 8, 0.15) !important;
+        border: 1px solid #eab308 !important;
+        color: #fde047 !important;
+      }
+      .auto-org-ampel-badge.green {
+        background: rgba(34, 197, 94, 0.15) !important;
+        border: 1px solid #22c55e !important;
+        color: #86efac !important;
+      }
+      .auto-org-ampel-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .auto-org-ampel-dot.yellow {
+        background: #eab308;
+        box-shadow: 0 0 6px rgba(234, 179, 8, 0.8);
+      }
+      .auto-org-ampel-dot.green {
+        background: #22c55e;
+        box-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
+      }
+      .auto-org-approval-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid #334155;
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .auto-org-checkbox {
+        width: 1.15rem;
+        height: 1.15rem;
+        border-radius: 0.25rem;
+        accent-color: #3b82f6;
+        cursor: pointer;
+      }
+      .auto-org-group-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .auto-org-group-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid #334155;
+        border-radius: 0.6rem;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        transition: all 0.2s ease;
+      }
+      .auto-org-group-card.approved {
+        border-color: #22c55e !important;
+        background: rgba(15, 23, 42, 0.92);
+        box-shadow: 0 0 14px rgba(34, 197, 94, 0.12);
+      }
+      .auto-org-group-card.pending {
+        border-color: #eab308 !important;
+        background: rgba(15, 23, 42, 0.85);
+        box-shadow: 0 0 10px rgba(234, 179, 8, 0.08);
+      }
+      .auto-org-intent-box {
+        background: rgba(30, 58, 138, 0.22);
+        border-left: 4px solid #3b82f6;
+        border-radius: 0.25rem;
+        padding: 0.7rem 0.95rem;
+        font-size: 0.875rem;
+        color: #f1f5f9 !important;
+        font-weight: 500;
+        line-height: 1.45;
+      }
+      .auto-org-flow-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        font-size: 0.8125rem;
+        background: rgba(15, 23, 42, 0.6);
+        padding: 0.55rem 0.85rem;
+        border-radius: 0.375rem;
+        border: 1px solid #1e293b;
+      }
+      .auto-org-kleingedruckt {
+        background: rgba(15, 23, 42, 0.75);
+        border: 1px solid #334155;
+        border-radius: 0.375rem;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.75rem;
+        color: #94a3b8;
+        font-family: monospace;
+      }
+      .auto-org-obsidian-container {
+        background: #080c14;
+        border: 1px solid #334155;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+      .auto-org-obsidian-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: rgba(15, 23, 42, 0.85);
+        border-bottom: 1px solid #1e293b;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .auto-org-obsidian-legend {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.75rem;
+        color: #cbd5e1;
+        flex-wrap: wrap;
+      }
+      .auto-org-obsidian-canvas {
+        width: 100%;
+        height: 460px;
+        display: block;
+        cursor: crosshair;
+      }
+      .auto-org-view-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      .auto-org-view-tab {
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid #334155;
+        background: #0f172a;
+        color: #cbd5e1;
+        transition: all 0.15s ease;
+      }
+      .auto-org-view-tab.active {
+        background: #2563eb !important;
+        border-color: #3b82f6 !important;
+        color: #ffffff !important;
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -58,9 +272,22 @@
 
   const { React } = SDK;
   const h = React.createElement;
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useRef } = React;
 
   const API_BASE = "/api/plugins/auto-organizer";
+
+  function formatUserPath(p) {
+    if (!p) return "";
+    let s = String(p);
+    s = s.replace(/^\/opt\/data\/privat-buero(\/|$)/, "/media/privat-data/10_PrivatBüro$1");
+    s = s.replace(/^\/opt\/data\/work-data(\/|$)/, "/media/work-data$1");
+    s = s.replace(/^\/opt\/data\/downloads(\/|$)/, "/home/mb/Downloads$1");
+    s = s.replace(/^\/opt\/data\/desktop(\/|$)/, "/home/mb/Schreibtisch$1");
+    s = s.replace(/^\/opt\/data\/knowledge-base(\/|$)/, "/media/xchg/ai-knowledge-base$1");
+    s = s.replace(/^\/opt\/data\/cloud(\/|$)/, "gdrive://creatiVision$1");
+    s = s.replace(/^\/opt\/data\/?/, "/media/");
+    return s;
+  }
 
   async function apiCall(endpoint, options = {}) {
     const url = API_BASE + endpoint;
@@ -87,18 +314,66 @@
       state: "USER_APPROVED",
       is_approved: true,
       mount_valid: true,
-      mount_message: "Gültig: Gemountet in 'PrivatBüro (Archiv & Steuern)' (503.7 GB frei)",
-      container_path: "/opt/data/privat-buero/Steuern/{year}",
+      mount_message: "Gültig: Speicherverzeichnis bereit (503.7 GB frei)",
+      container_path: "/media/privat-data/10_PrivatBüro/Steuern/{year}",
+      tree_slice: ["privat-data", "10_PrivatBüro", "2024", "Steuern"],
+      ai_confidence: 0.98,
+      ai_reasoning: "Amtliche Steuerunterlagen und Belege für Einkommensteuererklärung via OCR 'Finanzamt' und Steuernummer.",
+      ai_tokens: ["Einkommensteuer", "Finanzamt München", "Steuerbescheid"],
       matched_files_count: 89,
       sample_files: [
-        { name: "Rechnung_2026_01.pdf", path: "/media/privat-data/10_PrivatBüro/Steuern/2026/Rechnung_2026_01.pdf" },
+        { name: "steuerbescheid_2024.pdf", path: "/media/privat-data/10_PrivatBüro/2024/Steuern/steuerbescheid_2024.pdf" },
         { name: "Kontoauszug_Januar.pdf", path: "/media/privat-data/10_PrivatBüro/Steuern/2026/Kontoauszug_Januar.pdf" }
+      ]
+    },
+    {
+      id: "finanzen-ausgangsrechnungen",
+      name: "02_Geschaeftlich / 001_cv-bookaccount / Ausgangsrechnungen",
+      target_path_template: "/media/work-data/001_cv-bookaccount/{year}/Ausgangsrechnungen/",
+      description: "Ausgehende Honorar- und Projektrechnungen an Mandanten & Kunden mit USt-IdNr",
+      icon: "📤",
+      keywords: ["Rechnung", "Ausgangsrechnung", "Honorar", "USt-IdNr", "CreatiVision", "Invoice"],
+      extensions: ["pdf", "xlsx"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Speicherverzeichnis bereit (594.4 GB frei)",
+      container_path: "/media/work-data/001_cv-bookaccount/{year}/Ausgangsrechnungen",
+      tree_slice: ["work-data", "001_cv-bookaccount", "2025", "Ausgangsrechnungen"],
+      ai_confidence: 0.99,
+      ai_reasoning: "Erkennung von ausgehenden Honorarabrechnungen via OCR 'USt-IdNr', Kundenadressen und Zahlungszielen.",
+      ai_tokens: ["USt-IdNr", "Rechnung", "Honorar", "Zahlungsziel"],
+      matched_files_count: 62,
+      sample_files: [
+        { name: "Rechnung_2025_089_Stulz.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Ausgangsrechnungen/Rechnung_2025_089_Stulz.pdf" }
+      ]
+    },
+    {
+      id: "finanzen-eingangsrechnungen",
+      name: "02_Geschaeftlich / 001_cv-bookaccount / Eingangsrechnungen",
+      target_path_template: "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/",
+      description: "Lieferantenrechnungen, SaaS-Tools (OpenAI, AWS, Hetzner, Adobe) und Betriebsausgaben",
+      icon: "📥",
+      keywords: ["Eingangsrechnung", "Zahlungsziel", "Betrag", "Hetzner", "OpenAI", "Adobe", "Quittung"],
+      extensions: ["pdf", "csv"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Speicherverzeichnis bereit (594.4 GB frei)",
+      container_path: "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen",
+      tree_slice: ["work-data", "001_cv-bookaccount", "2025", "Eingangsrechnungen"],
+      ai_confidence: 0.98,
+      ai_reasoning: "Erkennung von Betriebskosten und SaaS-Quittungen mit ausgewiesener Vorsteuer.",
+      ai_tokens: ["Vorsteuer", "Rechnungsbetrag", "Hetzner", "OpenAI"],
+      matched_files_count: 45,
+      sample_files: [
+        { name: "Hetzner_Invoice_2025_08.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Eingangsrechnungen/Hetzner_Invoice_2025_08.pdf" }
       ]
     },
     {
       id: "vertraege-recht",
       name: "10_PrivatBüro / Verträge & Versicherungen",
-      target_path_template: "/media/privat-data/10_PrivatBüro/Verträge/",
+      target_path_template: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege/",
       description: "Miet-, Arbeits-, Versicherungsverträge und rechtliche Vereinbarungen",
       icon: "⚖️",
       keywords: ["Vertrag", "Versicherung", "Police", "Vereinbarung", "Kündigung", "Mietvertrag"],
@@ -106,29 +381,59 @@
       state: "USER_APPROVED",
       is_approved: true,
       mount_valid: true,
-      mount_message: "Gültig: Gemountet in 'PrivatBüro (Archiv & Steuern)' (503.7 GB frei)",
-      container_path: "/opt/data/privat-buero/Verträge",
+      mount_message: "Gültig: Speicherverzeichnis bereit (503.7 GB frei)",
+      container_path: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege",
+      tree_slice: ["privat-data", "10_PrivatBüro", "Versicherungen_Vertraege"],
+      ai_confidence: 0.96,
+      ai_reasoning: "Langfristige Rechts- und Versicherungsverträge mit Policennummer.",
+      ai_tokens: ["Versicherungsschein", "Versicherungsnummer", "Mietvertrag"],
       matched_files_count: 42,
       sample_files: [
-        { name: "Mietvertrag_2024.pdf", path: "/media/privat-data/10_PrivatBüro/Verträge/Mietvertrag_2024.pdf" }
+        { name: "Mietvertrag_2024.pdf", path: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege/Mietvertrag_2024.pdf" }
       ]
     },
     {
       id: "work-projekte",
-      name: "20_Work / Projekte & Entwicklung",
-      target_path_template: "/media/work-data/Projekte/{stem}/",
-      description: "Software-Code, Skripte, technische Dokumentation und Kundenprojekte",
-      icon: "💼",
-      keywords: ["Projekt", "Architektur", "Code", "Sprint", "API", "Skript", "CAD"],
-      extensions: ["py", "ts", "json", "md", "dxf"],
+      name: "03_Geschaeftl_Projekte / Kunden & Webdesign",
+      target_path_template: "/media/work-data/002_cv-projects/{project_name}/",
+      description: "Kunden-Websites, WordPress-Themes, UI-Assets und Repositories",
+      icon: "🚀",
+      keywords: ["Projekt", "Webdesign", "WordPress", "Theme", "Kunde", "Stulz", "Figma", "Repo"],
+      extensions: ["ts", "js", "php", "svg", "png", "json"],
       state: "USER_APPROVED",
       is_approved: true,
       mount_valid: true,
-      mount_message: "Gültig: Gemountet in 'Arbeitsdateien (work-data)' (594.4 GB frei)",
-      container_path: "/opt/data/work-data/Projekte/{stem}",
+      mount_message: "Gültig: Speicherverzeichnis bereit (594.4 GB frei)",
+      container_path: "/media/work-data/002_cv-projects",
+      tree_slice: ["work-data", "002_cv-projects", "{project_name}"],
+      ai_confidence: 0.95,
+      ai_reasoning: "Projekt-Quellcode und UI-Assets mit Zuordnung zum Kundenstamm.",
+      ai_tokens: ["WordPress", "Figma", "Repository", "UI-Asset"],
       matched_files_count: 210,
       sample_files: [
-        { name: "main.py", path: "/media/work-data/Projekte/hermes-drive-index/main.py" }
+        { name: "main.py", path: "/media/work-data/002_cv-projects/hermes-drive-index/main.py" }
+      ]
+    },
+    {
+      id: "work-ai-agents",
+      name: "03_Geschaeftl_Projekte / KI-Agent-Skills",
+      target_path_template: "/media/xchg/ai-agents-workspaces/skills/",
+      description: "Hermes-, Jules- und LangChain-Skills, Prompts und MCP-Serverkonfigurationen",
+      icon: "🤖",
+      keywords: ["Skill", "Agent", "Hermes", "Jules", "Prompt", "MCP", "LangChain"],
+      extensions: ["py", "yaml", "md", "json"],
+      state: "USER_APPROVED",
+      is_approved: true,
+      mount_valid: true,
+      mount_message: "Gültig: Speicherverzeichnis bereit (xchg)",
+      container_path: "/media/xchg/ai-agents-workspaces/skills",
+      tree_slice: ["xchg", "ai-agents-workspaces", "skills"],
+      ai_confidence: 0.99,
+      ai_reasoning: "Semantische KI-Agent-Skills mit YAML-Frontmatter und MCP-Tool-Definitionen.",
+      ai_tokens: ["SKILL.md", "MCP", "Agent-Skills", "Prompt"],
+      matched_files_count: 90,
+      sample_files: [
+        { name: "SKILL.md", path: "/media/xchg/ai-agents-workspaces/skills/SKILL.md" }
       ]
     },
     {
@@ -142,8 +447,12 @@
       state: "USER_APPROVED",
       is_approved: true,
       mount_valid: true,
-      mount_message: "Gültig: Gemountet in 'Arbeitsdateien (work-data)' (594.4 GB frei)",
-      container_path: "/opt/data/work-data/Assets/{year}",
+      mount_message: "Gültig: Speicherverzeichnis bereit (594.4 GB frei)",
+      container_path: "/media/work-data/Assets/{year}",
+      tree_slice: ["work-data", "Assets", "2026"],
+      ai_confidence: 0.94,
+      ai_reasoning: "Vektorgrafiken und Multimediadateien mit Jahresbezug.",
+      ai_tokens: ["SVG", "Figma", "Logo"],
       matched_files_count: 15,
       sample_files: [
         { name: "logo.svg", path: "/media/work-data/Assets/2026/logo.svg" }
@@ -151,17 +460,21 @@
     },
     {
       id: "archiv-general",
-      name: "90_Archiv / Historisierte Bestände",
-      target_path_template: "/media/privat-data/Archiv/{year}/",
-      description: "Historisierte Dokumente und Dateien älter als 365 Tage",
-      icon: "🗄️",
-      keywords: ["Archiv", "Alt", "Historie", "Backup"],
-      extensions: [],
+      name: "04_Backup_Archiv / Historisierte Bestände",
+      target_path_template: "/media/xchg/ai-knowledge-base/Archiv/{year}/",
+      description: "Historisierte Dokumente, Postgres-Dumps (.sql.gz) und Kalt-Backups",
+      icon: "📦",
+      keywords: ["Archiv", "Alt", "Historie", "Backup", "Dump"],
+      extensions: ["tar.gz", "sql.gz", "zip"],
       state: "USER_APPROVED",
       is_approved: true,
       mount_valid: true,
       mount_message: "Gültig: Historisches Archiv",
-      container_path: "/opt/data/privat-buero/Archiv/{year}",
+      container_path: "/media/xchg/ai-knowledge-base/Archiv/{year}",
+      tree_slice: ["xchg", "ai-knowledge-base", "Archiv", "2024"],
+      ai_confidence: 0.94,
+      ai_reasoning: "Komprimierte Archiv- und Datenbankstände mit Jahresbezug.",
+      ai_tokens: ["Dump", "Archiv", "Snapshot"],
       matched_files_count: 75,
       sample_files: []
     }
@@ -201,7 +514,7 @@
       id: "root-knowledge-base",
       name: "Knowledge-Base & Memories",
       type: "LOCAL_DIR",
-      uri_path: "/opt/data/knowledge-base",
+      uri_path: "/media/xchg/ai-knowledge-base",
       watch_mode: "INOTIFY",
       is_active: true,
       file_count: 52,
@@ -228,6 +541,730 @@
       size_mb: 2150.0
     }
   ];
+
+  function ObsidianFlowGraph({
+    isPaused = false,
+    speedMultiplier = 1,
+    onTogglePause = null,
+    activeBranch = "all",
+    onSelectBranch = null,
+    highlightedBranchId = null,
+    compact = false
+  }) {
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+    const [hoveredNode, setHoveredNode] = useState(null);
+    const [tooltipData, setTooltipData] = useState(null);
+    const [branchFilter, setBranchFilter] = useState(activeBranch || "all");
+
+    useEffect(() => {
+      if (activeBranch && activeBranch !== branchFilter) {
+        setBranchFilter(activeBranch);
+      }
+    }, [activeBranch]);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      let animationFrameId;
+      let width = canvas.parentElement ? canvas.parentElement.clientWidth : 960;
+      if (width < 600) width = 600;
+      const height = compact ? 340 : 440;
+
+      // Handle retina / high-DPI displays
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.scale(dpr, dpr);
+
+      // Define Node Layout
+      const srcX = Math.round(width * 0.15);
+      const hubX = Math.round(width * 0.48);
+      const hubY = Math.round(height * 0.50);
+      const dstX = Math.round(width * 0.85);
+
+      const sourceNodes = [
+        { id: "src_downloads", label: "Downloads (Dumpzone)", path: "/home/mb/Downloads", icon: "⬇️", count: 45, color: "#f59e0b", x: srcX, y: Math.round(height * 0.15), radius: 18, role: "Quelle" },
+        { id: "src_desktop", label: "Schreibtisch", path: "/home/mb/Schreibtisch", icon: "🖥️", count: 18, color: "#f59e0b", x: srcX, y: Math.round(height * 0.32), radius: 16, role: "Quelle" },
+        { id: "src_privat", label: "PrivatBüro (Lokal)", path: "/media/privat-data/10_PrivatBüro", icon: "📁", count: 89, color: "#10b981", x: srcX, y: Math.round(height * 0.50), radius: 20, role: "Quelle" },
+        { id: "src_work", label: "Work-Data (Lokal)", path: "/media/work-data", icon: "💼", count: 210, color: "#3b82f6", x: srcX, y: Math.round(height * 0.68), radius: 22, role: "Quelle" },
+        { id: "src_gdrive", label: "Google Drive (Cloud)", path: "gdrive://creatiVision", icon: "☁️", count: 120, color: "#06b6d4", x: srcX, y: Math.round(height * 0.85), radius: 20, role: "Quelle" },
+      ];
+
+      const hubNode = {
+        id: "hub_hermes",
+        label: "Hermes KI-Core (S_ideal)",
+        path: "Semantische Vektorisierung, OCR-Inhalte & Regel-Matching",
+        icon: "🤖",
+        count: 516,
+        color: "#a855f7",
+        x: hubX,
+        y: hubY,
+        radius: compact ? 30 : 36,
+        isHub: true,
+        role: "Hub"
+      };
+
+      const allTargetNodes = [
+        { id: "dst_steuern", label: "PrivatBüro / Steuern", path: "/media/privat-data/10_PrivatBüro/2024/Steuern/", icon: "📊", count: 24, color: "#10b981", radius: 18, role: "Ziel-Ast", branch: "privat", status: "APPROVED" },
+        { id: "dst_vertraege", label: "PrivatBüro / Verträge", path: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege/", icon: "⚖️", count: 19, color: "#059669", radius: 17, role: "Ziel-Ast", branch: "privat", status: "APPROVED" },
+        { id: "dst_buchhaltung_out", label: "001_cv / Ausgangsrechnungen", path: "/media/work-data/001_cv-bookaccount/2025/Ausgangsrechnungen/", icon: "📤", count: 62, color: "#3b82f6", radius: 21, role: "Ziel-Ast", branch: "buchhaltung", status: "APPROVED" },
+        { id: "dst_buchhaltung_in", label: "001_cv / Eingangsrechnungen", path: "/media/work-data/001_cv-bookaccount/2025/Eingangsrechnungen/", icon: "📥", count: 45, color: "#2563eb", radius: 19, role: "Ziel-Ast", branch: "buchhaltung", status: "APPROVED" },
+        { id: "dst_projekte", label: "002_cv-projects / Stulz & Web", path: "/media/work-data/002_cv-projects/stulz/", icon: "🚀", count: 120, color: "#8b5cf6", radius: 22, role: "Ziel-Ast", branch: "projekte", status: "APPROVED" },
+        { id: "dst_skills", label: "ai-workspaces / Skills", path: "/media/xchg/ai-agents-workspaces/skills/", icon: "🤖", count: 90, color: "#a855f7", radius: 20, role: "Ziel-Ast", branch: "projekte", status: "APPROVED" },
+        { id: "dst_assets", label: "Work-Data / Assets", path: "/media/work-data/Assets/2026/", icon: "🎨", count: 15, color: "#ec4899", radius: 16, role: "Ziel-Ast", branch: "projekte", status: "APPROVED" },
+        { id: "dst_backup", label: "Archiv / Dumps & Sicherungen", path: "/media/xchg/ai-knowledge-base/Archiv/2026/", icon: "📦", count: 75, color: "#d97706", radius: 19, role: "Ziel-Ast", branch: "archiv", status: "APPROVED" },
+        { id: "dst_trash", label: "Papierkorb (send2trash)", path: "trash://", icon: "🧹", count: 14, color: "#ef4444", radius: 16, role: "Ziel-Ast", branch: "trash", status: "APPROVED" },
+      ];
+
+      // Filter target nodes by branchFilter
+      const filteredTargets = branchFilter === "all" ? allTargetNodes : allTargetNodes.filter(n => n.branch === branchFilter);
+      const totalTargets = filteredTargets.length;
+
+      filteredTargets.forEach((node, idx) => {
+        node.x = dstX;
+        if (totalTargets === 1) {
+          node.y = hubY;
+        } else {
+          node.y = Math.round(55 + (idx * (height - 110)) / (totalTargets - 1));
+        }
+      });
+
+      const allNodes = [...sourceNodes, hubNode, ...filteredTargets];
+
+      // Build Bezier Flow Curves: Source -> Hub and Hub -> Target
+      const curves = [];
+      sourceNodes.forEach((src) => {
+        curves.push({
+          id: `${src.id}_to_hub`,
+          sourceId: src.id,
+          targetId: hubNode.id,
+          p0: { x: src.x, y: src.y },
+          c1: { x: src.x + (hubX - srcX) * 0.45, y: src.y },
+          c2: { x: hubX - (hubX - srcX) * 0.45, y: hubY },
+          p1: { x: hubX, y: hubY },
+          color: src.color,
+          type: "inflow"
+        });
+      });
+
+      filteredTargets.forEach((dst) => {
+        curves.push({
+          id: `hub_to_${dst.id}`,
+          sourceId: hubNode.id,
+          targetId: dst.id,
+          p0: { x: hubX, y: hubY },
+          c1: { x: hubX + (dstX - hubX) * 0.45, y: hubY },
+          c2: { x: dstX - (dstX - hubX) * 0.45, y: dst.y },
+          p1: { x: dstX, y: dst.y },
+          color: dst.color,
+          type: "outflow"
+        });
+      });
+
+      // Particle System (Files flowing through the graph)
+      const particleCount = compact ? 28 : 42;
+      const particles = [];
+      for (let i = 0; i < particleCount; i++) {
+        const curveIdx = Math.floor(Math.random() * curves.length);
+        const curve = curves[curveIdx];
+        particles.push({
+          curveIdx: curveIdx,
+          t: Math.random(),
+          speed: 0.0025 + Math.random() * 0.0035,
+          size: 2.2 + Math.random() * 1.5,
+          color: curve.color
+        });
+      }
+
+      function getBezierPoint(c, t) {
+        const inv = 1 - t;
+        const inv2 = inv * inv;
+        const inv3 = inv2 * inv;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        return {
+          x: inv3 * c.p0.x + 3 * inv2 * t * c.c1.x + 3 * inv * t2 * c.c2.x + t3 * c.p1.x,
+          y: inv3 * c.p0.y + 3 * inv2 * t * c.c1.y + 3 * inv * t2 * c.c2.y + t3 * c.p1.y
+        };
+      }
+
+      let startTime = Date.now();
+
+      function render() {
+        const now = Date.now();
+        const elapsed = (now - startTime) / 1000;
+
+        // Clear background with deep cosmic obsidian tone
+        ctx.fillStyle = "#080c14";
+        ctx.fillRect(0, 0, width, height);
+
+        // Subtle background grid stars
+        ctx.fillStyle = "rgba(51, 65, 85, 0.25)";
+        for (let gx = 25; gx < width; gx += 40) {
+          for (let gy = 25; gy < height; gy += 40) {
+            ctx.fillRect(gx, gy, 1.2, 1.2);
+          }
+        }
+
+        // Draw Flow Curves
+        curves.forEach((c) => {
+          const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId || hoveredNode.id === hubNode.id)) ||
+            (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
+          ctx.beginPath();
+          ctx.moveTo(c.p0.x, c.p0.y);
+          ctx.bezierCurveTo(c.c1.x, c.c1.y, c.c2.x, c.c2.y, c.p1.x, c.p1.y);
+
+          if (isHighlighted) {
+            ctx.strokeStyle = c.color;
+            ctx.lineWidth = 3.0;
+            ctx.shadowColor = c.color;
+            ctx.shadowBlur = 14;
+          } else {
+            ctx.strokeStyle = "rgba(100, 116, 139, 0.22)";
+            ctx.lineWidth = 1.4;
+            ctx.shadowBlur = 0;
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        });
+
+        // Update and Draw Particles
+        particles.forEach((p) => {
+          if (!isPaused) {
+            p.t += p.speed * speedMultiplier;
+            if (p.t > 1) {
+              p.t = 0;
+              p.curveIdx = Math.floor(Math.random() * curves.length);
+              p.color = curves[p.curveIdx].color;
+            }
+          }
+
+          const c = curves[p.curveIdx];
+          const pt = getBezierPoint(c, p.t);
+
+          const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId)) ||
+            (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
+
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, isHighlighted ? p.size * 1.6 : p.size, 0, Math.PI * 2);
+          ctx.fillStyle = isHighlighted ? "#ffffff" : p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = isHighlighted ? 14 : 6;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+
+        // Draw Central Hermes Hub Pulsing Aura
+        const pulse = Math.sin(elapsed * 2.5) * 6;
+        ctx.beginPath();
+        ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 10 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(168, 85, 247, 0.25)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 18 + pulse * 1.4, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(168, 85, 247, 0.12)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw All Nodes
+        allNodes.forEach((node) => {
+          const isHovered = hoveredNode && hoveredNode.id === node.id;
+          const isTargetBranch = highlightedBranchId && (node.id === highlightedBranchId || node.branch === highlightedBranchId);
+          const r = (isHovered || isTargetBranch) ? node.radius + 4 : node.radius;
+
+          // Outer Glow
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = "#0f172a";
+          ctx.shadowColor = node.color;
+          ctx.shadowBlur = (isHovered || isTargetBranch) ? 26 : 12;
+          ctx.fill();
+
+          // Border
+          ctx.strokeStyle = (isHovered || isTargetBranch) ? "#ffffff" : node.color;
+          ctx.lineWidth = (isHovered || isTargetBranch) ? 3 : 2;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Icon
+          ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(node.icon, node.x, node.y + 1);
+
+          // Node Text Labels
+          ctx.font = (isHovered || isTargetBranch) ? "bold 11px system-ui" : "600 10.5px system-ui";
+          ctx.fillStyle = (isHovered || isTargetBranch) ? "#ffffff" : "#f1f5f9";
+          ctx.fillText(node.label, node.x, node.y + r + 13);
+
+          // Badge / File count
+          ctx.font = "9.5px monospace";
+          ctx.fillStyle = node.color;
+          ctx.fillText(node.isHub ? "AI Hub" : `${node.count} Dateien`, node.x, node.y + r + 25);
+        });
+
+        animationFrameId = requestAnimationFrame(render);
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+
+      // Mouse Move Handler for Hover
+      const handleMouseMove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        let found = null;
+        for (const n of allNodes) {
+          const dist = Math.hypot(mx - n.x, my - n.y);
+          if (dist <= n.radius + 8) {
+            found = n;
+            break;
+          }
+        }
+        setHoveredNode(found);
+        if (found) {
+          setTooltipData({
+            x: e.clientX,
+            y: e.clientY,
+            node: found
+          });
+        } else {
+          setTooltipData(null);
+        }
+      };
+
+      const handleMouseLeave = () => {
+        setHoveredNode(null);
+        setTooltipData(null);
+      };
+
+      canvas.addEventListener("mousemove", handleMouseMove);
+      canvas.addEventListener("mouseleave", handleMouseLeave);
+
+      return () => {
+        cancelAnimationFrame(animationFrameId);
+        canvas.removeEventListener("mousemove", handleMouseMove);
+        canvas.removeEventListener("mouseleave", handleMouseLeave);
+      };
+    }, [isPaused, speedMultiplier, branchFilter, highlightedBranchId, compact]);
+
+    return h("div", { className: "auto-org-obsidian-container", ref: containerRef },
+      // Top Controls Toolbar
+      h("div", { className: "auto-org-obsidian-toolbar" },
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+          h("span", { style: { fontSize: "1.2rem" } }, "🕸️"),
+          h("strong", { style: { fontSize: "0.95rem", color: "#ffffff" } }, "Obsidian-Style Dateifluss-Graph"),
+          h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.7rem" } }, "Live-Visualisierung")
+        ),
+        h("div", { className: "auto-org-obsidian-legend" },
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.3rem" } },
+            h("span", { className: "auto-org-ampel-dot yellow" }),
+            h("span", null, "Quellen (Dumpzone/Drives)")
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.3rem" } },
+            h("span", { style: { width: "8px", height: "8px", borderRadius: "50%", background: "#a855f7", display: "inline-block" } }),
+            h("span", null, "Hermes Core")
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.3rem" } },
+            h("span", { className: "auto-org-ampel-dot green" }),
+            h("span", null, "Ziel-Baum (S_ideal)")
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.3rem" } },
+            h("span", { style: { color: "#60a5fa" } }, "⇢"),
+            h("span", null, "Dateistrom")
+          ),
+          onTogglePause && h("button", {
+            type: "button",
+            className: "auto-org-btn auto-org-btn-outline",
+            style: { padding: "0.2rem 0.6rem", fontSize: "0.75rem", marginLeft: "0.5rem" },
+            onClick: onTogglePause
+          }, isPaused ? "▶ Fortsetzen" : "⏸️ Pause")
+        )
+      ),
+
+      // Branch Filter Pills Toolbar
+      h("div", { className: "auto-org-filter-pill-bar", style: { padding: "0.45rem 1rem", background: "rgba(11, 17, 33, 0.95)", borderBottom: "1px solid #1e293b", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" } },
+        h("span", { style: { fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, marginRight: "0.3rem" } }, "🌳 Ast-Fokus:"),
+        [
+          { id: "all", label: "🌐 Gesamt-Baum (9 Äste)" },
+          { id: "privat", label: "🏠 01_PrivatBüro (2 Äste)" },
+          { id: "buchhaltung", label: "💼 02_Buchhaltung (2 Äste)" },
+          { id: "projekte", label: "🚀 03_Projekte & Skills (3 Äste)" },
+          { id: "archiv", label: "📦 04_Archiv" },
+          { id: "trash", label: "🧹 05_Papierkorb" },
+        ].map(f =>
+          h("button", {
+            key: f.id,
+            type: "button",
+            className: `auto-org-filter-pill ${branchFilter === f.id ? "active" : ""}`,
+            onClick: () => {
+              setBranchFilter(f.id);
+              if (onSelectBranch) onSelectBranch(f.id);
+            }
+          }, f.label)
+        )
+      ),
+
+      // HTML5 Canvas
+      h("canvas", { ref: canvasRef, className: "auto-org-obsidian-canvas" }),
+
+      // Interactive Tooltip Overlay
+      tooltipData && h("div", {
+        style: {
+          position: "fixed",
+          left: tooltipData.x + 14,
+          top: tooltipData.y - 12,
+          background: "rgba(15, 23, 42, 0.95)",
+          border: `1px solid ${tooltipData.node.color}`,
+          boxShadow: `0 8px 24px rgba(0,0,0,0.6), 0 0 12px ${tooltipData.node.color}40`,
+          borderRadius: "0.5rem",
+          padding: "0.65rem 0.85rem",
+          pointerEvents: "none",
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.25rem",
+          maxWidth: "320px"
+        }
+      },
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+          h("span", { style: { fontSize: "1.1rem" } }, tooltipData.node.icon),
+          h("strong", { style: { color: "#ffffff", fontSize: "0.85rem" } }, tooltipData.node.label),
+          h("span", {
+            className: `auto-org-ampel-badge ${tooltipData.node.status === "APPROVED" || tooltipData.node.role === "Hub" ? "green" : "yellow"}`,
+            style: { fontSize: "0.65rem", padding: "0.1rem 0.4rem", marginLeft: "auto" }
+          }, tooltipData.node.role === "Hub" ? "KI Core" : (tooltipData.node.status === "APPROVED" ? "🟢 Freigegeben" : "🟡 Quelle"))
+        ),
+        h("div", { style: { fontFamily: "monospace", fontSize: "0.72rem", color: "#93c5fd", wordBreak: "break-all" } },
+          formatUserPath(tooltipData.node.path)
+        ),
+        h("div", { style: { fontSize: "0.72rem", color: "#94a3b8" } },
+          `${tooltipData.node.count} Dateien • Realer Speicherpfad`
+        )
+      )
+    );
+  }
+
+  // Tree-Position Hover Visualizer for Step 1
+  function DriveTreeHoverPreview({ drive }) {
+    if (!drive) return null;
+    const hPath = drive.host_path || "";
+    let crumbs = drive.tree_slice;
+    if (!crumbs || crumbs.length === 0) {
+      if (hPath.startsWith("gdrive://")) {
+        crumbs = ["Cloud", "Google Drive", hPath.replace("gdrive://", "") || "Root"];
+      } else if (hPath.startsWith("/")) {
+        crumbs = ["/"].concat(hPath.split("/").filter(Boolean));
+      } else {
+        crumbs = ["Root", drive.name || "Drive"];
+      }
+    }
+
+    return h("div", { className: "auto-org-tree-hover-preview" },
+      h("div", { className: "auto-org-tree-hover-title" },
+        h("span", null, "🌳"),
+        h("span", null, "Stellung im Dateisystem-Baum (Host-Hierarchie):"),
+        h("span", { style: { marginLeft: "auto", color: "#60a5fa", fontSize: "0.68rem" } },
+          `Tiefe: ${crumbs.length - 1} • ${drive.category || "Drive"}`
+        )
+      ),
+      h("div", { className: "auto-org-tree-breadcrumb-row" },
+        crumbs.map((c, i) => {
+          const isRoot = i === 0;
+          const isLast = i === crumbs.length - 1;
+          return h("span", { key: i, style: { display: "inline-flex", alignItems: "center", gap: "0.25rem" } },
+            i > 0 && h("span", { style: { color: "#64748b", fontSize: "0.72rem" } }, "➔"),
+            h("span", {
+              className: `auto-org-tree-crumb ${isRoot ? "root" : ""} ${isLast ? "active" : ""}`,
+              title: isLast ? `Aktueller Ordner: ${hPath}` : `Übergeordnetes Verzeichnis: ${c}`
+            },
+              isRoot ? "🖥️ /" : (isLast ? `📂 ${c}` : `📁 ${c}`)
+            )
+          );
+        })
+      ),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.2rem" } },
+        h("span", { style: { fontFamily: "monospace", color: "#93c5fd" } }, formatUserPath(hPath)),
+        h("span", { style: { color: "#4ade80", fontWeight: 600 } },
+          `${drive.free_space_gb || 0} GB frei • ${drive.is_writable ? "Schreibbar (RW)" : "Read-Only"}`
+        )
+      )
+    );
+  }
+
+  // Animated "Von wo nach wo" Flow Route Component
+  function AnimatedFlowRoute({ sourcePath, targetPath, confidence = 0.98, onFocusGraph = null, branchId = null, isApproved = false }) {
+    const confPct = Math.round((confidence || 0.95) * 100);
+    const srcDisplay = formatUserPath(sourcePath || "/home/mb/Downloads");
+    const tgtDisplay = formatUserPath(targetPath || "/media/work-data/001_cv-bookaccount/{year}/");
+
+    return h("div", { className: "auto-org-flow-route" },
+      // Source Box
+      h("div", { className: "auto-org-flow-box source", title: `Quell-Ort: ${srcDisplay}` },
+        h("span", null, "📥"),
+        h("span", null, srcDisplay.length > 36 ? "..." + srcDisplay.slice(-33) : srcDisplay)
+      ),
+
+      // Animated Glowing Flow Stream Line with AI Badge
+      h("div", { style: { display: "flex", alignItems: "center", flex: 1, minWidth: "140px", gap: "0.35rem" } },
+        h("div", { className: "auto-org-flow-stream-line" }),
+        h("div", { className: "auto-org-neural-badge", title: `Semantische KI-Klassifikation: ${confPct}% Match` },
+          h("span", { className: "auto-org-neural-dot" }),
+          h("span", null, `⚡ KI ${confPct}%`)
+        ),
+        h("div", { className: "auto-org-flow-stream-line" }),
+        h("span", { style: { color: "#38bdf8", fontWeight: 900, fontSize: "0.95rem" } }, "➔")
+      ),
+
+      // Target Box
+      h("div", { className: "auto-org-flow-box target", title: `Konkreter Zielordner im Baum: ${tgtDisplay}` },
+        h("span", null, "🎯"),
+        h("span", null, tgtDisplay.length > 40 ? "..." + tgtDisplay.slice(-37) : tgtDisplay)
+      ),
+
+      // Optional Focus Button
+      onFocusGraph && h("button", {
+        type: "button",
+        className: "auto-org-pipeline-focus-btn",
+        title: "Diesen Pfad im interaktiven Graphen fokussieren",
+        onClick: (e) => {
+          e.stopPropagation();
+          onFocusGraph(branchId || "dst_general");
+        }
+      }, "🔍 Im Graphen zeigen")
+    );
+  }
+
+  // Semantic grouping helper for anomalies
+  function groupAnomaliesBySemanticIntent(rawAnomalies) {
+    if (!rawAnomalies || rawAnomalies.length === 0) return [];
+    const map = new Map();
+    for (const an of rawAnomalies) {
+      const key = an.group_title || (an.suggested_target ? an.suggested_target : "Allgemeine Anomalien");
+      if (!map.has(key)) {
+        map.set(key, {
+          id: "anom_grp_" + (an.group_title ? an.group_title.replace(/[^a-zA-Z0-9]/g, "_") : "gen"),
+          title: an.group_title || "📁 Unsortierte Dateien",
+          target_path: an.suggested_target || an.target_path || "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/",
+          tree_slice: an.tree_slice || ["work-data", "cv-bookaccount", "Eingangsrechnungen"],
+          source_path: an.source_path || an.physical_path || "/home/mb/Downloads",
+          confidence: an.confidence || 0.96,
+          ai_reasoning: an.ai_reasoning || an.explanation || "Erkannt via semantischer OCR- und Pfadanalyse.",
+          files: []
+        });
+      }
+      map.get(key).files.push(an);
+    }
+    return Array.from(map.values());
+  }
+
+  // Visual Branch Pipeline Component (renders tree slice inside every card)
+  function VisualBranchPipeline({ sourcePath, targetPath, treeSlice, confidence = 0.98, onFocusGraph = null, branchId = null }) {
+    const confPct = Math.round((confidence || 0.95) * 100);
+    const slice = (treeSlice && treeSlice.length > 0) ? treeSlice : (targetPath ? targetPath.split("/").filter(Boolean).slice(-3) : ["Ziel-Ast"]);
+
+    return h("div", { className: "auto-org-branch-pipeline" },
+      // Source Node
+      h("div", { className: "auto-org-pipeline-node source", title: `Quelle: ${sourcePath || "/home/mb/Downloads"}` },
+        h("span", null, "📥"),
+        h("span", null, (sourcePath ? sourcePath.split("/").pop() : "Downloads") || "Quelle")
+      ),
+      // Arrow
+      h("span", { className: "auto-org-pipeline-arrow" }, "──▶"),
+      // AI Neural Classifier Badge
+      h("div", {
+        className: "auto-org-neural-badge",
+        title: `KI-Vektor-Klassifikation: ${confPct}% Übereinstimmung`
+      },
+        h("span", { className: "auto-org-neural-dot" }),
+        h("span", null, `⚡ KI ${confPct}%`)
+      ),
+      // Arrow
+      h("span", { className: "auto-org-pipeline-arrow" }, "──▶"),
+      // Tree Slice Breadcrumb Nodes
+      slice.map((nodeName, idx) => {
+        const isLast = idx === slice.length - 1;
+        return h("span", { key: idx, style: { display: "inline-flex", alignItems: "center", gap: "0.35rem" } },
+          idx > 0 && h("span", { className: "auto-org-pipeline-arrow", style: { fontSize: "0.75rem", opacity: 0.7 } }, "›"),
+          h("div", {
+            className: `auto-org-pipeline-node ${isLast ? "target" : "mid"}`,
+            title: isLast ? `Zielpfad: ${targetPath}` : `Zwischenebene: ${nodeName}`
+          },
+            h("span", null, isLast ? "🎯" : "📁"),
+            h("span", null, nodeName)
+          )
+        );
+      }),
+      // Focus in Graph Button
+      onFocusGraph && h("button", {
+        type: "button",
+        className: "auto-org-pipeline-focus-btn",
+        title: "Diesen Zweig im interaktiven Graphen fokussieren",
+        onClick: (e) => {
+          e.stopPropagation();
+          onFocusGraph(branchId || slice[0]);
+        }
+      }, "🔍 Im Graphen fokussieren")
+    );
+  }
+
+  // AI Reasoning Drawer Component (expandable neural decision insight)
+  function AIReasoningDrawer({ confidence, reasoning, tokens = [], clusterName = null }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const confPct = Math.round((confidence || 0.95) * 100);
+
+    return h("div", { className: "auto-org-reasoning-drawer" },
+      h("div", {
+        className: "auto-org-reasoning-header",
+        onClick: () => setIsOpen(!isOpen)
+      },
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("span", { style: { fontSize: "0.95rem" } }, "🧠"),
+          h("span", { style: { fontWeight: 700, color: "#c084fc" } }, "KI-Entscheidungsgrundlage & Vektor-Kontext"),
+          h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, `${confPct}% Match`)
+        ),
+        h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, isOpen ? "▲ Schließen" : "▼ Details anzeigen")
+      ),
+      isOpen && h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.4rem", paddingTop: "0.4rem", borderTop: "1px solid rgba(99, 102, 241, 0.2)" } },
+        // Reasoning text
+        reasoning && h("p", { style: { color: "#e2e8f0", fontSize: "0.8125rem", lineHeight: "1.45", margin: 0 } }, reasoning),
+        // Tokens
+        tokens && tokens.length > 0 && h("div", { className: "auto-org-entity-list" },
+          h("span", { style: { fontSize: "0.72rem", color: "#94a3b8", fontWeight: 600 } }, "Erkannte OCR-Merkmale & Tokens:"),
+          tokens.map((tok, idx) =>
+            h("span", { key: idx, className: "auto-org-entity-chip" },
+              h("span", null, "🏷️"),
+              h("span", null, tok)
+            )
+          )
+        ),
+        // Cluster info
+        clusterName && h("div", { style: { fontSize: "0.72rem", color: "#94a3b8", fontFamily: "monospace" } },
+          `Semantischer Vektor-Cluster: ${clusterName}`
+        )
+      )
+    );
+  }
+
+  // Multi-Level Tree Explorer Component for Step 2
+  function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule }) {
+    return h("div", { className: "auto-org-tree-explorer" },
+      categories.map((cat) => {
+        const isExpanded = expandedBranches.has(cat.id);
+        const confPct = Math.round((cat.confidence || 0.95) * 100);
+        const subBranches = cat.sub_branches || [];
+
+        return h("div", {
+          key: cat.id,
+          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""}`
+        },
+          // Root Header Row
+          h("div", {
+            style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", cursor: "pointer" },
+            onClick: () => onToggleExpandBranch(cat.id)
+          },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+              h("span", { style: { fontSize: "0.9rem", color: "#60a5fa", fontWeight: 800 } }, isExpanded ? "▼" : "▶"),
+              h("span", { style: { fontSize: "1.4rem" } }, cat.icon || "📁"),
+              h("div", null,
+                h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "1.05rem", display: "inline-block", marginRight: "0.5rem" } }, cat.name),
+                h("span", { style: { fontSize: "0.85rem", color: "#94a3b8" } }, cat.display_name)
+              )
+            ),
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" } },
+              h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.72rem" } }, `${subBranches.length} Unteräste`),
+              h("span", { className: "auto-org-badge auto-org-badge-green", style: { fontSize: "0.72rem" } }, `${cat.file_count || 0} Dateien`),
+              h("div", { className: "auto-org-neural-badge" },
+                h("span", { className: "auto-org-neural-dot" }),
+                h("span", null, `⚡ ${confPct}%`)
+              ),
+              h("span", {
+                className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+              },
+                h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
+                isApproved ? "🟢 Freigegeben" : "🟡 Prüfung"
+              )
+            )
+          ),
+
+          // Evidence callout
+          cat.data_evidence && h("div", {
+            style: {
+              background: "rgba(15, 23, 42, 0.7)",
+              borderLeft: "3px solid #60a5fa",
+              padding: "0.4rem 0.65rem",
+              borderRadius: "0.25rem",
+              fontSize: "0.78rem",
+              color: "#cbd5e1",
+              fontStyle: "italic"
+            }
+          }, `„${cat.data_evidence}“`),
+
+          // Sub-Branches Nested List (shown when expanded)
+          isExpanded && subBranches.length > 0 && h("div", { className: "auto-org-tree-sub-list" },
+            subBranches.map((sub) => {
+              const subConf = Math.round((sub.confidence || 0.95) * 100);
+              return h("div", { key: sub.id, className: "auto-org-tree-sub-item" },
+                // Left Column: Branch Title, Icon & Path
+                h("div", { style: { flex: 1, minWidth: "260px" } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" } },
+                    h("span", { style: { fontSize: "1.1rem" } }, sub.icon || "📂"),
+                    h("strong", { style: { color: "#ffffff", fontSize: "0.9rem" } }, sub.name),
+                    h("span", { style: { fontSize: "0.72rem", color: "#60a5fa" } }, `(${sub.file_count} Dateien)`)
+                  ),
+                  h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#4ade80", wordBreak: "break-all" } },
+                    formatUserPath(sub.target_path)
+                  ),
+                  // Entity chips
+                  sub.detected_entities && sub.detected_entities.length > 0 && h("div", { className: "auto-org-entity-list", style: { marginTop: "0.3rem" } },
+                    sub.detected_entities.map((e, ei) =>
+                      h("span", { key: ei, className: "auto-org-entity-chip" },
+                        h("span", null, "🏷️"),
+                        h("span", null, e)
+                      )
+                    )
+                  )
+                ),
+                // Right Column: AI Match, Graph Focus & Action
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                  h("div", { className: "auto-org-neural-badge" },
+                    h("span", { className: "auto-org-neural-dot" }),
+                    h("span", null, `${subConf}% Match`)
+                  ),
+                  onFocusGraph && h("button", {
+                    type: "button",
+                    className: "auto-org-pill-btn",
+                    style: { background: "rgba(59, 130, 246, 0.25)", borderColor: "#3b82f6", color: "#93c5fd" },
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      onFocusGraph(sub.id);
+                    }
+                  }, "🔍 Im Graphen fokussieren"),
+                  onApplyToRule && h("button", {
+                    type: "button",
+                    className: "auto-org-pill-btn",
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      onApplyToRule({ name: sub.name, target_path_template: sub.target_path });
+                    }
+                  }, "⚡ Als Regel-Ziel →")
+                )
+              );
+            })
+          )
+        );
+      })
+    );
+  }
 
   function AutoOrganizerApp() {
     // 4-Step Workflow:
@@ -283,7 +1320,15 @@
     const [newNodeKeywords, setNewNodeKeywords] = useState("");
     const [expandedSamples, setExpandedSamples] = useState({});
 
-    // Step 3 Modular Rule Builder State
+    // Step 2 View Mode & Obsidian Animation State
+    const [step2ViewMode, setStep2ViewMode] = useState("tree"); // "tree" | "graph"
+    const [obsidianPaused, setObsidianPaused] = useState(false);
+    const [obsidianSpeed, setObsidianSpeed] = useState(1);
+
+    // Step 3 Modular Rule Builder & Proactive Suggestions State
+    const [suggestedRules, setSuggestedRules] = useState(null);
+    const [selectedSuggestedRuleIds, setSelectedSuggestedRuleIds] = useState(new Set());
+    const [adoptingRules, setAdoptingRules] = useState(false);
     const [ruleName, setRuleName] = useState("");
     const [ruleDesc, setRuleDesc] = useState("");
     const [matchMode, setMatchMode] = useState("all"); // "all" (AND) or "any" (OR)
@@ -296,10 +1341,27 @@
     const [testResult, setTestResult] = useState(null);
     const [testing, setTesting] = useState(false);
 
+    // Step 4 Abstract Semantic Groups & Execution Approval State
+    const [step4ViewMode, setStep4ViewMode] = useState("groups"); // "groups" | "graph" | "table"
+    const [approvedGroupIds, setApprovedGroupIds] = useState(new Set());
+    const [expandedGroups, setExpandedGroups] = useState({});
+
+    // Step 1 Drive Approval, Dismiss, and Tree-Position Hover State
+    const [approvedDriveIds, setApprovedDriveIds] = useState(new Set(["d_privat", "d_work", "d_downloads", "d_gdrive"]));
+    const [excludedDriveIds, setExcludedDriveIds] = useState(new Set());
+    const [hoveredDriveId, setHoveredDriveId] = useState(null);
+    const [showExcludedDrives, setShowExcludedDrives] = useState(false);
+    const [anomalyViewMode, setAnomalyViewMode] = useState("groups"); // "groups" | "table"
+    const [approvedAnomalyGroupIds, setApprovedAnomalyGroupIds] = useState(new Set());
+    const [expandedAnomalyGroups, setExpandedAnomalyGroups] = useState({});
+
+    // Step 2 Multi-Level Tree Branch Expansion State
+    const [expandedBranches, setExpandedBranches] = useState(new Set(["cat_privat", "cat_geschaeftlich"]));
+
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc] = await Promise.all([
+        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc, srules] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
@@ -311,6 +1373,7 @@
           apiCall("/discovery/proactive-scan").catch(() => null),
           apiCall("/taxonomy/emergent").catch(() => null),
           apiCall("/reconciliation/cross-drive").catch(() => null),
+          apiCall("/rules/suggested").catch(() => null),
         ]);
         if (s) setStats(s);
         if (r && r.length > 0) setRoots(r);
@@ -320,9 +1383,19 @@
         if (m) setMountData(m);
         if (tx && tx.tree && tx.tree.length > 0) setTaxonomy(tx);
         if (sm && sm.mappings) setSyncMappings(sm.mappings);
-        if (pscan) setProactiveScan(pscan);
+        if (pscan) {
+          setProactiveScan(pscan);
+          if (pscan.drives && pscan.drives.length > 0) {
+            setApprovedDriveIds(prev => prev.size > 0 ? prev : new Set(pscan.drives.map(d => d.id)));
+          }
+        }
         if (etax) setEmergentTaxonomy(etax);
         if (reconc) setReconciliation(reconc);
+        if (srules && srules.suggested_rules) {
+          setSuggestedRules(srules);
+          const unadopted = srules.suggested_rules.filter(r => !r.is_already_active).map(r => r.id);
+          setSelectedSuggestedRuleIds(new Set(unadopted.length > 0 ? unadopted : srules.suggested_rules.map(r => r.id)));
+        }
       } catch (err) {
         console.error("AutoOrganizer load error:", err);
       } finally {
@@ -334,12 +1407,156 @@
       loadData();
     }, [loadData]);
 
+    // Strict Gating Enforcement: steps 3, 4, 5 require Step 1 Done AND Step 2 Approved
+    useEffect(() => {
+      const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
+      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved));
+      if (step > 2 && !isStep2Approved) {
+        setStep(2);
+      }
+    }, [step, proactiveScan, stats, emergentTaxonomy, taxonomy]);
+
+    const handleAdoptSuggestedRules = async (ruleIds = null) => {
+      setAdoptingRules(true);
+      try {
+        const payload = ruleIds ? { rule_ids: ruleIds } : { adopt_all: true };
+        const res = await apiCall("/rules/adopt-suggested", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        setNotice(res.message || "Vorgeschlagene Filter-Regeln erfolgreich übernommen und aktiviert!");
+        await loadData();
+      } catch (err) {
+        setNotice(`Fehler beim Übernehmen der Regeln: ${err.message}`);
+      } finally {
+        setAdoptingRules(false);
+      }
+    };
+
+    const toggleSuggestedRuleSelection = (ruleId) => {
+      setSelectedSuggestedRuleIds(prev => {
+        const next = new Set(prev);
+        if (next.has(ruleId)) next.delete(ruleId);
+        else next.add(ruleId);
+        return next;
+      });
+    };
+
+    const toggleSelectAllSuggestedRules = () => {
+      const sRules = (suggestedRules && suggestedRules.suggested_rules) || [];
+      if (selectedSuggestedRuleIds.size === sRules.length) {
+        setSelectedSuggestedRuleIds(new Set());
+      } else {
+        setSelectedSuggestedRuleIds(new Set(sRules.map(r => r.id)));
+      }
+    };
+
+    const toggleGroupApproval = (groupId) => {
+      setApprovedGroupIds(prev => {
+        const next = new Set(prev);
+        if (next.has(groupId)) next.delete(groupId);
+        else next.add(groupId);
+        return next;
+      });
+    };
+
+    const toggleSelectAllGroups = () => {
+      const groups = (dryRun && dryRun.semantic_groups) || [];
+      if (approvedGroupIds.size === groups.length) {
+        setApprovedGroupIds(new Set());
+      } else {
+        setApprovedGroupIds(new Set(groups.map(g => g.group_id)));
+      }
+    };
+
+    const toggleExpandGroup = (groupId) => {
+      setExpandedGroups(prev => Object.assign({}, prev, { [groupId]: !prev[groupId] }));
+    };
+
+    const toggleApproveDrive = (id) => {
+      setApprovedDriveIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+
+    const handleDismissDrive = (id) => {
+      setExcludedDriveIds(prev => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+      setApprovedDriveIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    };
+
+    const handleRestoreDrive = (id) => {
+      setExcludedDriveIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setApprovedDriveIds(prev => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    };
+
+    const toggleSelectAllDrives = (allDrives) => {
+      const activeIds = allDrives.map(d => d.id).filter(id => !excludedDriveIds.has(id));
+      const allApproved = activeIds.length > 0 && activeIds.every(id => approvedDriveIds.has(id));
+      if (allApproved) {
+        setApprovedDriveIds(new Set());
+      } else {
+        setApprovedDriveIds(new Set(activeIds));
+      }
+    };
+
+    const toggleExpandBranch = (id) => {
+      setExpandedBranches(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+
+    const toggleApproveAnomalyGroup = (grpId) => {
+      setApprovedAnomalyGroupIds(prev => {
+        const next = new Set(prev);
+        if (next.has(grpId)) next.delete(grpId);
+        else next.add(grpId);
+        return next;
+      });
+    };
+
+    const toggleExpandAnomalyGroup = (grpId) => {
+      setExpandedAnomalyGroups(prev => Object.assign({}, prev, { [grpId]: !prev[grpId] }));
+    };
+
     const handleStartIndexing = async () => {
       setIndexingLoading(true);
       try {
+        const rawDrives = (proactiveScan && proactiveScan.drives) || [
+          { id: "d_privat" }, { id: "d_work" }, { id: "d_downloads" }, { id: "d_gdrive" }
+        ];
+        const selectedIds = rawDrives
+          .map(d => d.id)
+          .filter(id => !excludedDriveIds.has(id) && approvedDriveIds.has(id));
+
         const res = await apiCall("/discovery/start-indexing", {
           method: "POST",
-          body: JSON.stringify({ enable_embeddings: true, ocr_enabled: true })
+          body: JSON.stringify({
+            enable_embeddings: true,
+            ocr_enabled: true,
+            drive_ids: selectedIds.length > 0 ? selectedIds : null
+          })
         });
         setNotice(res.message || "Proaktives Embedding & semantische Indexierung erfolgreich gestartet!");
         await loadData();
@@ -679,8 +1896,12 @@
           body: JSON.stringify({ max_items: 50 }),
         });
         setDryRun(result);
+        if (result && result.semantic_groups) {
+          const safeIds = result.semantic_groups.filter(g => g.safe_count > 0).map(g => g.group_id);
+          setApprovedGroupIds(new Set(safeIds.length > 0 ? safeIds : result.semantic_groups.map(g => g.group_id)));
+        }
         setStep(4);
-        setNotice(`Dry-Run abgeschlossen: ${result.actions_count} Aktionen vorbereitet.`);
+        setNotice(`Dry-Run abgeschlossen: ${result.actions_count} Aktionen in ${result.semantic_groups ? result.semantic_groups.length : 0} semantischen Gruppen vorbereitet.`);
       } catch (err) {
         setNotice(`Dry-Run fehlgeschlagen: ${err.message}`);
       } finally {
@@ -690,16 +1911,29 @@
 
     const handleExecuteDryRun = async () => {
       if (!dryRun || !dryRun.batch_id) return;
-      if (!window.confirm(`Möchten Sie ${dryRun.safe_count} Datei-Verschiebungen jetzt ausführen? Originale werden mit Papierkorb-Schutz atomar archiviert.`)) {
+      const groups = dryRun.semantic_groups || [];
+      const approvedList = Array.from(approvedGroupIds);
+      if (approvedList.length === 0) {
+        alert("Bitte wählen Sie mindestens eine Ausführungsgruppe zur Freigabe aus.");
+        return;
+      }
+      const filesCount = groups
+        .filter(g => approvedGroupIds.has(g.group_id))
+        .reduce((sum, g) => sum + (g.safe_count || 0), 0);
+
+      if (!window.confirm(`Möchten Sie die ${approvedList.length} freigegebenen Gruppen (${filesCount} Datei-Verschiebungen) jetzt ausführen? Originale werden mit Papierkorb-Schutz atomar archiviert.`)) {
         return;
       }
       setLoading(true);
       try {
         const res = await apiCall("/execute", {
           method: "POST",
-          body: JSON.stringify({ dry_run_batch_id: dryRun.batch_id }),
+          body: JSON.stringify({
+            dry_run_batch_id: dryRun.batch_id,
+            approved_group_ids: approvedList
+          }),
         });
-        setNotice(`Erfolgreich ausgeführt: ${res.executed_count} Dateien verschoben.`);
+        setNotice(`Erfolgreich ausgeführt: ${res.executed_count} Dateien in ${approvedList.length} Gruppe(n) verschoben.`);
         setDryRun(null);
         loadData();
         setActiveModal("journal");
@@ -903,63 +2137,98 @@
     };
 
     const renderStepper = () => {
-      const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
-      const isTaxApproved = (emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved);
+      const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
+      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved));
 
       return h("div", { className: "auto-org-stepper" },
         // Step 1
         h("div", {
-          className: `auto-org-step-card ${step === 1 ? "active" : ""} ${step > 1 ? "completed" : ""}`,
+          className: `auto-org-step-card ${step === 1 ? "active" : ""} ${isStep1Done ? "completed" : ""}`,
           onClick: () => setStep(1)
         },
-          h("div", { className: "auto-org-step-badge" }, step > 1 ? "✓" : "1"),
+          h("div", { className: "auto-org-step-badge" }, isStep1Done ? "✓" : "1"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
-            h("div", { className: "auto-org-step-name" }, "Quelle & Proaktiver Scan"),
+            h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
             h("div", { className: "auto-org-step-subtitle" },
-              isIndexed ? "✓ Indexiert (516 Dateien)" : "Proaktiver Scan & Consent"
+              isStep1Done ? `✓ Indexiert (${stats ? stats.total_files : 450} Dateien)` : "Scan & Indexierungs-Consent"
             )
           )
         ),
-        // Step 2 (Organisationssystem & Baum)
+        // Step 2 (Organisationssystem & Freigabe)
         h("div", {
-          className: `auto-org-step-card ${step === 2 ? "active" : ""} ${step > 2 ? "completed" : ""}`,
+          className: `auto-org-step-card ${step === 2 ? "active" : ""} ${isStep2Approved ? "completed" : ""}`,
           onClick: () => setStep(2)
         },
-          h("div", { className: "auto-org-step-badge" }, step > 2 ? "✓" : "2"),
+          h("div", { className: "auto-org-step-badge" }, isStep2Approved ? "✓" : "2"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
-            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Abgleich"),
+            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Freigabe"),
             h("div", { className: "auto-org-step-subtitle" },
-              isTaxApproved ? "✓ Natürlich entstanden" : "Emergente Taxonomie & Redundanzen"
+              isStep2Approved ? "✓ Natürlich entstanden & freigegeben" : "Emergente Taxonomie & Freigabe"
             )
           )
         ),
-        // Step 3 (Filter-Regeln)
+        // Step 3 (Proaktive Filter-Regeln) - Strictly Gated
         h("div", {
-          className: `auto-org-step-card ${step === 3 ? "active" : ""} ${step > 3 ? "completed" : ""}`,
-          onClick: () => setStep(3)
+          className: `auto-org-step-card ${step === 3 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""} ${rules.length > 0 && isStep2Approved ? "completed" : ""}`,
+          onClick: () => {
+            if (!isStep2Approved) {
+              setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+              return;
+            }
+            setStep(3);
+          },
+          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3"
         },
-          h("div", { className: "auto-org-step-badge" }, step > 3 ? "✓" : "3"),
+          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : (rules.length > 0 ? "✓" : "3")),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 3"),
-            h("div", { className: "auto-org-step-name" }, "Filter-Regeln & Zuordnung"),
+            h("div", { className: "auto-org-step-name" }, "Proaktive Filter-Regeln"),
             h("div", { className: "auto-org-step-subtitle" },
-              `${rules.length} aktive Regeln`
+              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${rules.length} aktive Regeln (5 KI-Vorschläge)`
             )
           )
         ),
-        // Step 4 (Simulation & Reorganisation)
+        // Step 4 (Simulation & Reorganisation) - Strictly Gated
         h("div", {
-          className: `auto-org-step-card ${step === 4 ? "active" : ""}`,
-          onClick: () => setStep(4)
+          className: `auto-org-step-card ${step === 4 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
+          onClick: () => {
+            if (!isStep2Approved) {
+              setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+              return;
+            }
+            setStep(4);
+          },
+          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4"
         },
-          h("div", { className: "auto-org-step-badge" }, "4"),
+          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "4"),
           h("div", { className: "auto-org-step-info" },
             h("div", { className: "auto-org-step-number-title" }, "Schritt 4"),
-            h("div", { className: "auto-org-step-name" }, "Simulation & Reorganisation"),
+            h("div", { className: "auto-org-step-name" }, "Simulation & Ausführung"),
             h("div", { className: "auto-org-step-subtitle" },
-              dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Ausführung"
+              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : (dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Sandbox-Ausführung")
+            )
+          )
+        ),
+        // Step 5 (Google Drive Cloud-Sync) - Strictly Gated
+        h("div", {
+          className: `auto-org-step-card ${step === 5 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
+          onClick: () => {
+            if (!isStep2Approved) {
+              setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+              return;
+            }
+            setStep(5);
+          },
+          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync"
+        },
+          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "5"),
+          h("div", { className: "auto-org-step-info" },
+            h("div", { className: "auto-org-step-number-title" }, "Schritt 5"),
+            h("div", { className: "auto-org-step-name" }, "Google Drive Cloud-Sync"),
+            h("div", { className: "auto-org-step-subtitle" },
+              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${syncMappings.length} selektive Sync-Ordner`
             )
           )
         )
@@ -971,12 +2240,18 @@
     // ==========================================
     const renderStep1 = () => {
       const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
-      const scannedDrives = (proactiveScan && proactiveScan.drives) || [
-        { id: "d_privat", name: "PrivatBüro", category: "Local Drive", host_path: "/media/privat-data/10_PrivatBüro", container_path: "/opt/data/privat-buero", is_writable: true, free_space_gb: 142.5, estimated_files: 89 },
-        { id: "d_work", name: "Arbeitsdateien (work-data)", category: "Local Drive", host_path: "/media/work-data", container_path: "/opt/data/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 142 },
-        { id: "d_downloads", name: "Downloads (Dumpzone)", category: "Dumpzone", host_path: "/home/mb/Downloads", container_path: "/opt/data/downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 45 },
-        { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", host_path: "gdrive://creatiVision", container_path: "/opt/data/cloud", is_writable: true, free_space_gb: 85.0, estimated_files: 120 }
+      const rawScannedDrives = (proactiveScan && proactiveScan.drives) || [
+        { id: "d_privat", name: "PrivatBüro", category: "Local Drive", host_path: "/media/privat-data/10_PrivatBüro", is_writable: true, free_space_gb: 142.5, estimated_files: 89, tree_slice: ["/", "media", "privat-data", "10_PrivatBüro"] },
+        { id: "d_work", name: "Arbeitsdateien (work-data)", category: "Local Drive", host_path: "/media/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 142, tree_slice: ["/", "media", "work-data"] },
+        { id: "d_downloads", name: "Downloads (Dumpzone)", category: "Dumpzone", host_path: "/home/mb/Downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 45, tree_slice: ["/", "home", "mb", "Downloads"] },
+        { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", host_path: "gdrive://creatiVision", is_writable: true, free_space_gb: 85.0, estimated_files: 120, tree_slice: ["Cloud", "Google Drive", "creatiVision"] }
       ];
+
+      const activeDrives = rawScannedDrives.filter(d => !excludedDriveIds.has(d.id));
+      const excludedDrives = rawScannedDrives.filter(d => excludedDriveIds.has(d.id));
+      const approvedCount = activeDrives.filter(d => approvedDriveIds.has(d.id)).length;
+      const allDrivesApproved = activeDrives.length > 0 && approvedCount === activeDrives.length;
+      const anomalyGroups = groupAnomaliesBySemanticIntent(anomalies);
 
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
         // Proactive AI Scan Banner (Autonome Erkennung & 1-Klick Consent)
@@ -1003,9 +2278,9 @@
                 className: "auto-org-btn auto-org-btn-primary",
                 style: { padding: "0.65rem 1.4rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" },
                 onClick: handleStartIndexing,
-                disabled: indexingLoading
+                disabled: indexingLoading || approvedCount === 0
               },
-                indexingLoading ? "⏳ Erstelle Embeddings & Index..." : (isIndexed ? "↻ Index & Embeddings aktualisieren" : "🚀 Embedding & Indexing starten")
+                indexingLoading ? "⏳ Erstelle Embeddings & Index..." : (isIndexed ? `↻ ${approvedCount} freigegebene Ordner aktualisieren` : `🚀 Embedding & Indexing starten (${approvedCount} Ordner)`)
               ),
               isIndexed && h("button", {
                 type: "button",
@@ -1016,25 +2291,146 @@
             )
           ),
 
-          // Scanned Drives Grid
-          h("div", { className: "auto-org-drive-grid" },
-            scannedDrives.map((d) =>
-              h("div", { key: d.id, className: "auto-org-drive-card" },
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                  h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
-                  h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.7rem" } }, d.category || "Drive")
+          // User Consent, Checkboxes & Exclusion Toolbar
+          h("div", { className: "auto-org-approval-bar", style: { marginTop: "1rem" } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" } },
+              h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#f8fafc" } },
+                h("input", {
+                  type: "checkbox",
+                  className: "auto-org-checkbox",
+                  checked: allDrivesApproved,
+                  onChange: () => toggleSelectAllDrives(rawScannedDrives)
+                }),
+                h("span", null, "Alle aktiven Ordner freigeben")
+              ),
+              h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } },
+                `(${approvedCount} von ${activeDrives.length} freigegeben • ${excludedDrives.length} ausgeschlossen)`
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                style: { padding: "0.4rem 0.85rem", fontSize: "0.78rem" },
+                onClick: () => setApprovedDriveIds(new Set(activeDrives.map(d => d.id)))
+              }, "🟢 Alle freigeben"),
+              excludedDrives.length > 0 && h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                style: { padding: "0.4rem 0.85rem", fontSize: "0.78rem", borderColor: "#64748b", color: "#94a3b8" },
+                onClick: () => setShowExcludedDrives(v => !v)
+              }, showExcludedDrives ? "▲ Ausgeschlossene verbergen" : `🚫 ${excludedDrives.length} Ausgeschlossene anzeigen`)
+            )
+          ),
+
+          // Scanned Drives Grid (with Ampel, Checkbox, Dismiss button & Tree Position Hover)
+          h("div", { className: "auto-org-drive-grid", style: { marginTop: "0.85rem" } },
+            activeDrives.map((d) => {
+              const isApproved = approvedDriveIds.has(d.id);
+              const isHovered = hoveredDriveId === d.id;
+
+              return h("div", {
+                key: d.id,
+                className: `auto-org-drive-card ${isApproved ? "approved" : "pending"}`,
+                onMouseEnter: () => setHoveredDriveId(d.id),
+                onMouseLeave: () => setHoveredDriveId(null)
+              },
+                // Card Header: Checkbox, Name, Ampel, Dismiss
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                    h("input", {
+                      type: "checkbox",
+                      className: "auto-org-checkbox",
+                      checked: isApproved,
+                      onChange: () => toggleApproveDrive(d.id)
+                    }),
+                    h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
+                    h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive")
+                  ),
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                    h("span", {
+                      className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                    },
+                      h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
+                      isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag"
+                    ),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-dismiss-btn",
+                      title: "Diesen Ordner nicht in die Indizierung aufnehmen (Ausschließen)",
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        handleDismissDrive(d.id);
+                      }
+                    }, "✕ Ausschließen")
+                  )
                 ),
+
+                // Host Path in Monospace
                 h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
-                  d.host_path
+                  formatUserPath(d.host_path)
                 ),
+
+                // Stats line
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
                   h("span", null, `~${d.estimated_files || 0} Dateien`),
                   h("span", { style: { color: "#4ade80", fontWeight: 500 } }, `${d.free_space_gb || 0} GB frei • RW`)
+                ),
+
+                // Tree Position Hover Visualizer
+                isHovered ?
+                  h(DriveTreeHoverPreview, { drive: d }) :
+                  h("div", {
+                    style: { fontSize: "0.7rem", color: "#64748b", display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.25rem", userSelect: "none" }
+                  },
+                    h("span", null, "🌳"),
+                    h("span", null, "Maus berühren für Verzeichnisbaum-Stellung")
+                  )
+              );
+            })
+          ),
+
+          // Excluded Drives Section
+          showExcludedDrives && excludedDrives.length > 0 && h("div", {
+            style: {
+              marginTop: "1rem",
+              padding: "0.85rem 1rem",
+              background: "rgba(15, 23, 42, 0.95)",
+              border: "1px dashed #64748b",
+              borderRadius: "0.5rem"
+            }
+          },
+            h("div", { style: { fontWeight: 600, color: "#f87171", fontSize: "0.85rem", marginBottom: "0.5rem" } },
+              `🚫 Ausgeschlossene Ordner (${excludedDrives.length}) — werden bei der Indizierung ignoriert:`
+            ),
+            h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem" } },
+              excludedDrives.map((ed) =>
+                h("div", {
+                  key: ed.id,
+                  style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.35rem 0.6rem",
+                    background: "rgba(30, 41, 59, 0.5)",
+                    borderRadius: "0.35rem"
+                  }
+                },
+                  h("span", { style: { fontFamily: "monospace", fontSize: "0.78rem", color: "#94a3b8" } },
+                    `${ed.name} (${formatUserPath(ed.host_path)})`
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-restore-btn",
+                    onClick: () => handleRestoreDrive(ed.id)
+                  }, "↩️ Wieder in Index aufnehmen")
                 )
               )
             )
           )
         ),
+
         // Dumpzone Quick Sources Overview
         h("div", { className: "auto-org-panel" },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" } },
@@ -1080,108 +2476,66 @@
           )
         ),
 
-        // Google Drive <-> Local Sync Mappings Section
-        h("div", { className: "auto-org-panel" },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+        // Google Drive Discovery Notice (Isolated & Gated to Step 5)
+        h("div", {
+          className: "auto-org-panel",
+          style: {
+            background: "rgba(15, 23, 42, 0.6)",
+            border: "1px dashed #334155",
+            padding: "0.85rem 1.25rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem"
+          }
+        },
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+            h("span", { style: { fontSize: "1.2rem" } }, "☁️"),
             h("div", null,
-              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
-                h("span", null, "☁️"),
-                h("span", null, `Google Drive ↔ Lokaler Speicher: Sync-Ordner & Mappings (${syncMappings.length})`)
+              h("div", { style: { fontWeight: 600, color: "#ffffff", fontSize: "0.875rem" } },
+                "Google Drive Speicherpfad erkannt: gdrive://creatiVision"
               ),
-              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
-                "Selektive Synchronisation zwischen Google Drive und Ihren lokalen Festplatten/Container-Mounts."
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                "Selektive Synchronisation, bidirektionaler Abgleich und Mappings werden im finalen Schritt 5 konfiguriert."
               )
-            ),
-            h("div", { style: { display: "flex", gap: "0.5rem" } },
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-outline",
-                onClick: () => setActiveModal("sync"),
-                style: { fontSize: "0.75rem" }
-              }, "⚙️ Sync-Manager öffnen"),
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-primary",
-                onClick: () => {
-                  setShowNewSyncForm(true);
-                  setActiveModal("sync");
-                },
-                style: { fontSize: "0.75rem" }
-              }, "+ Neuer Sync-Ordner")
             )
           ),
-          syncMappings.length === 0 ?
-            h("div", { style: { textAlign: "center", padding: "1.5rem", color: "#94a3b8" } },
-              "Noch keine Google Drive ↔ Lokale Sync-Ordner konfiguriert. Klicken Sie oben auf '+ Neuer Sync-Ordner'."
-            ) :
-            h("div", { className: "auto-org-sync-grid" },
-              syncMappings.map((m) => {
-                const isBi = m.direction === "bidirectional";
-                const isPush = m.direction === "push";
-                const dirLabel = isBi ? "⇄ Bidirektional" : (isPush ? "⬆️ Lokal ➔ Drive" : "⬇️ Drive ➔ Lokal");
-                const mountOk = m.mount_check && m.mount_check.valid && !m.mount_check.read_only;
-                return h("div", {
-                  key: m.id,
-                  className: `auto-org-sync-card ${m.is_active ? "" : "paused"}`
-                },
-                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                    h("span", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" } }, m.name),
-                    h("span", { className: "auto-org-sync-direction-badge" }, dirLabel)
-                  ),
-                  h("div", { style: { display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8125rem" } },
-                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Drive:"),
-                      h("span", { style: { fontFamily: "monospace", color: "#60a5fa", wordBreak: "break-all" } }, `gdrive:${m.drive_folder_path}`)
-                    ),
-                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Lokal:"),
-                      h("span", { style: { fontFamily: "monospace", color: "#4ade80", wordBreak: "break-all" } }, m.local_path)
-                    )
-                  ),
-                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.25rem" } },
-                    h("div", { className: "auto-org-mount-status-tag" },
-                      mountOk ?
-                        h("span", { className: "auto-org-mount-status-ok" }, "✅ Gemountet & Schreibbar") :
-                        h("span", { className: "auto-org-mount-status-warn", title: (m.mount_check && m.mount_check.warning) || "Mount prüfen" }, "⚠️ Host-Pfad (Prüfen)")
-                    ),
-                    h("div", { style: { display: "flex", gap: "0.4rem" } },
-                      h("button", {
-                        type: "button",
-                        className: "auto-org-pill-btn",
-                        onClick: () => {
-                          setActiveModal("sync");
-                          handleCalculateSyncPlan(m.id);
-                        }
-                      }, "Plan / Diff →"),
-                      h("button", {
-                        type: "button",
-                        className: "auto-org-pill-btn",
-                        style: { color: m.is_active ? "#facc15" : "#4ade80" },
-                        onClick: () => handleToggleSyncMapping(m.id, m.is_active)
-                      }, m.is_active ? "Pausieren" : "Aktivieren")
-                    )
-                  )
-                );
-              })
-            )
+          h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.75rem" } },
+            "Sync-Konfiguration in Schritt 5"
+          )
         ),
 
-        // Anomalies Inbox
+        // Anomalies & Dumpzone Files Section (Grouped Semantics + Animated Flow Route)
         h("div", { className: "auto-org-panel" },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
             h("div", null,
               h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
                 h("span", null, "🚨"),
                 h("span", null, `Erkannte Anomalien & Unsortierte Dateien (${anomalies.length})`)
               ),
               h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
-                "Dateien in Dump-Zonen oder chaotischer Ordnerstruktur, die der KI-Index als reorganisationsbedürftig markiert hat."
+                "Dateien in Dump-Zonen oder chaotischer Struktur — gebündelt in semantische Gruppen mit konkreten Zielpfaden im Baum:"
               )
             ),
-            anomalies.length > 0 && h("button", {
-              className: "auto-org-btn auto-org-btn-outline",
-              onClick: () => setStep(2)
-            }, "Zu Schritt 2: Ziel-Baum prüfen →")
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" } },
+              h("div", { className: "auto-org-view-tabs" },
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${anomalyViewMode === "groups" ? "active" : ""}`,
+                  onClick: () => setAnomalyViewMode("groups")
+                }, `📑 Semantische Gruppen (${anomalyGroups.length})`),
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${anomalyViewMode === "table" ? "active" : ""}`,
+                  onClick: () => setAnomalyViewMode("table")
+                }, `📋 Tabelle (${anomalies.length})`)
+              ),
+              anomalies.length > 0 && h("button", {
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setStep(2)
+              }, "Zu Schritt 2: Ziel-Baum prüfen →")
+            )
           ),
 
           anomalies.length === 0 ?
@@ -1190,41 +2544,148 @@
               h("p", { style: { color: "#4ade80", fontWeight: 600, fontSize: "1rem" } }, "Alle Speicherwurzeln sind sauber strukturiert!"),
               h("p", { style: { color: "#94a3b8", fontSize: "0.875rem", marginTop: "0.25rem" } }, "Keine offenen Dump-Zone-Dateien oder verwaisten Elemente gefunden.")
             ) :
-            h("table", { className: "auto-org-table" },
-              h("thead", null,
-                h("tr", null,
-                  h("th", null, "Dateiname"),
-                  h("th", null, "Aktueller Speicherort"),
-                  h("th", null, "Größe"),
-                  h("th", null, "Anomalie-Typ"),
-                  h("th", null, "KI-Empfehlung"),
-                  h("th", null, "Aktion")
-                )
-              ),
-              h("tbody", null,
-                anomalies.map((an) => h("tr", { key: an.id },
-                  h("td", { style: { fontWeight: 600 } }, an.file_name),
-                  h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8" } },
-                    an.relative_path || an.physical_path
-                  ),
-                  h("td", null, `${an.size_kb} KB`),
-                  h("td", null,
-                    h("span", {
-                      className: an.anomaly_type === "dump_zone" ? "auto-org-badge auto-org-badge-yellow" : "auto-org-badge auto-org-badge-blue"
-                    }, an.anomaly_type)
-                  ),
-                  h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#4ade80" } },
-                    an.suggested_target || "Archiv / General"
-                  ),
-                  h("td", null,
-                    h("button", {
-                      type: "button",
-                      className: "auto-org-btn auto-org-btn-outline",
-                      style: { fontSize: "0.75rem", padding: "0.25rem 0.5rem" },
-                      onClick: () => handleCreateRuleFromAnomaly(an)
-                    }, "⚡ Regel dafür erstellen →")
+            (anomalyViewMode === "groups" ?
+              // SEMANTIC GROUPS VIEW (Modern AI Cyber Style with Animated Flow Route)
+              h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
+                anomalyGroups.map((grp) => {
+                  const isApproved = approvedAnomalyGroupIds.has(grp.id);
+                  const isExpanded = !!expandedAnomalyGroups[grp.id];
+
+                  return h("div", {
+                    key: grp.id,
+                    className: `auto-org-anomaly-group-card ${isApproved ? "approved" : "pending"}`
+                  },
+                    // Header Row: Checkbox, Group Title, Ampel Badge
+                    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
+                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                        h("input", {
+                          type: "checkbox",
+                          className: "auto-org-checkbox",
+                          checked: isApproved,
+                          onChange: () => toggleApproveAnomalyGroup(grp.id)
+                        }),
+                        h("h4", { style: { fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 } }, grp.title),
+                        h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.files.length} Dateien`)
+                      ),
+                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                        h("span", {
+                          className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                        },
+                          h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
+                          isApproved ? "🟢 Freigegeben zur Sortierung" : "🟡 Vorschlag (Ausstehend)"
+                        )
+                      )
+                    ),
+
+                    // Animated "Von wo nach wo" Flow Route
+                    h(AnimatedFlowRoute, {
+                      sourcePath: grp.source_path,
+                      targetPath: grp.target_path,
+                      confidence: grp.confidence,
+                      isApproved: isApproved,
+                      onFocusGraph: () => {
+                        setStep(2);
+                        setStep2ViewMode("graph");
+                      }
+                    }),
+
+                    // Visual Tree Slice Pipeline
+                    h(VisualBranchPipeline, {
+                      sourcePath: grp.source_path,
+                      targetPath: grp.target_path,
+                      treeSlice: grp.tree_slice,
+                      confidence: grp.confidence,
+                      onFocusGraph: () => {
+                        setStep(2);
+                        setStep2ViewMode("graph");
+                      }
+                    }),
+
+                    // Collapsible Sample Files Drawer (Kleingedruckt)
+                    h("div", null,
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-tag-btn",
+                        style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
+                        onClick: () => toggleExpandAnomalyGroup(grp.id)
+                      }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.files.length} Beispieldateien anzeigen (kleingedruckt)`),
+
+                      isExpanded && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
+                        grp.files.map((sf, idx) =>
+                          h("div", {
+                            key: idx,
+                            style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" }
+                          },
+                            h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
+                            h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
+                            h("span", { style: { color: "#94a3b8", fontSize: "0.7rem", fontFamily: "monospace" } },
+                              `${formatUserPath(sf.physical_path)} → ${formatUserPath(sf.suggested_target)}`
+                            )
+                          )
+                        )
+                      )
+                    ),
+
+                    // Group Footer Actions
+                    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem", marginTop: "0.25rem" } },
+                      h("span", { style: { fontSize: "0.75rem", color: isApproved ? "#4ade80" : "#facc15", fontWeight: 600 } },
+                        isApproved ? "✓ Freigabe durch Benutzer erteilt" : "Ausstehende Prüfung durch Benutzer"
+                      ),
+                      h("div", { style: { display: "flex", gap: "0.5rem" } },
+                        h("button", {
+                          type: "button",
+                          className: `auto-org-btn ${isApproved ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
+                          style: { fontSize: "0.78rem", padding: "0.35rem 0.85rem" },
+                          onClick: () => toggleApproveAnomalyGroup(grp.id)
+                        }, isApproved ? "✓ Freigegeben" : "🟢 Gruppe freigeben"),
+                        h("button", {
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-outline",
+                          style: { fontSize: "0.78rem", padding: "0.35rem 0.85rem" },
+                          onClick: () => handleCreateRuleFromAnomaly(grp.files[0])
+                        }, "⚡ Als Regel anlegen →")
+                      )
+                    )
+                  );
+                })
+              ) :
+              // TABLE VIEW (with clean host paths)
+              h("table", { className: "auto-org-table" },
+                h("thead", null,
+                  h("tr", null,
+                    h("th", null, "Dateiname"),
+                    h("th", null, "Aktueller Speicherort"),
+                    h("th", null, "Größe"),
+                    h("th", null, "Anomalie-Typ"),
+                    h("th", null, "Konkretes KI-Zielverzeichnis"),
+                    h("th", null, "Aktion")
                   )
-                ))
+                ),
+                h("tbody", null,
+                  anomalies.map((an) => h("tr", { key: an.id },
+                    h("td", { style: { fontWeight: 600 } }, an.file_name),
+                    h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8" } },
+                      formatUserPath(an.relative_path || an.physical_path)
+                    ),
+                    h("td", null, `${an.size_kb} KB`),
+                    h("td", null,
+                      h("span", {
+                        className: an.anomaly_type === "dump_zone" ? "auto-org-badge auto-org-badge-yellow" : "auto-org-badge auto-org-badge-blue"
+                      }, an.anomaly_type)
+                    ),
+                    h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#4ade80" } },
+                      formatUserPath(an.suggested_target || "/media/work-data/001_cv-bookaccount/2025/Eingangsrechnungen/")
+                    ),
+                    h("td", null,
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-btn auto-org-btn-outline",
+                        style: { fontSize: "0.75rem", padding: "0.25rem 0.5rem" },
+                        onClick: () => handleCreateRuleFromAnomaly(an)
+                      }, "⚡ Regel dafür erstellen →")
+                    )
+                  ))
+                )
               )
             )
         ),
@@ -1249,11 +2710,13 @@
     const renderStep2 = () => {
       const rawTree = (taxonomy && taxonomy.tree) || [];
       const treeNodes = rawTree.length > 0 ? rawTree : DEFAULT_TREE_NODES;
-      const isSystemApproved = taxonomy ? taxonomy.system_approved : true;
+      const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
+      const isEmergentApproved = Boolean(emergentTaxonomy && emergentTaxonomy.is_approved);
+      const isSystemApproved = Boolean(taxonomy && taxonomy.system_approved);
+      const isStep2Approved = isStep1Done && (isEmergentApproved || isSystemApproved);
       const approvedCount = (taxonomy && taxonomy.approved_nodes) || treeNodes.filter(n => n.is_approved).length;
       const totalNodes = treeNodes.length;
 
-      const isEmergentApproved = emergentTaxonomy && emergentTaxonomy.is_approved;
       const emergentCategories = (emergentTaxonomy && emergentTaxonomy.categories) || [
         {
           id: "cat_privat",
@@ -1262,7 +2725,7 @@
           file_count: 89,
           detected_keywords: ["Steuern", "Krankenkasse", "Versicherungen", "Wohnung", "Bescheide", "Gehalt"],
           data_evidence: "Natürlich erkannt aus 89 Dokumenten in /media/privat-data/10_PrivatBüro mit Steuer- & Abrechnungsbezug.",
-          target_path_template: "/opt/data/privat-buero/{year}/{category}/",
+          target_path_template: "/media/privat-data/10_PrivatBüro/{year}/{category}/",
           confidence: 0.96,
           icon: "🏠",
         },
@@ -1273,7 +2736,7 @@
           file_count: 142,
           detected_keywords: ["Ausgangsrechnungen", "Eingangsrechnungen", "BWA", "USt-Voranmeldung", "Verträge", "Bankbelege"],
           data_evidence: "Natürlich erkannt aus 142 Dateien in /media/work-data/001_cv-bookaccount mit USt-IdNr, Firmenbelegen und Buchhaltungsdaten.",
-          target_path_template: "/opt/data/work-data/001_cv-bookaccount/{year}/{type}/",
+          target_path_template: "/media/work-data/001_cv-bookaccount/{year}/{type}/",
           confidence: 0.98,
           icon: "💼",
         },
@@ -1284,7 +2747,7 @@
           file_count: 210,
           detected_keywords: ["Repositories", "Webdesign", "WordPress", "Python", "UI-Assets", "Agent-Skills"],
           data_evidence: "Natürlich erkannt aus 210 Dateien in /media/work-data/002_cv-projects mit Git-Repositories, Web-Layouts und Codebasen.",
-          target_path_template: "/opt/data/work-data/002_cv-projects/{project_name}/",
+          target_path_template: "/media/work-data/002_cv-projects/{project_name}/",
           confidence: 0.94,
           icon: "🚀",
         },
@@ -1295,7 +2758,7 @@
           file_count: 75,
           detected_keywords: ["Jahresarchiv", "Postgres-Dump", "Syncthing-Snapshots", "Cold-Storage"],
           data_evidence: "Natürlich erkannt aus 75 Archivdateien (.tar, .sql.gz, historische Jahresordner) in /media/xchg/backup und GDrive.",
-          target_path_template: "/opt/data/knowledge-base/Archiv/{year}/",
+          target_path_template: "/media/xchg/ai-knowledge-base/Archiv/{year}/",
           confidence: 0.91,
           icon: "📦",
         },
@@ -1309,7 +2772,7 @@
           sha256_prefix: "e3b0c442",
           redundancy_type: "suspected_backup",
           locations: [
-            { drive: "Arbeitsdateien (work-data)", path: "/opt/data/work-data/001_cv-bookaccount/cv_accounting_2025/Rechnungen_Q4.pdf", role: "primary", mtime: "2026-09-05T14:30:00Z" },
+            { drive: "Arbeitsdateien (work-data)", path: "/media/work-data/001_cv-bookaccount/cv_accounting_2025/Rechnungen_Q4.pdf", role: "primary", mtime: "2026-09-05T14:30:00Z" },
             { drive: "Google Drive Cloud Sync", path: "gdrive://creatiVision/Accounting/2025/Rechnungen_Q4.pdf", role: "cloud_mirror", mtime: "2026-09-05T14:30:00Z" }
           ],
           semantic_question: "Identischer Hash auf Arbeitsdateien (Lokal) und Google Drive gefunden. Handelt es sich hierbei um ein beabsichtigtes Cloud-Backup / Mirroring?",
@@ -1323,8 +2786,8 @@
           sha256_prefix: "a1b2c3d4",
           redundancy_type: "dump_zone_duplicate",
           locations: [
-            { drive: "PrivatBüro", path: "/opt/data/privat-buero/2024/Steuern/steuerbescheid_2024.pdf", role: "primary", mtime: "2025-11-12T10:00:00Z" },
-            { drive: "Downloads (Dumpzone)", path: "/opt/data/downloads/steuerbescheid_2024_einkommensteuer.pdf", role: "clutter_copy", mtime: "2026-08-15T09:12:00Z" }
+            { drive: "PrivatBüro", path: "/media/privat-data/10_PrivatBüro/2024/Steuern/steuerbescheid_2024.pdf", role: "primary", mtime: "2025-11-12T10:00:00Z" },
+            { drive: "Downloads (Dumpzone)", path: "/home/mb/Downloads/steuerbescheid_2024_einkommensteuer.pdf", role: "clutter_copy", mtime: "2026-08-15T09:12:00Z" }
           ],
           semantic_question: "Die Datei in Downloads ist ein exaktes Duplikat des bereits einsortierten Steuerbescheids im PrivatBüro. Soll das temporäre Duplikat in Downloads bereinigt werden?",
           recommendation: "Downloads-Kopie über send2trash in den Papierkorb verschieben; Primärkopie im PrivatBüro schützen.",
@@ -1337,7 +2800,7 @@
           sha256_prefix: "f5e6d7c8",
           redundancy_type: "cross_project_sharing",
           locations: [
-            { drive: "Arbeitsdateien (work-data)", path: "/opt/data/work-data/002_cv-projects/webdesign-wp-lc-ps/assets/logo.svg", role: "project_local", mtime: "2026-08-20T16:00:00Z" },
+            { drive: "Arbeitsdateien (work-data)", path: "/media/work-data/002_cv-projects/webdesign-wp-lc-ps/assets/logo.svg", role: "project_local", mtime: "2026-08-20T16:00:00Z" },
             { drive: "Google Drive Cloud Sync", path: "gdrive://creatiVision/Brand/Assets/logo_master.svg", role: "cloud_master", mtime: "2026-08-20T16:00:00Z" }
           ],
           semantic_question: "Identisches Vektorlogo in Webdesign-Projekt und zentralem Google-Drive-Assets-Ordner. Soll dies als geteilte Ressource bestehen bleiben?",
@@ -1347,6 +2810,27 @@
       ];
 
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" } },
+        // Step 2 View Switcher (Tree vs Obsidian Graph)
+        h("div", { className: "auto-org-view-tabs" },
+          h("button", {
+            type: "button",
+            className: `auto-org-view-tab ${step2ViewMode === "tree" ? "active" : ""}`,
+            onClick: () => setStep2ViewMode("tree")
+          }, "🌳 Natürliche Taxonomie & Ziel-Verzeichnisbaum (S_ideal)"),
+          h("button", {
+            type: "button",
+            className: `auto-org-view-tab ${step2ViewMode === "graph" ? "active" : ""}`,
+            onClick: () => setStep2ViewMode("graph")
+          }, "🕸️ Animierter Obsidian-Graph (Dateifluss & Netzwerk)")
+        ),
+
+        // Obsidian Graph View if active
+        step2ViewMode === "graph" && h(ObsidianFlowGraph, {
+          isPaused: obsidianPaused,
+          speedMultiplier: obsidianSpeed,
+          onTogglePause: () => setObsidianPaused(p => !p)
+        }),
+
         // ============================================================
         // SECTION 1: NATÜRLICH ENTSTANDENE KATEGORIEN (EMERGENTE TAXONOMIE)
         // ============================================================
@@ -1359,8 +2843,11 @@
                   "Natürlich entstandenes Organisationssystem (Emergente Taxonomie)"
                 ),
                 h("span", {
-                  className: `auto-org-badge ${isEmergentApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
-                }, isEmergentApproved ? "✓ Natürlich entstanden & freigegeben" : "⏳ Freigabe ausstehend")
+                  className: `auto-org-ampel-badge ${isEmergentApproved ? "green" : "yellow"}`
+                },
+                  h("span", { className: `auto-org-ampel-dot ${isEmergentApproved ? "green" : "yellow"}` }),
+                  isEmergentApproved ? "Freigegeben vom User & Aktiv" : "Vorschlag (Ausstehend)"
+                )
               ),
               h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
                 "Die Kategorien wurden durch semantische Vektor-Cluster, OCR-Volltextanalyse und Dateipfad-Muster direkt aus Ihrem realen Datenbestand ermittelt — keine starren Vorgaben, sondern induzierte Struktur:"
@@ -1373,64 +2860,22 @@
                 style: { padding: "0.6rem 1.3rem", fontWeight: 700 },
                 onClick: handleApproveEmergentTaxonomy,
                 disabled: loading
-              }, isEmergentApproved ? "✓ Kategoriensystem ist freigegeben" : "🌳 Natürlich entstandenes System bestätigen & freigeben")
+              }, isEmergentApproved ? "✓ Kategoriensystem ist freigegeben" : "🟢 Natürlich entstandenes System freigeben")
             )
           ),
 
-          // Emergent Categories Grid
-          h("div", { className: "auto-org-emergent-grid" },
-            emergentCategories.map((cat) => {
-              const confPct = Math.round((cat.confidence || 0.95) * 100);
-              return h("div", { key: cat.id, className: "auto-org-emergent-card" },
-                // Header
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
-                    h("span", { style: { fontSize: "1.3rem" } }, cat.icon || "📁"),
-                    h("div", null,
-                      h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem", display: "block" } }, cat.name),
-                      h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, cat.display_name)
-                    )
-                  ),
-                  h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem" } },
-                    h("span", { className: "auto-org-badge auto-org-badge-green", style: { fontSize: "0.7rem" } }, `${confPct}% Konfidenz`),
-                    h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${cat.file_count || 0} Dateien`)
-                  )
-                ),
-
-                // Data Evidence Quote
-                cat.data_evidence && h("div", {
-                  style: {
-                    background: "rgba(15, 23, 42, 0.9)",
-                    borderLeft: "3px solid #60a5fa",
-                    padding: "0.45rem 0.65rem",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.75rem",
-                    color: "#cbd5e1",
-                    fontStyle: "italic",
-                    lineHeight: "1.35"
-                  }
-                }, `„${cat.data_evidence}“`),
-
-                // Detected Keywords
-                h("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.3rem", alignItems: "center" } },
-                  h("span", { style: { fontSize: "0.7rem", color: "#94a3b8", marginRight: "0.2rem" } }, "Erkannte Tokens:"),
-                  (cat.detected_keywords || []).map((kw, ki) =>
-                    h("span", { key: ki, className: "auto-org-token-pill" }, `🔍 ${kw}`)
-                  )
-                ),
-
-                // Target Path & Action
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.35rem" } },
-                  h("span", { className: "auto-org-tree-path-badge", style: { fontSize: "0.75rem" } }, cat.target_path_template),
-                  h("button", {
-                    type: "button",
-                    className: "auto-org-pill-btn",
-                    onClick: () => handleApplyEmergentCatToRule(cat)
-                  }, "⚡ Als Regel-Ziel →")
-                )
-              );
-            })
-          )
+          // Multi-Level Hierarchical Tree Explorer (with Sub-Branches, AI Tokens & Graph Focus)
+          h(MultiLevelTreeExplorer, {
+            categories: emergentCategories,
+            isApproved: isEmergentApproved,
+            onToggleApproveCategory: handleApproveEmergentTaxonomy,
+            onFocusGraph: (branchId) => {
+              setStep2ViewMode("graph");
+            },
+            expandedBranches: expandedBranches,
+            onToggleExpandBranch: toggleExpandBranch,
+            onApplyToRule: handleApplyEmergentCatToRule
+          })
         ),
 
         // ============================================================
@@ -1743,11 +3188,18 @@
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(1)
           }, "← Zurück zu Schritt 1: Quelle & Ist-Stand"),
+          !isStep2Approved ?
+          h("button", {
+            className: "auto-org-btn",
+            style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem", opacity: 0.5, cursor: "not-allowed", background: "#334155", color: "#94a3b8" },
+            disabled: true,
+            title: "Bitte bestätigen und geben Sie zuerst das natürlich entstandene Kategoriensystem oben frei."
+          }, "🔒 Schritt 3 gesperrt (Freigabe des Kategoriensystems erforderlich)") :
           h("button", {
             className: "auto-org-btn auto-org-btn-primary",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => setStep(3)
-          }, "Weiter zu Schritt 3: Filter-Regeln & Zuordnung →")
+          }, "Weiter zu Schritt 3: Proaktive Filter-Regeln →")
         )
       );
     };
@@ -2088,9 +3540,188 @@
       );
     };
 
+    // ============================================================
+    // STEP 3: PROAKTIV VORGESCHLAGENE FILTER-REGELN AUS DER ANALYSE
+    // ============================================================
+    const renderSuggestedRulesPanel = () => {
+      const sRules = (suggestedRules && suggestedRules.suggested_rules) || [];
+      const totalCount = sRules.length;
+      if (totalCount === 0) return null;
+
+      const unadoptedCount = sRules.filter(r => !r.is_already_active).length;
+      const selectedCount = selectedSuggestedRuleIds.size;
+      const allSelected = selectedCount === totalCount && totalCount > 0;
+
+      return h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6", background: "rgba(15, 23, 42, 0.85)" } },
+        // Header with Proactive Info
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "0.75rem" } },
+          h("div", { style: { flex: 1, minWidth: "280px" } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+              h("span", { style: { fontSize: "1.35rem" } }, "🤖"),
+              h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
+                "Proaktiv vorgeschlagene Filter-Regeln (aus Medien- & Pfadanalyse)"
+              ),
+              h("span", { className: "auto-org-badge auto-org-badge-green" }, `${totalCount} KI-Vorschläge`)
+            ),
+            h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
+              `Hermes hat Ihren realen Datenbestand (${suggestedRules.analyzed_files || 450} Dateien) analysiert. Nutzen Sie das Ampelsystem (🟡 = Vorschlag, 🟢 = Freigegeben) und Checkboxen zur expliziten Freigabe:`
+            )
+          )
+        ),
+
+        // User Approval & Checkbox Bulk Toolbar
+        h("div", { className: "auto-org-approval-bar" },
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem" } },
+            h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#f8fafc" } },
+              h("input", {
+                type: "checkbox",
+                className: "auto-org-checkbox",
+                checked: allSelected,
+                onChange: toggleSelectAllSuggestedRules
+              }),
+              h("span", null, "Alle Vorschläge auswählen")
+            ),
+            h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } },
+              `(${selectedCount} von ${totalCount} ausgewählt • ${unadoptedCount} noch ausstehend)`
+            )
+          ),
+          h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-primary",
+              style: { padding: "0.5rem 1.2rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem", background: "#16a34a", borderColor: "#22c55e" },
+              onClick: () => handleAdoptSuggestedRules(Array.from(selectedSuggestedRuleIds)),
+              disabled: adoptingRules || selectedCount === 0
+            },
+              adoptingRules ? "⏳ Freigabe läuft..." : `🟢 Ausgewählte Regeln freigeben & aktivieren (${selectedCount})`
+            ),
+            unadoptedCount > 0 && h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-outline",
+              style: { padding: "0.5rem 1rem", fontSize: "0.8rem" },
+              onClick: () => handleAdoptSuggestedRules(null),
+              disabled: adoptingRules
+            }, "⚡ Alle 5 sofort freigeben")
+          )
+        ),
+
+        // Grid of Suggested Rules
+        h("div", { className: "auto-org-suggested-grid" },
+          sRules.map((sr) => {
+            const confPct = Math.round((sr.confidence || 0.95) * 100);
+            const isActive = sr.is_already_active;
+            const isChecked = selectedSuggestedRuleIds.has(sr.id);
+
+            return h("div", {
+              key: sr.id,
+              className: "auto-org-suggested-card",
+              style: {
+                borderColor: isActive ? "#22c55e" : (isChecked ? "#3b82f6" : "#eab308"),
+                boxShadow: isActive ? "0 0 10px rgba(34, 197, 94, 0.15)" : "none"
+              }
+            },
+              // Header Row with Checkbox & Ampel Badge
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                  h("input", {
+                    type: "checkbox",
+                    className: "auto-org-checkbox",
+                    checked: isChecked,
+                    onChange: () => toggleSuggestedRuleSelection(sr.id)
+                  }),
+                  h("span", { style: { fontSize: "1.35rem" } }, sr.icon || "📋"),
+                  h("div", null,
+                    h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem", display: "block" } }, sr.name),
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, sr.category)
+                  )
+                ),
+                h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" } },
+                  h("span", {
+                    className: `auto-org-ampel-badge ${isActive ? "green" : "yellow"}`
+                  },
+                    h("span", { className: `auto-org-ampel-dot ${isActive ? "green" : "yellow"}` }),
+                    isActive ? "🟢 Freigegeben vom User" : "🟡 Vorschlag (Ausstehend)"
+                  ),
+                  h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${sr.matched_files_count || 0} Dateien • ${confPct}% Konfidenz`)
+                )
+              ),
+
+              // Description & Evidence
+              h("div", { style: { fontSize: "0.8125rem", color: "#cbd5e1", lineHeight: "1.4" } }, sr.description),
+              h("div", { className: "auto-org-evidence-box" },
+                h("span", { style: { fontWeight: 600, color: "#93c5fd" } }, "💡 Reale Daten-Evidenz: "),
+                h("span", { style: { color: "#e2e8f0" } }, sr.evidence)
+              ),
+
+              // Animated "Von wo nach wo" Flow Route
+              h(AnimatedFlowRoute, {
+                sourcePath: "/home/mb/Downloads",
+                targetPath: formatUserPath(sr.target_template),
+                confidence: sr.confidence,
+                branchId: sr.branch_id,
+                isApproved: isActive,
+                onFocusGraph: () => {
+                  setStep(2);
+                  setStep2ViewMode("graph");
+                }
+              }),
+
+              // Visual Branch Pipeline inside Card
+              h(VisualBranchPipeline, {
+                sourcePath: "/home/mb/Downloads",
+                targetPath: formatUserPath(sr.target_template),
+                treeSlice: sr.tree_slice,
+                confidence: sr.confidence,
+                branchId: sr.branch_id,
+                onFocusGraph: () => {
+                  setStep(2);
+                  setStep2ViewMode("graph");
+                }
+              }),
+
+              // AI Reasoning Drawer (Context & Tokens)
+              h(AIReasoningDrawer, {
+                confidence: sr.confidence,
+                reasoning: sr.ai_reasoning,
+                tokens: sr.ai_tokens,
+                clusterName: sr.category
+              }),
+
+              // Sample Files Pills
+              sr.sample_files && sr.sample_files.length > 0 && h("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.2rem" } },
+                sr.sample_files.slice(0, 3).map((sf, idx) =>
+                  h("span", { key: idx, className: "auto-org-sample-pill", title: sf },
+                    sf.length > 32 ? sf.slice(0, 30) + "..." : sf
+                  )
+                ),
+                sr.sample_files.length > 3 && h("span", { style: { fontSize: "0.7rem", color: "#94a3b8", alignSelf: "center" } }, `+${sr.sample_files.length - 3} weitere`)
+              ),
+
+              // Footer with Action Button
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.25rem" } },
+                h("span", { style: { fontSize: "0.75rem", color: isActive ? "#4ade80" : "#facc15", fontWeight: 600 } },
+                  isActive ? "✓ Regel aktiv im System" : "Ausstehende Benutzer-Freigabe"
+                ),
+                h("button", {
+                  type: "button",
+                  className: `auto-org-btn ${isActive ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
+                  style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600 },
+                  disabled: adoptingRules || isActive,
+                  onClick: () => handleAdoptSuggestedRules([sr.id])
+                }, isActive ? "✓ Aktiv" : "🟢 Regel freigeben")
+              )
+            );
+          })
+        )
+      );
+    };
+
     const renderStep3 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
-        // 1. Modular Rule Builder
+        // 1. Proaktiv vorgeschlagene Filter-Regeln
+        renderSuggestedRulesPanel(),
+
+        // 2. Modular Rule Builder
         renderModularRuleBuilder(),
 
         // 2. Existing Rules Matrix
@@ -2170,6 +3801,34 @@
     // STEP 4: SIMULATION & REORGANISATION
     // ==========================================
     const renderStep4 = () => {
+      const rawGroups = (dryRun && dryRun.semantic_groups) || [];
+      const groups = rawGroups.length > 0 ? rawGroups : (dryRun && dryRun.actions ? [
+        {
+          group_id: "grp_general",
+          title: "📁 Reorganisations-Gruppe: Alle passenden Dokumente",
+          intent: "Sortierung und Verschiebung gemäß aktiven Filter-Regeln in den Zielbaum",
+          icon: "📁",
+          source_label: "Quellverzeichnisse (Downloads & Arbeitsdaten)",
+          target_label: "Zielverzeichnisse (PrivatBüro & Work-Data)",
+          file_count: dryRun.actions.length,
+          total_size_kb: dryRun.actions.reduce((acc, a) => acc + Math.round((a.size_bytes || 0) / 1024), 0),
+          safe_count: dryRun.safe_count,
+          sample_files: dryRun.actions.slice(0, 10).map(a => ({
+            file_name: a.file_name,
+            size_kb: Math.round((a.size_bytes || 0) / 1024),
+            source_path: formatUserPath(a.source_path),
+            destination_path: formatUserPath(a.destination_path)
+          }))
+        }
+      ] : []);
+
+      const totalGroups = groups.length;
+      const approvedCount = groups.filter(g => approvedGroupIds.has(g.group_id)).length;
+      const approvedFilesCount = groups
+        .filter(g => approvedGroupIds.has(g.group_id))
+        .reduce((sum, g) => sum + (g.safe_count || 0), 0);
+      const allGroupsApproved = totalGroups > 0 && approvedCount === totalGroups;
+
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
         // Dry-Run Simulation Card
         h("div", { className: "auto-org-panel" },
@@ -2180,7 +3839,7 @@
               ),
               h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
                 dryRun ?
-                  `Batch: ${dryRun.batch_id.slice(0, 12)} • Sicher zur Ausführung: ${dryRun.safe_count} • Kollisionen/Gesperrt: ${dryRun.collisions_count}` :
+                  `Batch: ${dryRun.batch_id.slice(0, 12)} • Vorbereitet in ${totalGroups} semantischen Gruppen • Sicher zur Ausführung: ${dryRun.safe_count}` :
                   "Simulieren Sie die Reorganisation vor der Ausführung. Hermes prüft Schreibrechte, Docker-Mounts und Dateinamen-Kollisionen."
               )
             ),
@@ -2190,12 +3849,12 @@
                 onClick: handleRunDryRun,
                 disabled: loading
               }, loading ? "Simuliere..." : "🔄 Simulation neu starten"),
-              dryRun && dryRun.safe_count > 0 && h("button", {
+              dryRun && approvedFilesCount > 0 && h("button", {
                 className: "auto-org-btn auto-org-btn-primary",
-                style: { padding: "0.6rem 1.5rem", fontWeight: 700 },
+                style: { padding: "0.6rem 1.5rem", fontWeight: 700, background: "#16a34a", borderColor: "#22c55e" },
                 onClick: handleExecuteDryRun,
                 disabled: loading
-              }, `⚡ Freigegebene Aktionen ausführen (${dryRun.safe_count})`)
+              }, `⚡ Freigegebene Gruppen ausführen (${approvedFilesCount} Dateien)`)
             )
           ),
 
@@ -2204,7 +3863,7 @@
               h("div", { style: { fontSize: "2.5rem", marginBottom: "0.75rem" } }, "🔍"),
               h("h4", { style: { fontWeight: 600, marginBottom: "0.5rem" } }, "Bereit für die Dry-Run Simulation"),
               h("p", { style: { color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1.5rem", maxWidth: "500px", margin: "0 auto 1.5rem auto" } },
-                "Die Simulation gleicht alle aktiven Filter-Regeln gegen den aktuellen Dateibestand ab und stellt geplante Verschiebungen zusammen."
+                "Die Simulation gleicht alle aktiven Filter-Regeln gegen den aktuellen Dateibestand ab und stellt geplante Verschiebungen in semantischen Intent-Gruppen zusammen."
               ),
               h("button", {
                 className: "auto-org-btn auto-org-btn-primary",
@@ -2212,38 +3871,199 @@
                 onClick: handleRunDryRun
               }, "Jetzt Dry-Run starten")
             ) :
-            h("table", { className: "auto-org-table" },
-              h("thead", null,
-                h("tr", null,
-                  h("th", null, "Datei"),
-                  h("th", null, "Aktueller Pfad (S_now)"),
-                  h("th", null, ""),
-                  h("th", null, "Neues Ziel im Baum (S_ideal)"),
-                  h("th", null, "Regel"),
-                  h("th", null, "Docker Mount"),
-                  h("th", null, "Sicherheits-Check")
+            h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
+              // View Switcher Tabs (Groups vs Obsidian Graph vs Table)
+              h("div", { className: "auto-org-view-tabs" },
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "groups" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("groups")
+                }, `📑 Abstrakte Ausführungsgruppen (${totalGroups})`),
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "graph" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("graph")
+                }, "🕸️ Animierter Obsidian-Transfer-Graph"),
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "table" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("table")
+                }, `📋 Technische Diff-Tabelle (${dryRun.actions.length} Dateien)`)
+              ),
+
+              // TAB 1: Obsidian Transfer Graph
+              step4ViewMode === "graph" && h(ObsidianFlowGraph, {
+                isPaused: obsidianPaused,
+                speedMultiplier: obsidianSpeed,
+                onTogglePause: () => setObsidianPaused(p => !p)
+              }),
+
+              // TAB 2: Abstract Semantic Groups (DEFAULT)
+              step4ViewMode === "groups" && h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
+                // User Approval & Bulk Selection Toolbar
+                h("div", { className: "auto-org-approval-bar" },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem" } },
+                    h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#f8fafc" } },
+                      h("input", {
+                        type: "checkbox",
+                        className: "auto-org-checkbox",
+                        checked: allGroupsApproved,
+                        onChange: toggleSelectAllGroups
+                      }),
+                      h("span", null, "Alle Gruppen zur Ausführung auswählen")
+                    ),
+                    h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } },
+                      `(${approvedCount} von ${totalGroups} Gruppen freigegeben • ${approvedFilesCount} Dateien)`
+                    )
+                  ),
+                  h("div", { style: { display: "flex", gap: "0.5rem" } },
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-primary",
+                      style: { padding: "0.5rem 1.25rem", fontWeight: 700, background: "#16a34a", borderColor: "#22c55e" },
+                      onClick: handleExecuteDryRun,
+                      disabled: loading || approvedFilesCount === 0
+                    }, `⚡ ${approvedFilesCount} freigegebene Datei(en) jetzt verschieben`)
+                  )
+                ),
+
+                // Abstract Group Cards
+                h("div", { className: "auto-org-group-grid" },
+                  groups.map((grp) => {
+                    const isApproved = approvedGroupIds.has(grp.group_id);
+                    const isExpanded = !!expandedGroups[grp.group_id];
+
+                    return h("div", {
+                      key: grp.group_id,
+                      className: `auto-org-group-card ${isApproved ? "approved" : "pending"}`
+                    },
+                      // Card Header Row: Checkbox, Title, Badges, Ampelsystem
+                      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
+                        h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                          h("input", {
+                            type: "checkbox",
+                            className: "auto-org-checkbox",
+                            checked: isApproved,
+                            onChange: () => toggleGroupApproval(grp.group_id)
+                          }),
+                          h("span", { style: { fontSize: "1.35rem" } }, grp.icon || "📁"),
+                          h("div", null,
+                            h("h4", { style: { fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 } }, grp.title),
+                            h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, `Regel: ${grp.rule_name || "Automatisch sortieren"}`)
+                          )
+                        ),
+                        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                          h("span", {
+                            className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                          },
+                            h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
+                            isApproved ? "🟢 Freigegeben zur Ausführung" : "🟡 Vorschlag / Zurückgestellt"
+                          ),
+                          h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.file_count} Dateien`),
+                          h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, `${grp.total_size_kb} KB`)
+                        )
+                      ),
+
+                      // Prominente Idee & Absicht (Front & Center)
+                      h("div", { className: "auto-org-intent-box" },
+                        h("strong", { style: { color: "#93c5fd" } }, "💡 Idee & Absicht: "),
+                        grp.intent
+                      ),
+
+                      // Animated "Von wo nach wo" Flow Route
+                      h(AnimatedFlowRoute, {
+                        sourcePath: grp.source_label,
+                        targetPath: grp.target_label,
+                        confidence: 0.98,
+                        isApproved: isApproved,
+                        onFocusGraph: () => setStep4ViewMode("graph")
+                      }),
+
+                      // Visual Branch Pipeline inside Card
+                      h(VisualBranchPipeline, {
+                        sourcePath: grp.source_label,
+                        targetPath: grp.target_label,
+                        treeSlice: grp.tree_slice,
+                        confidence: 0.98,
+                        onFocusGraph: () => setStep4ViewMode("graph")
+                      }),
+
+                      // Kleingedruckter Datei-Auszug (Collapsible Monospace Drawer)
+                      h("div", null,
+                        h("button", {
+                          type: "button",
+                          className: "auto-org-tag-btn",
+                          style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
+                          onClick: () => toggleExpandGroup(grp.group_id)
+                        }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.sample_files ? grp.sample_files.length : 0} Beispieldateien anzeigen (kleingedruckt)`),
+
+                        isExpanded && grp.sample_files && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
+                          h("div", { style: { fontSize: "0.7rem", color: "#60a5fa", marginBottom: "0.3rem", fontWeight: 600 } },
+                            "Dateiauszug (Detailansicht):"
+                          ),
+                          grp.sample_files.map((sf, sidx) =>
+                            h("div", { key: sidx, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" } },
+                              h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
+                              h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
+                              h("span", { style: { color: "#94a3b8", fontSize: "0.7rem" } },
+                                `${formatUserPath(sf.source_path)} → ${formatUserPath(sf.destination_path)}`
+                              )
+                            )
+                          )
+                        )
+                      ),
+
+                      // Footer Action
+                      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem" } },
+                        h("span", { style: { fontSize: "0.75rem", color: isApproved ? "#4ade80" : "#facc15", fontWeight: 600 } },
+                          isApproved ? "✓ Freigabe durch Benutzer erteilt" : "Ausführung für diese Gruppe zurückgestellt"
+                        ),
+                        h("button", {
+                          type: "button",
+                          className: `auto-org-btn ${isApproved ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
+                          style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem" },
+                          onClick: () => toggleGroupApproval(grp.group_id)
+                        }, isApproved ? "Pausieren / Zurückstellen" : "🟢 Gruppe freigeben")
+                      )
+                    );
+                  })
                 )
               ),
-              h("tbody", null,
-                dryRun.actions.length === 0 ?
-                h("tr", null, h("td", { colSpan: 7, style: { textAlign: "center", color: "#94a3b8", padding: "2rem" } }, "Keine Verschiebungs-Aktionen für die aktuellen Regeln gefunden.")) :
-                dryRun.actions.map((act, idx) => h("tr", { key: idx },
-                  h("td", { style: { fontWeight: 600 } }, act.file_name),
-                  h("td", null, h("span", { className: "auto-org-diff-source" }, act.source_path)),
-                  h("td", null, h("span", { className: "auto-org-diff-arrow" }, "→")),
-                  h("td", null, h("span", { className: "auto-org-diff-target" }, act.destination_path)),
-                  h("td", null, h("span", { className: "auto-org-badge auto-org-badge-blue" }, act.rule_name || act.operation)),
-                  h("td", null,
-                    act.mount_valid !== false ?
-                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ Mount RW") :
-                    h("span", { className: "auto-org-badge auto-org-badge-red" }, "⚠️ Unmounted")
-                  ),
-                  h("td", null,
-                    act.safe_to_execute ?
-                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "Bereit zur Ausführung") :
-                    h("span", { className: "auto-org-badge auto-org-badge-red" }, act.mount_warning || (act.collision ? "Kollision erkannt" : "Gesperrt"))
+
+              // TAB 3: Technical Flat File Table (with clean host paths)
+              step4ViewMode === "table" && h("table", { className: "auto-org-table" },
+                h("thead", null,
+                  h("tr", null,
+                    h("th", null, "Datei"),
+                    h("th", null, "Aktueller Pfad (S_now)"),
+                    h("th", null, ""),
+                    h("th", null, "Neues Ziel im Baum (S_ideal)"),
+                    h("th", null, "Regel"),
+                    h("th", null, "Speicherort"),
+                    h("th", null, "Sicherheits-Check")
                   )
-                ))
+                ),
+                h("tbody", null,
+                  dryRun.actions.length === 0 ?
+                  h("tr", null, h("td", { colSpan: 7, style: { textAlign: "center", color: "#94a3b8", padding: "2rem" } }, "Keine Verschiebungs-Aktionen für die aktuellen Regeln gefunden.")) :
+                  dryRun.actions.map((act, idx) => h("tr", { key: idx },
+                    h("td", { style: { fontWeight: 600 } }, act.file_name),
+                    h("td", null, h("span", { className: "auto-org-diff-source" }, formatUserPath(act.source_path))),
+                    h("td", null, h("span", { className: "auto-org-diff-arrow" }, "→")),
+                    h("td", null, h("span", { className: "auto-org-diff-target" }, formatUserPath(act.destination_path))),
+                    h("td", null, h("span", { className: "auto-org-badge auto-org-badge-blue" }, act.rule_name || act.operation)),
+                    h("td", null,
+                      act.mount_valid !== false ?
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ RW") :
+                      h("span", { className: "auto-org-badge auto-org-badge-red" }, "⚠️ Prüfen")
+                    ),
+                    h("td", null,
+                      act.safe_to_execute ?
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "Bereit zur Ausführung") :
+                      h("span", { className: "auto-org-badge auto-org-badge-red" }, act.mount_warning || (act.collision ? "Kollision erkannt" : "Gesperrt"))
+                    )
+                  ))
+                )
               )
             )
         ),
@@ -2254,16 +4074,295 @@
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(3)
           }, "← Zurück zu Schritt 3: Filter-Regeln anpassen"),
-          h("div", { style: { display: "flex", gap: "0.5rem" } },
+          h("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" } },
             h("button", {
               className: "auto-org-btn auto-org-btn-outline",
               onClick: () => setActiveModal("journal")
-            }, "📜 Reorganisations-Journal & Rollback öffnen"),
-            dryRun && dryRun.safe_count > 0 && h("button", {
+            }, "📜 Reorganisations-Journal & Rollback"),
+            dryRun && approvedFilesCount > 0 && h("button", {
               className: "auto-org-btn auto-org-btn-primary",
+              style: { background: "#16a34a", borderColor: "#22c55e" },
               onClick: handleExecuteDryRun,
               disabled: loading
-            }, `⚡ Reorganisation ausführen (${dryRun.safe_count})`)
+            }, `⚡ Reorganisation ausführen (${approvedFilesCount} Dateien)`),
+            h("button", {
+              className: "auto-org-btn auto-org-btn-primary",
+              style: { background: "#2563eb", borderColor: "#3b82f6" },
+              onClick: () => setStep(5)
+            }, "Weiter zu Schritt 5: Google Drive Cloud-Sync →")
+          )
+        )
+      );
+    };
+
+    // ============================================================
+    // STEP 5: GOOGLE DRIVE CLOUD-SYNC (FINALER SCHRITT)
+    // ============================================================
+    const renderStep5 = () => {
+      return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+        // Header Panel
+        h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" } },
+            h("div", { style: { flex: 1, minWidth: "300px" } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                h("span", { style: { fontSize: "1.35rem" } }, "☁️"),
+                h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
+                  "Google Drive ↔ Lokaler Speicher: Selektive Synchronisation (Schritt 5)"
+                ),
+                h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${syncMappings.length} konfigurierte Mappings`)
+              ),
+              h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
+                "Definieren Sie selektive Ordner-Verknüpfungen zwischen Google Drive (gdrive://creatiVision) und Ihren lokalen Festplatten/Container-Mounts. Synchronisieren Sie Dokumente bidirektional oder gezielt per Push/Pull mit vollem Mount- und Kollisionsschutz."
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: () => setShowNewSyncForm(prev => !prev),
+                style: { fontWeight: 700 }
+              }, showNewSyncForm ? "✕ Formular schließen" : "+ Neuer Sync-Ordner")
+            )
+          )
+        ),
+
+        // Inline New Sync Mapping Form
+        showNewSyncForm && h("div", { className: "auto-org-panel", style: { background: "rgba(30, 41, 59, 0.7)", border: "1px solid #3b82f6" } },
+          h("h4", { style: { fontSize: "1rem", fontWeight: 700, color: "#ffffff", marginBottom: "0.75rem" } },
+            "Neuen selektiven Google Drive ↔ Lokalen Sync-Ordner anlegen"
+          ),
+          h("form", { onSubmit: handleSaveSyncMapping, style: { display: "flex", flexDirection: "column", gap: "0.85rem" } },
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "0.75rem" } },
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Bezeichnung / Name"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: { width: "100%" },
+                  placeholder: "z.B. Buchhaltung & Belege 2026",
+                  value: newSyncName,
+                  onChange: (e) => setNewSyncName(e.target.value),
+                  required: true
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Google Drive Pfad"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: { width: "100%", fontFamily: "monospace" },
+                  placeholder: "/creatiVision/Accounting/2026",
+                  value: newSyncDrivePath,
+                  onChange: (e) => setNewSyncDrivePath(e.target.value),
+                  required: true
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Lokaler Ziel-Speicherort (Host-Pfad)"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: { width: "100%", fontFamily: "monospace" },
+                  placeholder: "/media/work-data/001_cv-bookaccount/2026",
+                  value: newSyncLocalPath,
+                  onChange: (e) => setNewSyncLocalPath(e.target.value),
+                  required: true
+                })
+              )
+            ),
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" } },
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Synchronisations-Richtung"),
+                h("select", {
+                  className: "auto-org-select",
+                  style: { width: "100%" },
+                  value: newSyncDirection,
+                  onChange: (e) => setNewSyncDirection(e.target.value)
+                },
+                  h("option", { value: "bidirectional" }, "⇄ Bidirektional (Beidseitiger Abgleich)"),
+                  h("option", { value: "push" }, "⬆️ Lokal ➔ Drive (Lokaler Master / Upload)"),
+                  h("option", { value: "pull" }, "⬇️ Drive ➔ Lokal (Cloud Master / Download)")
+                )
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Include Filter (Dateimuster)"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: { width: "100%", fontFamily: "monospace" },
+                  value: newSyncInclude,
+                  onChange: (e) => setNewSyncInclude(e.target.value)
+                })
+              ),
+              h("div", null,
+                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Exclude Filter"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: { width: "100%", fontFamily: "monospace" },
+                  value: newSyncExclude,
+                  onChange: (e) => setNewSyncExclude(e.target.value)
+                })
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setShowNewSyncForm(false)
+              }, "Abbrechen"),
+              h("button", {
+                type: "submit",
+                className: "auto-org-btn auto-org-btn-primary",
+                disabled: loading
+              }, loading ? "Speichere..." : "✓ Sync-Zuordnung anlegen")
+            )
+          )
+        ),
+
+        // Grid of active sync mappings
+        h("div", { className: "auto-org-panel" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" } },
+            h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", color: "#ffffff" } },
+              h("span", null, "📁"),
+              h("span", null, `Aktive Cloud-Sync Mappings (${syncMappings.length})`)
+            ),
+            h("span", { style: { fontSize: "0.8125rem", color: "#94a3b8" } },
+              "Alle Pfade werden automatisch gegen Mount-Rechte validiert"
+            )
+          ),
+          syncMappings.length === 0 ?
+            h("div", { style: { textAlign: "center", padding: "2.5rem 1rem", color: "#94a3b8" } },
+              h("div", { style: { fontSize: "2rem", marginBottom: "0.5rem" } }, "☁️"),
+              h("p", { style: { fontWeight: 600, color: "#ffffff", fontSize: "0.95rem" } }, "Noch keine Google Drive Sync-Ordner konfiguriert."),
+              h("p", { style: { fontSize: "0.85rem", marginTop: "0.25rem" } }, "Klicken Sie oben auf '+ Neuer Sync-Ordner', um einen gezielten Ordnerabgleich anzulegen.")
+            ) :
+            h("div", { className: "auto-org-sync-grid" },
+              syncMappings.map((m) => {
+                const isBi = m.direction === "bidirectional";
+                const isPush = m.direction === "push";
+                const dirLabel = isBi ? "⇄ Bidirektional" : (isPush ? "⬆️ Lokal ➔ Drive" : "⬇️ Drive ➔ Lokal");
+                const mountOk = m.mount_check && m.mount_check.valid && !m.mount_check.read_only;
+                const isPlanning = planningId === m.id;
+                const isSyncing = syncingId === m.id;
+
+                return h("div", {
+                  key: m.id,
+                  className: `auto-org-sync-card ${m.is_active ? "" : "paused"}`
+                },
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    h("span", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" } }, m.name),
+                    h("span", { className: "auto-org-sync-direction-badge" }, dirLabel)
+                  ),
+                  h("div", { style: { display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8125rem" } },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Drive:"),
+                      h("span", { style: { fontFamily: "monospace", color: "#60a5fa", wordBreak: "break-all" } }, `gdrive:${m.drive_folder_path}`)
+                    ),
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { style: { color: "#94a3b8", width: "3.5rem" } }, "Lokal:"),
+                      h("span", { style: { fontFamily: "monospace", color: "#4ade80", wordBreak: "break-all" } }, m.local_path)
+                    ),
+                    m.include_patterns && m.include_patterns.length > 0 && h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#94a3b8" } },
+                      h("span", { style: { width: "3.5rem" } }, "Filter:"),
+                      h("span", { style: { fontFamily: "monospace", color: "#cbd5e1" } }, m.include_patterns.join(", "))
+                    )
+                  ),
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.5rem", marginTop: "0.25rem", flexWrap: "wrap", gap: "0.4rem" } },
+                    h("div", { className: "auto-org-mount-status-tag" },
+                      mountOk ?
+                        h("span", { className: "auto-org-mount-status-ok" }, "✅ Gemountet & Schreibbar") :
+                        h("span", { className: "auto-org-mount-status-warn", title: (m.mount_check && m.mount_check.warning) || "Mount prüfen" }, "⚠️ Host-Pfad (Prüfen)")
+                    ),
+                    h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        disabled: isPlanning || isSyncing,
+                        onClick: () => handleCalculateSyncPlan(m.id)
+                      }, isPlanning ? "⏳ Berechne..." : "📊 Plan / Diff"),
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        style: { color: "#60a5fa", fontWeight: 600 },
+                        disabled: isPlanning || isSyncing || !m.is_active,
+                        onClick: () => handleExecuteSync(m.id)
+                      }, isSyncing ? "⏳ Sync..." : "⚡ Sync starten"),
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        style: { color: m.is_active ? "#facc15" : "#4ade80" },
+                        onClick: () => handleToggleSyncMapping(m.id, m.is_active)
+                      }, m.is_active ? "Pausieren" : "Aktivieren"),
+                      h("button", {
+                        type: "button",
+                        className: "auto-org-pill-btn",
+                        style: { color: "#f87171" },
+                        onClick: () => handleDeleteSyncMapping(m.id, m.name)
+                      }, "🗑")
+                    )
+                  )
+                );
+              })
+            )
+        ),
+
+        // Sync Plan Preview if available
+        syncPlan && h("div", { className: "auto-org-panel", style: { border: "1px solid #3b82f6" } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+            h("div", null,
+              h("h4", { style: { fontSize: "1rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
+                `Abgleichs-Vorschau: ${syncPlan.mapping_name} (${syncPlan.summary.total_items} Dateien analysiert)`
+              ),
+              h("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.35rem" } },
+                h("span", { className: "auto-org-badge auto-org-badge-blue" }, `Uploads: ${syncPlan.summary.to_upload}`),
+                h("span", { className: "auto-org-badge auto-org-badge-green" }, `Downloads: ${syncPlan.summary.to_download}`),
+                h("span", { className: "auto-org-badge auto-org-badge-yellow" }, `In Sync: ${syncPlan.summary.in_sync}`)
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => setSyncPlan(null)
+              }, "Schließen"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: () => handleExecuteSync(syncPlan.mapping_id)
+              }, "🚀 Synchronisation jetzt anwenden")
+            )
+          ),
+          h("table", { className: "auto-org-table" },
+            h("thead", null,
+              h("tr", null,
+                h("th", null, "Relative Datei"),
+                h("th", null, "Geplante Aktion"),
+                h("th", null, "Grund")
+              )
+            ),
+            h("tbody", null,
+              syncPlan.items.slice(0, 10).map((item, idx) => h("tr", { key: idx },
+                h("td", { style: { fontFamily: "monospace", fontSize: "0.8125rem", color: "#f8fafc" } }, item.relative_path),
+                h("td", null,
+                  h("span", {
+                    className: `auto-org-badge ${item.action === "upload" ? "auto-org-badge-blue" : item.action === "download" ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                  }, item.action)
+                ),
+                h("td", { style: { fontSize: "0.8125rem", color: "#94a3b8" } }, item.reason)
+              ))
+            )
+          )
+        ),
+
+        // Step 5 Footer Navigation
+        h("div", { className: "auto-org-step-footer" },
+          h("button", {
+            className: "auto-org-btn auto-org-btn-outline",
+            onClick: () => setStep(4)
+          }, "← Zurück zu Schritt 4: Simulation & Reorganisation"),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", color: "#4ade80", fontSize: "0.875rem", fontWeight: 600 } },
+            "✓ Workflow vollständig konfiguriert & betriebsbereit"
           )
         )
       );
@@ -2290,7 +4389,7 @@
                 mountData && mountData.in_container ? "Docker Jail Aktiv" : "Host-Umgebung"
               ),
               h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
-                "Dateizugriff auf gemountete Pfade unter /opt/data/... beschränkt"
+                "Dateizugriff auf freigegebene System-Speicherorte und Mounts beschränkt"
               )
             ),
             h("div", { className: "auto-org-stat-card" },
@@ -2815,6 +4914,7 @@
       step === 2 && renderStep2(),
       step === 3 && renderStep3(),
       step === 4 && renderStep4(),
+      step === 5 && renderStep5(),
 
       // Configuration Modal Overlay
       renderConfigModal()

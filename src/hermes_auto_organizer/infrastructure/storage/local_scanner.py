@@ -24,7 +24,24 @@ from hermes_auto_organizer.infrastructure.storage.hashing import (
 
 logger = logging.getLogger("hermes_auto_organizer.scanner")
 
-DEFAULT_IGNORE_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".Trash-1000"}
+DEFAULT_IGNORE_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".Trash-1000",
+    ".cache",
+    ".npm",
+    "target",
+    "vendor",
+    "dist",
+    "build",
+    ".terraform",
+    ".idea",
+    ".vscode",
+}
 
 
 class LocalFilesystemScanner:
@@ -44,7 +61,12 @@ class LocalFilesystemScanner:
 
         for dirpath, dirnames, filenames in os.walk(base_path):
             # Prune ignored directories in-place
-            dirnames[:] = [d for d in dirnames if d not in self._ignore_dirs and not d.startswith(".st")]
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in self._ignore_dirs
+                and not d.startswith(".st")
+                and not (d.startswith(".") and d not in {".hermes"})
+            ]
 
             for filename in filenames:
                 full_path = Path(dirpath) / filename

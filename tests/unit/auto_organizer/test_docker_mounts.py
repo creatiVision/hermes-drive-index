@@ -18,6 +18,7 @@ from hermes_auto_organizer.dashboard.plugin_api import router
 from hermes_auto_organizer.infrastructure.storage.docker_mounts import (
     DockerMountService,
     docker_mount_service,
+    _is_safe_subpath,
 )
 
 app = FastAPI()
@@ -141,3 +142,15 @@ def test_mounts_api_endpoints(mock_get_mounts_inst, mock_get_mounts_cls):
     chk_inv_data = chk_invalid.json()
     assert chk_inv_data["valid"] is False
     assert chk_inv_data["is_mounted"] is False
+
+
+def test_is_safe_subpath():
+    assert _is_safe_subpath("/opt/data", "/opt/data/sub/file.txt") is True
+    assert _is_safe_subpath("/opt/data", "/opt/data") is True
+    assert _is_safe_subpath("/opt/data", "/opt/data_fake/file.txt") is False
+    assert _is_safe_subpath("/opt/data", "/opt/data/../secret") is False
+    assert _is_safe_subpath("/opt/data", "") is False
+    assert _is_safe_subpath("", "/opt/data") is False
+    assert _is_safe_subpath(None, "/opt/data") is False
+    assert _is_safe_subpath("/opt/data", None) is False
+
