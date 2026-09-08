@@ -296,7 +296,7 @@
 
   const { React } = SDK;
   const h = React.createElement;
-  const { useState, useEffect, useCallback, useRef } = React;
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
   const API_BASE = "/api/plugins/auto-organizer";
 
@@ -566,7 +566,832 @@
     }
   ];
 
+  // Floating Right-Click Context Menu for File/Folder State Switching
+  function FloatingContextMenu({ x, y, node, onClose, onSelectState, currentState }) {
+    const menuRef = useRef(null);
+
+    useEffect(() => {
+      function handleKeyDown(e) {
+        if (e.key === "Escape") onClose();
+      }
+      function handleClickOutside(e) {
+        if (menuRef.current && !menuRef.current.contains(e.target)) {
+          onClose();
+        }
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [onClose]);
+
+    if (!node) return null;
+
+    const menuWidth = 270;
+    const menuHeight = 230;
+    const posX = Math.max(10, Math.min(x, window.innerWidth - menuWidth - 15));
+    const posY = Math.max(10, Math.min(y, window.innerHeight - menuHeight - 15));
+
+    const nodeName = node.name || node.label || node.file_name || node.id || "Element";
+    const nodePath = formatUserPath(node.path || node.uri_path || node.physical_path || node.relative_path || "");
+    const nodeType = node.node_type === "mount" ? "💽 Mount-Punkt" :
+                     node.node_type === "file" ? "📄 Datei" :
+                     node.node_type === "drive" ? "💽 Laufwerk" : "📁 Ordner";
+
+    return h("div", {
+      ref: menuRef,
+      className: "auto-org-context-menu",
+      style: { left: `${posX}px`, top: `${posY}px` },
+      onClick: (e) => e.stopPropagation(),
+      onContextMenu: (e) => e.preventDefault()
+    },
+      h("div", { className: "auto-org-context-menu-header" },
+        h("div", { className: "auto-org-context-menu-title" },
+          h("span", null, nodeType.split(" ")[0]),
+          h("span", null, nodeName)
+        ),
+        nodePath && h("div", { className: "auto-org-context-menu-path", title: nodePath }, nodePath)
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item approve ${currentState === "approved" ? "active" : ""}`,
+        onClick: () => { onSelectState("approved"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "🟢"),
+        h("div", null,
+          h("div", null, "Freigeben (Grün)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Genehmigt & aktiv einbezogen")
+        )
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item propose ${currentState === "proposed" ? "active" : ""}`,
+        onClick: () => { onSelectState("proposed"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "🟡"),
+        h("div", null,
+          h("div", null, "Als Vorschlag (Gelb)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Vorgeschlagener Sync / Transfer")
+        )
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item exclude ${currentState === "excluded" ? "active" : ""}`,
+        onClick: () => { onSelectState("excluded"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "⚪"),
+        h("div", null,
+          h("div", null, "Nicht einbezogen (Grau)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Ausschließen & nicht synchronisieren")
+        )
+      )
+    );
+  }
+
+  // Floating Rollover Card / Tooltip showing proposed sync / move information
+  function SyncRolloverTooltip({ x, y, node, nodeState }) {
+    if (!node) return null;
+
+    const hasSyncthing = Boolean(node.syncthing && (node.syncthing.synced || node.syncthing.folder_id));
+    const hasReorg = Boolean(node.reorganization && (node.reorganization.is_source || node.reorganization.is_target || (node.reorganization.pending_moves && node.reorganization.pending_moves > 0)));
+    const hasProposedSync = Boolean(node.has_proposed_sync || hasSyncthing || hasReorg || node.targetPath || node.proposed_target || node.destination_path);
+
+    const st = nodeState || node.switch_state || (node.indexing && node.indexing.state === "FULL" ? "approved" : "proposed");
+
+    const tooltipWidth = 360;
+    const tooltipHeight = 240;
+    const posX = Math.max(10, Math.min(x + 14, window.innerWidth - tooltipWidth - 20));
+    const posY = Math.max(10, Math.min(y + 14, window.innerHeight - tooltipHeight - 20));
+
+    const stateLabel = st === "approved" ? "🟢 Freigegeben (Aktiv)" :
+                       st === "excluded" ? "⚪ Nicht einbezogen (Ausgeschlossen)" :
+                       "🟡 Vorschlag (Sync / Reorganisation)";
+
+    const nodeName = node.name || node.label || node.file_name || node.id || "Element";
+    const nodePath = formatUserPath(node.path || node.uri_path || node.physical_path || node.relative_path || "");
+    let icon = node.node_type === "mount" ? "💽" :
+               node.node_type === "file" ? "📄" :
+               node.node_type === "drive" ? "💽" : "📁";
+
+    return h("div", {
+      className: "auto-org-rollover-card",
+      style: { left: `${posX}px`, top: `${posY}px` }
+    },
+      h("div", { className: "auto-org-rollover-header" },
+        h("div", { className: "auto-org-rollover-title" },
+          h("span", null, icon),
+          h("span", null, nodeName)
+        ),
+        h("span", { className: `auto-org-rollover-badge-state ${st}` }, stateLabel)
+      ),
+
+      nodePath && h("div", { className: "auto-org-rollover-path" }, nodePath),
+
+      // Proposed Sync / Move Section
+      hasProposedSync ?
+        h("div", { className: "auto-org-rollover-sync-box" },
+          h("div", { className: "auto-org-rollover-sync-title" },
+            h("span", null, "🔄"),
+            h("span", null, "Vorgeschlagener Sync & Reorganisation:")
+          ),
+          hasSyncthing && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Syncthing: ${node.syncthing.label || node.syncthing.folder_id || "P2P Mesh Synchron"}` +
+            (node.syncthing.peers && node.syncthing.peers.length ? ` (Peers: ${node.syncthing.peers.join(", ")})` : "")
+          ),
+          node.reorganization && node.reorganization.is_source && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Quell-Ordner: ${node.reorganization.pending_moves || 0} geplante Moves zur Reorganisation`
+          ),
+          node.reorganization && node.reorganization.is_target && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Ziel-Ordner für ${node.reorganization.target_rules ? node.reorganization.target_rules.length : 1} Filter-Regeln`
+          ),
+          (node.targetPath || node.proposed_target || node.destination_path) && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Zielpfad: 🎯 ${formatUserPath(node.targetPath || node.proposed_target || node.destination_path)}`
+          )
+        ) : null,
+
+      // Meta grid
+      h("div", { className: "auto-org-rollover-meta-grid" },
+        node.indexing && h("div", null, `Index: ${node.indexing.symbol} ${node.indexing.count || 0} Dateien`),
+        node.size_mb !== undefined && h("div", null, `Größe: ${node.size_mb >= 1024 ? (node.size_mb/1024).toFixed(1) + " GB" : node.size_mb.toFixed(1) + " MB"}`),
+        node.backup && node.backup.protected && h("div", null, `Backup: 🛡️ ${node.backup.program || "Aktiv"}`),
+        node.permissions && h("div", null, `Rechte: ${node.permissions.mode_str} (${node.permissions.owner})`)
+      ),
+
+      h("div", { className: "auto-org-rollover-footer-hint" },
+        h("span", null, "💡"),
+        h("span", null, "Rechtsklick: Status umschalten (Freigeben / Vorschlag / Nicht einbezogen)")
+      )
+    );
+  }
+
+  // Obsidian folders2graph Component (Full Interactive Folder Tree Graph)
+  // Modeled after https://github.com/Ratibus11/folders2graph
+  function Folders2GraphView({
+    fsTree,
+    nodeStates = {},
+    onSwitchNodeState,
+    onOpenContextMenu,
+    onShowRollover,
+    onHideRollover,
+    searchQuery = "",
+    isPaused = false
+  }) {
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+
+    const [foldedIds, setFoldedIds] = useState(() => new Set());
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
+    const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
+
+    const isDraggingRef = useRef(false);
+    const dragNodeRef = useRef(null);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const hasDraggedRef = useRef(false);
+
+    // Build graph hierarchy from fsTree mounts
+    const graphData = useMemo(() => {
+      const nodes = [];
+      const links = [];
+      const processed = new Set();
+
+      const mounts = (fsTree && fsTree.mounts && fsTree.mounts.length > 0) ? fsTree.mounts : [
+        { id: "node_work_data", name: "work-data", path: "/media/work-data", node_type: "mount", children: [
+          { id: "node_work_001", name: "001_cv-bookaccount", path: "/media/work-data/001_cv-bookaccount", node_type: "folder", children: [
+            { id: "node_work_2025", name: "2025", path: "/media/work-data/001_cv-bookaccount/2025", node_type: "folder", children: [
+              { id: "node_file_invoices", name: "Rechnungen_2025.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Rechnungen_2025.pdf", node_type: "file", size_mb: 2.4, targetPath: "/media/privat-data/10_PrivatBüro/Archiv/2025/" }
+            ]}
+          ]},
+          { id: "node_work_002", name: "002_cv-projects", path: "/media/work-data/002_cv-projects", node_type: "folder", children: [] }
+        ]},
+        { id: "node_privat_data", name: "privat-data", path: "/media/privat-data/10_PrivatBüro", node_type: "mount", children: [
+          { id: "node_privat_steuern", name: "Steuern", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", children: [] },
+          { id: "node_privat_archiv", name: "Archiv", path: "/media/privat-data/10_PrivatBüro/Archiv", node_type: "folder", children: [] }
+        ]},
+        { id: "node_xchg", name: "xchg", path: "/media/xchg", node_type: "mount", syncthing: { synced: true, label: "xchg-mesh", peers: ["laptop", "debian1", "Note14new"] }, children: [
+          { id: "node_xchg_kb", name: "ai-knowledge-base", path: "/media/xchg/ai-knowledge-base", node_type: "folder", syncthing: { synced: true }, children: [] },
+          { id: "node_xchg_workspaces", name: "ai-agents-workspaces", path: "/media/xchg/ai-agents-workspaces", node_type: "folder", children: [] }
+        ]},
+        { id: "node_downloads", name: "Downloads", path: "/home/mb/Downloads", node_type: "mount", reorganization: { is_source: true, pending_moves: 45 }, children: [] }
+      ];
+
+      function countDescendants(n) {
+        if (!n.children || n.children.length === 0) return 0;
+        let c = n.children.length;
+        n.children.forEach(ch => { c += countDescendants(ch); });
+        return c;
+      }
+
+      function traverse(n, parentNode = null, depth = 0, angleHint = 0) {
+        if (!n) return;
+        const nid = n.id || n.path || `node_${nodes.length}`;
+        if (processed.has(nid)) return;
+        processed.add(nid);
+
+        const descCount = countDescendants(n);
+        // folders2graph: weight node radius by descendants
+        const radius = n.node_type === "mount" ? 26 :
+                       n.node_type === "file" ? 8 :
+                       Math.max(12, Math.min(22, 11 + Math.log2(descCount + 1) * 3));
+
+        const st = nodeStates[n.path] || nodeStates[nid] || n.switch_state ||
+                   (n.indexing && n.indexing.state === "FULL" ? "approved" : "proposed");
+
+        const hasProposedSync = Boolean(
+          n.has_proposed_sync ||
+          (n.syncthing && (n.syncthing.synced || n.syncthing.folder_id)) ||
+          (n.reorganization && (n.reorganization.is_source || n.reorganization.is_target || (n.reorganization.pending_moves && n.reorganization.pending_moves > 0))) ||
+          n.targetPath || n.proposed_target
+        );
+
+        // Initial coordinates (radial organic layout)
+        let initX = 0;
+        let initY = 0;
+        if (!parentNode) {
+          const mIdx = mounts.indexOf(n);
+          const totalM = mounts.length;
+          const a = (mIdx / totalM) * Math.PI * 2 - Math.PI / 2;
+          initX = Math.cos(a) * 220;
+          initY = Math.sin(a) * 200;
+        } else {
+          const spread = Math.PI * 0.45;
+          const a = angleHint;
+          const dist = 75 + Math.min(60, descCount * 4);
+          initX = parentNode.x + Math.cos(a) * dist;
+          initY = parentNode.y + Math.sin(a) * dist;
+        }
+
+        const gNode = {
+          id: nid,
+          name: n.name || (n.path ? n.path.split("/").filter(Boolean).pop() : nid),
+          path: n.path || "",
+          node_type: n.node_type || (n.disk ? "mount" : "folder"),
+          raw: n,
+          radius: radius,
+          descendantCount: descCount,
+          state: st,
+          hasProposedSync: hasProposedSync,
+          parentId: parentNode ? parentNode.id : null,
+          depth: depth,
+          x: initX,
+          y: initY,
+          vx: 0,
+          vy: 0
+        };
+        nodes.push(gNode);
+
+        if (parentNode) {
+          links.push({
+            sourceId: parentNode.id,
+            targetId: gNode.id,
+            type: "hierarchy"
+          });
+        }
+
+        // Proposed sync / move edge
+        if (n.targetPath || (n.reorganization && n.reorganization.target_rules && n.reorganization.target_rules.length > 0)) {
+          const tgtPath = n.targetPath || (n.reorganization.target_rules[0] && n.reorganization.target_rules[0].match_path);
+          if (tgtPath) {
+            links.push({
+              sourceId: gNode.id,
+              targetPath: tgtPath,
+              type: "proposed_sync",
+              label: "Move / Sync"
+            });
+          }
+        }
+
+        if (n.children && n.children.length > 0) {
+          const childCount = n.children.length;
+          n.children.forEach((ch, cidx) => {
+            const childAngle = childCount === 1 ? angleHint : (angleHint - Math.PI * 0.3 + (cidx * (Math.PI * 0.6)) / (childCount - 1));
+            traverse(ch, gNode, depth + 1, childAngle);
+          });
+        }
+      }
+
+      mounts.forEach((m, idx) => {
+        const a = (idx / mounts.length) * Math.PI * 2 - Math.PI / 2;
+        traverse(m, null, 0, a);
+      });
+
+      return { nodes, links };
+    }, [fsTree, nodeStates]);
+
+    // Track mutable simulation state across frames
+    const simRef = useRef({ nodes: [], links: [], nodeMap: new Map() });
+
+    useEffect(() => {
+      const prevMap = simRef.current.nodeMap;
+      const simNodes = graphData.nodes.map(n => {
+        const prev = prevMap.get(n.id);
+        if (prev) {
+          n.x = prev.x;
+          n.y = prev.y;
+          n.vx = prev.vx;
+          n.vy = prev.vy;
+        }
+        return n;
+      });
+      const nodeMap = new Map(simNodes.map(n => [n.id, n]));
+      simRef.current = { nodes: simNodes, links: graphData.links, nodeMap };
+    }, [graphData]);
+
+    // Check which nodes are visible based on foldedIds
+    const isNodeVisible = useCallback((node) => {
+      if (!node) return false;
+      let curr = node;
+      const map = simRef.current.nodeMap;
+      while (curr && curr.parentId) {
+        if (foldedIds.has(curr.parentId)) return false;
+        curr = map.get(curr.parentId);
+      }
+      return true;
+    }, [foldedIds]);
+
+    // Fold / Unfold toggle
+    const toggleFold = useCallback((nodeId, recursive = false) => {
+      setFoldedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) {
+          next.delete(nodeId);
+          if (recursive) {
+            // Unfold all descendants
+            const map = simRef.current.nodeMap;
+            function unfoldKids(id) {
+              const kids = Array.from(map.values()).filter(n => n.parentId === id);
+              kids.forEach(k => {
+                next.delete(k.id);
+                unfoldKids(k.id);
+              });
+            }
+            unfoldKids(nodeId);
+          }
+        } else {
+          next.add(nodeId);
+        }
+        return next;
+      });
+    }, []);
+
+    // Canvas rendering & physics loop
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      let animId;
+      let frameCount = 0;
+
+      function renderFrame() {
+        const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 900, height: 600 };
+        let width = rect.width || 900;
+        let height = rect.height || 600;
+
+        const dpr = window.devicePixelRatio || 1;
+        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+          canvas.width = width * dpr;
+          canvas.height = height * dpr;
+          canvas.style.width = width + "px";
+          canvas.style.height = height + "px";
+        }
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        // Clear Canvas with Obsidian Dark Cosmic Backdrop
+        ctx.fillStyle = "#090d16";
+        ctx.fillRect(0, 0, width, height);
+
+        // Cosmic background grid dots
+        ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+        const step = 40;
+        for (let gx = 0; gx < width; gx += step) {
+          for (let gy = 0; gy < height; gy += step) {
+            ctx.fillRect(gx, gy, 1, 1);
+          }
+        }
+
+        const t = transformRef.current;
+        const cx = width / 2;
+        const cy = height / 2;
+
+        ctx.translate(cx + t.panX, cy + t.panY);
+        ctx.scale(t.scale, t.scale);
+
+        const { nodes, links, nodeMap } = simRef.current;
+        const visibleNodes = nodes.filter(n => isNodeVisible(n));
+        const visNodeSet = new Set(visibleNodes.map(n => n.id));
+
+        // Physics Simulation Step
+        if (!isPaused) {
+          frameCount++;
+          const damp = 0.86;
+          const kSpring = 0.045;
+          const centerG = 0.0025;
+
+          // Center gravity
+          visibleNodes.forEach(n => {
+            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+            n.vx -= n.x * centerG;
+            n.vy -= n.y * centerG;
+          });
+
+          // Node-to-node repulsion
+          const vLen = visibleNodes.length;
+          for (let i = 0; i < vLen; i++) {
+            const n1 = visibleNodes[i];
+            for (let j = i + 1; j < vLen; j++) {
+              const n2 = visibleNodes[j];
+              const dx = n2.x - n1.x;
+              const dy = n2.y - n1.y;
+              const dist = Math.hypot(dx, dy) || 1;
+              if (dist < 320) {
+                const rep = 1400 / (dist * dist);
+                const rx = (dx / dist) * rep;
+                const ry = (dy / dist) * rep;
+                if (!dragNodeRef.current || dragNodeRef.current.id !== n1.id) {
+                  n1.vx -= rx;
+                  n1.vy -= ry;
+                }
+                if (!dragNodeRef.current || dragNodeRef.current.id !== n2.id) {
+                  n2.vx += rx;
+                  n2.vy += ry;
+                }
+              }
+            }
+          }
+
+          // Link spring forces
+          links.forEach(l => {
+            const s = nodeMap.get(l.sourceId);
+            const tNode = nodeMap.get(l.targetId);
+            if (s && tNode && visNodeSet.has(s.id) && visNodeSet.has(tNode.id)) {
+              const dx = tNode.x - s.x;
+              const dy = tNode.y - s.y;
+              const dist = Math.hypot(dx, dy) || 1;
+              const ideal = (s.radius + tNode.radius + 60);
+              const force = (dist - ideal) * kSpring;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
+                s.vx += fx;
+                s.vy += fy;
+              }
+              if (!dragNodeRef.current || dragNodeRef.current.id !== tNode.id) {
+                tNode.vx -= fx;
+                tNode.vy -= fy;
+              }
+            }
+          });
+
+          // Update positions with velocities
+          visibleNodes.forEach(n => {
+            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+            n.vx *= damp;
+            n.vy *= damp;
+            n.x += n.vx;
+            n.y += n.vy;
+          });
+        }
+
+        // Draw Links
+        links.forEach(l => {
+          const s = nodeMap.get(l.sourceId);
+          const tNode = nodeMap.get(l.targetId);
+          if (!s || !tNode || !visNodeSet.has(s.id) || !visNodeSet.has(tNode.id)) return;
+
+          const isHighlighted = (hoveredNodeId && (hoveredNodeId === s.id || hoveredNodeId === tNode.id));
+
+          if (l.type === "hierarchy") {
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(tNode.x, tNode.y);
+            ctx.strokeStyle = isHighlighted ? "rgba(96, 165, 250, 0.75)" : "rgba(255, 255, 255, 0.12)";
+            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
+            ctx.stroke();
+          } else if (l.type === "proposed_sync") {
+            // Proposed sync / move curved glowing edge
+            ctx.save();
+            ctx.setLineDash([5, 4]);
+            const midX = (s.x + tNode.x) / 2 + (tNode.y - s.y) * 0.2;
+            const midY = (s.y + tNode.y) / 2 - (tNode.x - s.x) * 0.2;
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.quadraticCurveTo(midX, midY, tNode.x, tNode.y);
+            ctx.strokeStyle = "#facc15";
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            // Flowing particle
+            const flowT = (frameCount * 0.02) % 1;
+            const px = (1 - flowT) * (1 - flowT) * s.x + 2 * (1 - flowT) * flowT * midX + flowT * flowT * tNode.x;
+            const py = (1 - flowT) * (1 - flowT) * s.y + 2 * (1 - flowT) * flowT * midY + flowT * flowT * tNode.y;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowColor = "#facc15";
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            ctx.restore();
+          }
+        });
+
+        // Draw Nodes
+        const q = (searchQuery || "").trim().toLowerCase();
+
+        visibleNodes.forEach(n => {
+          const isSelected = selectedNodeId === n.id;
+          const isHovered = hoveredNodeId === n.id;
+          const isFolded = foldedIds.has(n.id) && n.descendantCount > 0;
+          const matchesQ = q && (n.name.toLowerCase().includes(q) || n.path.toLowerCase().includes(q));
+
+          // Color based on user rule:
+          // green: approved
+          // yellow: otherwise (proposed)
+          // grey: not included (excluded)
+          const nodeColor = n.state === "approved" ? "#22c55e" :
+                            n.state === "excluded" ? "#6b7280" : "#facc15";
+
+          ctx.save();
+
+          // Proposed sync beacon ring (pulsating)
+          if (n.hasProposedSync) {
+            const pulse = (Math.sin(frameCount * 0.06) + 1) * 0.5;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.radius + 4 + pulse * 4, 0, Math.PI * 2);
+            ctx.strokeStyle = n.state === "approved" ? "rgba(34, 197, 94, 0.4)" : "rgba(250, 204, 21, 0.5)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          // Node Glow
+          ctx.shadowColor = isHovered || isSelected ? "#ffffff" : nodeColor;
+          ctx.shadowBlur = isHovered ? 18 : isSelected ? 14 : 8;
+
+          // Node Circle Fill
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+          const grad = ctx.createRadialGradient(n.x - n.radius * 0.3, n.y - n.radius * 0.3, 1, n.x, n.y, n.radius);
+          grad.addColorStop(0, isHovered ? "#ffffff" : (n.state === "excluded" ? "#4b5563" : nodeColor));
+          grad.addColorStop(1, n.state === "approved" ? "#15803d" : n.state === "excluded" ? "#1f2937" : "#b45309");
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Node Border
+          ctx.strokeStyle = isHovered ? "#ffffff" : isSelected ? "#60a5fa" : (n.state === "approved" ? "#4ade80" : n.state === "excluded" ? "#9ca3af" : "#fde047");
+          ctx.lineWidth = isHovered ? 3 : 1.8;
+          ctx.stroke();
+
+          // Folded Half-Disc / Ring Indicator (like folders2graph)
+          if (isFolded) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.radius + 3, 0, Math.PI * 2);
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = "#60a5fa";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+            // Folded badge "+N"
+            ctx.fillStyle = "#2563eb";
+            ctx.beginPath();
+            ctx.roundRect(n.x + n.radius - 2, n.y - n.radius - 8, 26, 14, 4);
+            ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 9px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`+${n.descendantCount}`, n.x + n.radius + 11, n.y - n.radius - 1);
+          }
+
+          // Inner Icon
+          let icon = n.node_type === "mount" ? "💽" :
+                     n.node_type === "file" ? "📄" : "📁";
+          ctx.font = `${Math.round(n.radius * 0.95)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(icon, n.x, n.y);
+
+          // Name Label below node
+          ctx.font = matchesQ ? "bold 12px sans-serif" : "11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          const labelY = n.y + n.radius + 4;
+          const textW = ctx.measureText(n.name).width;
+
+          // Label backdrop pill
+          ctx.fillStyle = matchesQ ? "rgba(234, 179, 8, 0.3)" : isHovered ? "rgba(15, 23, 42, 0.95)" : "rgba(15, 23, 42, 0.75)";
+          ctx.beginPath();
+          ctx.roundRect(n.x - textW / 2 - 4, labelY - 1, textW + 8, 16, 4);
+          ctx.fill();
+
+          ctx.fillStyle = matchesQ ? "#fde047" : isHovered ? "#ffffff" : "#cbd5e1";
+          ctx.fillText(n.name, n.x, labelY + 1);
+
+          ctx.restore();
+        });
+
+        ctx.restore();
+        animId = requestAnimationFrame(renderFrame);
+      }
+
+      animId = requestAnimationFrame(renderFrame);
+      return () => cancelAnimationFrame(animId);
+    }, [isPaused, isNodeVisible, foldedIds, hoveredNodeId, selectedNodeId, searchQuery]);
+
+    // Canvas Mouse Interaction Handlers
+    const getNodeAtScreen = useCallback((clientX, clientY) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const cx = canvas.clientWidth / 2;
+      const cy = canvas.clientHeight / 2;
+      const t = transformRef.current;
+
+      const worldX = (clientX - rect.left - cx - t.panX) / t.scale;
+      const worldY = (clientY - rect.top - cy - t.panY) / t.scale;
+
+      const { nodes } = simRef.current;
+      for (const n of nodes) {
+        if (isNodeVisible(n)) {
+          const dist = Math.hypot(n.x - worldX, n.y - worldY);
+          if (dist <= n.radius + 6) return n;
+        }
+      }
+      return null;
+    }, [isNodeVisible]);
+
+    const handleMouseDown = useCallback((e) => {
+      if (e.button !== 0) return; // Left click only
+      const target = getNodeAtScreen(e.clientX, e.clientY);
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+      hasDraggedRef.current = false;
+      isDraggingRef.current = true;
+
+      if (target) {
+        dragNodeRef.current = target;
+      } else {
+        dragNodeRef.current = null;
+      }
+    }, [getNodeAtScreen]);
+
+    const handleMouseMove = useCallback((e) => {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > 4) hasDraggedRef.current = true;
+
+      if (isDraggingRef.current) {
+        if (dragNodeRef.current) {
+          const t = transformRef.current;
+          dragNodeRef.current.x += dx / t.scale;
+          dragNodeRef.current.y += dy / t.scale;
+          dragNodeRef.current.vx = 0;
+          dragNodeRef.current.vy = 0;
+        } else {
+          setTransform(prev => ({
+            ...prev,
+            panX: prev.panX + dx,
+            panY: prev.panY + dy
+          }));
+        }
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      } else {
+        // Rollover hover test
+        const hit = getNodeAtScreen(e.clientX, e.clientY);
+        if (hit) {
+          setHoveredNodeId(hit.id);
+          if (onShowRollover) {
+            onShowRollover(e.clientX, e.clientY, hit.raw, hit.state);
+          }
+        } else {
+          setHoveredNodeId(null);
+          if (onHideRollover) onHideRollover();
+        }
+      }
+    }, [getNodeAtScreen, onShowRollover, onHideRollover]);
+
+    const handleMouseUp = useCallback((e) => {
+      isDraggingRef.current = false;
+      dragNodeRef.current = null;
+
+      if (!hasDraggedRef.current && e.button === 0) {
+        const hit = getNodeAtScreen(e.clientX, e.clientY);
+        if (hit) {
+          setSelectedNodeId(hit.id);
+          if (hit.descendantCount > 0) {
+            // Fold / Unfold on click!
+            toggleFold(hit.id, e.shiftKey);
+          }
+        }
+      }
+    }, [getNodeAtScreen, toggleFold]);
+
+    const handleContextMenu = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const hit = getNodeAtScreen(e.clientX, e.clientY);
+      if (hit && onOpenContextMenu) {
+        onOpenContextMenu(e, hit.raw);
+      }
+    }, [getNodeAtScreen, onOpenContextMenu]);
+
+    const handleWheel = useCallback((e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      setTransform(prev => ({
+        ...prev,
+        scale: Math.max(0.2, Math.min(4.0, prev.scale * factor))
+      }));
+    }, []);
+
+    const handleAutoFit = useCallback(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const { nodes } = simRef.current;
+      const vis = nodes.filter(n => isNodeVisible(n));
+      if (vis.length === 0) return;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      vis.forEach(n => {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+
+      const spanX = Math.max(100, maxX - minX + 80);
+      const spanY = Math.max(100, maxY - minY + 80);
+      const w = canvas.clientWidth || 900;
+      const h = canvas.clientHeight || 600;
+
+      const scale = Math.max(0.3, Math.min(1.5, Math.min(w / spanX, h / spanY)));
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+
+      setTransform({ scale, panX: -midX * scale, panY: -midY * scale });
+    }, [isNodeVisible]);
+
+    return h("div", {
+      className: "auto-org-f2g-container",
+      ref: containerRef,
+      onMouseLeave: () => {
+        if (onHideRollover) onHideRollover();
+        setHoveredNodeId(null);
+      }
+    },
+      // HUD Overlay with Tools
+      h("div", { className: "auto-org-f2g-hud" },
+        h("div", { className: "auto-org-f2g-badge" },
+          h("span", { style: { fontSize: "1.1rem" } }, "🕸️"),
+          h("strong", null, "Obsidian folders2graph Struktur-Graph"),
+          h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, "• Force Physics & Faltung")
+        ),
+        h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap" } },
+          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen" }, "🎯 Auto-Fit"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen" }, "[+] Alles"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => {
+            const map = simRef.current.nodeMap;
+            const mountIds = new Set(Array.from(map.values()).filter(n => n.node_type === "mount").map(n => n.id));
+            setFoldedIds(mountIds);
+          }, title: "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })) }, "+"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })) }, "-"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }) }, "↺ Reset")
+        ),
+        // Color Legend
+        h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
+          h("span", { className: "auto-org-rollover-badge-state approved", style: { fontSize: "0.68rem" } }, "🟢 Freigegeben"),
+          h("span", { className: "auto-org-rollover-badge-state proposed", style: { fontSize: "0.68rem" } }, "🟡 Vorschlag"),
+          h("span", { className: "auto-org-rollover-badge-state excluded", style: { fontSize: "0.68rem" } }, "⚪ Nicht einbezogen"),
+          h("span", { style: { color: "#60a5fa", fontSize: "0.68rem", display: "flex", alignItems: "center", gap: "0.2rem" } },
+            h("span", null, "💡"),
+            h("span", null, "Rechtsklick zum Ändern")
+          )
+        )
+      ),
+
+      // Interactive Graph Canvas
+      h("canvas", {
+        ref: canvasRef,
+        className: "auto-org-f2g-canvas",
+        onMouseDown: handleMouseDown,
+        onMouseMove: handleMouseMove,
+        onMouseUp: handleMouseUp,
+        onWheel: handleWheel,
+        onContextMenu: handleContextMenu
+      })
+    );
+  }
+
   function ObsidianFlowGraph({
+
     isPaused = false,
     speedMultiplier = 1,
     onTogglePause = null,
@@ -1263,7 +2088,10 @@
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [viewMode, setViewMode] = useState("filesystem"); // "filesystem" | "radar"
+    const [viewMode, setViewMode] = useState("folders2graph"); // "folders2graph" | "filesystem" | "radar"
+    const [nodeStates, setNodeStates] = useState({});
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, node, currentState }
+    const [rollover, setRollover] = useState(null); // { x, y, node, nodeState }
     const [systemTree, setSystemTree] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeLayer, setActiveLayer] = useState("all"); // "all" | "syncthing" | "backup" | "traffic_light"
@@ -1325,6 +2153,9 @@
         .then((data) => {
           if (data && data.ok) {
             setFsTree(data);
+            if (data.node_states) {
+              setNodeStates(prev => Object.assign({}, data.node_states, prev));
+            }
             if (data.mounts && data.mounts.length > 0) {
               setFsSelectedNode(prev => prev || data.mounts[0]);
             }
@@ -1337,6 +2168,53 @@
           setFsLoading(false);
         });
     }, []);
+
+    // Node state switcher handler (optimistic UI + backend call)
+    const handleSwitchNodeState = useCallback((node, newState) => {
+      if (!node) return;
+      const key = node.path || node.id;
+      setNodeStates(prev => {
+        const next = Object.assign({}, prev, { [key]: newState });
+        if (node.path) next[node.path] = newState;
+        if (node.id) next[node.id] = newState;
+        return next;
+      });
+
+      apiCall("/filesystem-tree/node-switch", {
+        method: "POST",
+        body: JSON.stringify({
+          path: node.path || node.uri_path || node.id,
+          node_id: node.id,
+          state: newState
+        })
+      }).catch(err => {
+        console.warn("Could not persist node state switch:", err);
+      });
+    }, []);
+
+    const handleOpenContextMenu = useCallback((e, node) => {
+      if (!node) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setRollover(null);
+      const st = nodeStates[node.path] || nodeStates[node.id] || node.switch_state || "proposed";
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        node: node,
+        currentState: st
+      });
+    }, [nodeStates]);
+
+    const handleShowRollover = useCallback((x, y, node, state) => {
+      if (!node) return;
+      setRollover({ x, y, node, nodeState: state });
+    }, []);
+
+    const handleHideRollover = useCallback(() => {
+      setRollover(null);
+    }, []);
+
 
     useEffect(() => {
       loadFsTree();
@@ -2103,13 +2981,20 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       else if (node.reorganization && node.reorganization.is_target) icon = "📥";
       else if (node.backup && node.backup.protected) icon = "🛡️";
 
+      const nodeState = nodeStates[node.path] || nodeStates[node.id] || node.switch_state ||
+                        (node.indexing && node.indexing.state === "FULL" ? "approved" : "proposed");
+
       const indentPx = depth * 18;
       const elements = [
         h("div", {
           key: node.id,
-          className: `auto-org-fs-tree-row ${isSelected ? "selected" : ""}`,
+          className: `auto-org-fs-tree-row ${isSelected ? "selected" : ""} ${nodeState === "approved" ? "auto-org-row-approved" : nodeState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed"}`,
           style: { paddingLeft: `${indentPx + 8}px` },
-          onClick: () => setFsSelectedNode(node)
+          onClick: () => setFsSelectedNode(node),
+          onContextMenu: (e) => handleOpenContextMenu(e, node),
+          onMouseEnter: (e) => handleShowRollover(e.clientX, e.clientY, node, nodeState),
+          onMouseMove: (e) => handleShowRollover(e.clientX, e.clientY, node, nodeState),
+          onMouseLeave: handleHideRollover
         },
           hasChildren ?
             h("span", {
@@ -2127,6 +3012,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             className: "auto-org-fs-node-name",
             title: node.path
           }, node.name),
+
+          h("span", {
+            className: `auto-org-rollover-badge-state ${nodeState}`,
+            style: { marginLeft: "0.4rem", fontSize: "0.68rem", cursor: "pointer" },
+            title: "Rechtsklick: Status umschalten (Freigeben / Vorschlag / Ausschließen)",
+            onClick: (e) => {
+              e.stopPropagation();
+              handleOpenContextMenu(e, node);
+            }
+          }, nodeState === "approved" ? "🟢 Freigegeben" : nodeState === "excluded" ? "⚪ Ausgeschlossen" : "🟡 Vorschlag"),
 
           node.disk ?
             h("div", { className: "auto-org-fs-mount-bar", title: `${node.disk.used_gb} GB von ${node.disk.total_gb} GB (${node.disk.percent_used}%) belegt` },
@@ -2207,10 +3102,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         h("div", { className: "auto-org-multi-tree-header" },
           h("div", { className: "auto-org-multi-tree-title" },
             h("h3", null,
-              h("span", null, viewMode === "filesystem" ? "🌲" : "🌐"),
-              viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" : "Multi-Computer File Tree & Backup/Sync Radar"
+              h("span", null, viewMode === "folders2graph" ? "🕸️" : viewMode === "filesystem" ? "🌲" : "🌐"),
+              viewMode === "folders2graph" ? "Obsidian folders2graph Struktur-Graph (Faltung & Sync)" :
+              viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" :
+              "Multi-Computer File Tree & Backup/Sync Radar"
             ),
-            viewMode === "filesystem" ?
+            viewMode === "filesystem" || viewMode === "folders2graph" ?
               h("div", { className: "auto-org-host-chips" },
                 h("span", { className: "auto-org-host-chip online" }, `💽 Gesamtspeicher: ${fsTree && fsTree.host ? fsTree.host.total_storage_gb : 3076.5} GB`),
                 h("span", { className: "auto-org-host-chip online" }, `📊 Belegt: ${fsTree && fsTree.host ? fsTree.host.used_storage_gb : 1575.4} GB`),
@@ -2228,6 +3125,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
             // View Mode Switcher
             h("div", { className: "auto-org-view-switcher" },
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "folders2graph" ? "active" : ""}`,
+                onClick: () => setViewMode("folders2graph"),
+                title: "Obsidian folders2graph Struktur-Graph (Ordner, Dateien, Faltung & Syncthing-Fluss)"
+              }, "🕸️ folders2graph Obsidian-Graph"),
               h("button", {
                 type: "button",
                 className: `auto-org-view-switcher-btn ${viewMode === "filesystem" ? "active" : ""}`,
@@ -2258,6 +3161,22 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
         // Controls & Filter Toolbar
         h("div", { className: "auto-org-multi-tree-toolbar" },
+          viewMode === "folders2graph" ?
+            h(React.Fragment, null,
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "folders2graph:"),
+                h("span", { style: { color: "#38bdf8", fontSize: "0.75rem", fontWeight: 600 } }, "Gewichtete Knoten • Faltung • Rechtsklick-Status")
+              ),
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: triggerRescan,
+                  disabled: isRescanning,
+                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems"
+                }, isRescanning ? "⏳ Scannt..." : "🔄 Neu scannen")
+              )
+            ) :
           viewMode === "filesystem" ?
             h(React.Fragment, null,
               // Filesystem Filters
@@ -2348,7 +3267,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             ),
 
-          // Search Filter (Shared across both modes)
+          // Search Filter (Shared across all modes)
           h("div", { className: "auto-org-toolbar-group", style: { marginLeft: "auto" } },
             h("input", {
               type: "text",
@@ -2361,8 +3280,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           )
         ),
 
-        // Main Body: Content (Filesystem View OR Radar Canvas) + Inspector Drawer
+        // Main Body: Content (Folders2Graph OR Filesystem View OR Radar Canvas) + Inspector Drawer
         h("div", { className: "auto-org-multi-tree-body" },
+          viewMode === "folders2graph" ?
+            h(Folders2GraphView, {
+              fsTree: fsTree,
+              nodeStates: nodeStates,
+              onSwitchNodeState: handleSwitchNodeState,
+              onOpenContextMenu: handleOpenContextMenu,
+              onShowRollover: handleShowRollover,
+              onHideRollover: handleHideRollover,
+              searchQuery: searchQuery,
+              isPaused: isPaused
+            }) :
           viewMode === "filesystem" ?
             // Real Filesystem Tree View Container
             h("div", { className: "auto-org-fs-view-container" },
@@ -2400,9 +3330,14 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 onMouseDown: handleMouseDown,
                 onMouseMove: handleMouseMove,
                 onMouseUp: handleMouseUp,
-                onWheel: handleWheel
+                onWheel: handleWheel,
+                onContextMenu: (e) => {
+                  const hit = hoveredNode;
+                  if (hit) handleOpenContextMenu(e, hit);
+                }
               })
             ),
+
 
           // Detail Inspector Drawer (Right Side)
           viewMode === "filesystem" ?
@@ -3035,16 +3970,43 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     );
   }
 
-  // Visual File Path Tree Component (Authentic hierarchical tree with branch connectors)
+  // Visual File Path Tree Component (Authentic hierarchical tree with branch connectors, context menu, and rollover)
   function VisualFilePathTree({ sourcePath, targetPath, files = null, defaultExpanded = true, showSwitch = false, switchStatus = "proposed", onApprove = null, onExclude = null, title = null }) {
     const [expanded, setExpanded] = useState(defaultExpanded);
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+    const [localStatus, setLocalStatus] = useState(switchStatus);
+    const [itemStates, setItemStates] = useState({});
+
+    useEffect(() => {
+      setLocalStatus(switchStatus);
+    }, [switchStatus]);
+
+    function handleSwitch(newState, itemPath) {
+      if (itemPath) {
+        setItemStates(prev => Object.assign({}, prev, { [itemPath]: newState }));
+      } else {
+        setLocalStatus(newState);
+      }
+      if (newState === "approved" && onApprove) onApprove();
+      else if (newState === "excluded" && onExclude) onExclude();
+
+      const p = itemPath || sourcePath || targetPath;
+      if (p) {
+        apiCall("/filesystem-tree/node-switch", {
+          method: "POST",
+          body: JSON.stringify({ path: p, state: newState })
+        }).catch(err => console.warn("Failed to persist node state:", err));
+      }
+    }
 
     // Mode A: Multi-file list tree (grouping files by directory with connector lines)
     if (files && files.length > 0) {
       const srcDir = (sourcePath || (files[0].source_path ? files[0].source_path.substring(0, files[0].source_path.lastIndexOf('/')) : '/home/mb/Downloads'));
       const tgtDir = (targetPath || (files[0].destination_path ? files[0].destination_path.substring(0, files[0].destination_path.lastIndexOf('/')) : '/media/work-data/'));
+      const rootState = itemStates[srcDir] || localStatus;
 
-      return h("div", { className: "auto-org-visual-tree-container" },
+      return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
         h("div", { className: "auto-org-tree-header" },
           h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
             h("span", null, expanded ? "▼" : "▶"),
@@ -3052,17 +4014,63 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("span", null, title || `Visueller Dateibaum (${files.length} Dateien)`)
           ),
           showSwitch && h(OverlaySwitchButton, {
-            status: switchStatus,
-            onApprove: onApprove,
-            onExclude: onExclude,
+            status: rootState,
+            onApprove: () => handleSwitch("approved", srcDir),
+            onExclude: () => handleSwitch("excluded", srcDir),
+            onReset: () => handleSwitch("proposed", srcDir),
             size: "sm"
           })
         ),
         expanded && h("div", null,
           // Source directory root
-          h("div", { className: "auto-org-tree-root-item" },
+          h("div", {
+            className: `auto-org-tree-root-item ${rootState === "approved" ? "auto-org-row-approved" : (rootState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+            style: { cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcDir,
+                  path: srcDir,
+                  name: srcDir.split('/').pop() || srcDir,
+                  node_type: "dir",
+                  destination_path: tgtDir,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: files.length }
+                },
+                currentState: rootState,
+                onSelect: (st) => handleSwitch(st, srcDir)
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcDir,
+                  path: srcDir,
+                  name: srcDir.split('/').pop() || srcDir,
+                  node_type: "dir",
+                  destination_path: tgtDir,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: files.length }
+                },
+                state: rootState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
+          },
             h("span", { className: "auto-org-tree-node-icon" }, "📥"),
-            h("span", { className: "auto-org-tree-node-name", style: { color: "#93c5fd" } }, formatUserPath(srcDir))
+            h("span", { className: "auto-org-tree-node-name", style: { color: "#93c5fd" } }, formatUserPath(srcDir)),
+            h("span", {
+              className: `auto-org-badge ${rootState === "approved" ? "auto-org-badge-green" : (rootState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+              style: { marginLeft: "auto", fontSize: "0.68rem" }
+            }, rootState === "approved" ? "🟢 Freigegeben" : (rootState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Vorgeschlagen"))
           ),
           // File branches
           h("div", { className: "auto-org-tree-children" },
@@ -3070,27 +4078,137 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               const isLast = idx === files.length - 1;
               const connector = isLast ? "└── " : "├── ";
               const fname = f.file_name || (f.source_path ? f.source_path.split('/').pop() : `file_${idx}`);
+              const fPath = f.source_path || (srcDir + "/" + fname);
               const tgt = formatUserPath(f.destination_path || f.suggested_target || tgtDir);
+              const fState = itemStates[fPath] || rootState;
 
-              return h("div", { key: idx, className: "auto-org-tree-branch-line" },
+              return h("div", {
+                key: idx,
+                className: `auto-org-tree-branch-line ${fState === "approved" ? "auto-org-row-approved" : (fState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+                style: { cursor: "pointer" },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: f.size_kb ? f.size_kb / 1024 : undefined
+                    },
+                    currentState: fState,
+                    onSelect: (st) => handleSwitch(st, fPath)
+                  });
+                },
+                onMouseEnter: (e) => {
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: f.size_kb ? f.size_kb / 1024 : undefined
+                    },
+                    state: fState
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
+              },
                 h("span", { className: "auto-org-tree-branch-connector" }, connector),
                 h("span", { className: "auto-org-tree-node-icon" }, "📄"),
                 getFileExtBadge(fname),
                 h("span", { className: "auto-org-tree-node-name" }, fname),
                 f.size_kb && h("span", { style: { color: "#64748b", fontSize: "0.7rem" } }, `${f.size_kb} KB`),
                 h("span", { className: "auto-org-tree-move-arrow" }, "──▶"),
-                h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.72rem", fontFamily: "monospace" } }, tgt)
+                h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.72rem", fontFamily: "monospace" } }, tgt),
+                h("span", {
+                  className: `auto-org-badge ${fState === "approved" ? "auto-org-badge-green" : (fState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                  style: { marginLeft: "auto", fontSize: "0.65rem", padding: "0.15rem 0.4rem" }
+                }, fState === "approved" ? "🟢 Freigabe" : (fState === "excluded" ? "⚪ Excluded" : "🟡 Vorschlag"))
               );
             })
           ),
           // Target directory destination branch
           tgtDir && h("div", { style: { marginTop: "0.5rem" } },
-            h("div", { className: "auto-org-tree-root-item", style: { color: "#4ade80" } },
+            h("div", {
+              className: "auto-org-tree-root-item",
+              style: { color: "#4ade80", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: tgtDir,
+                    path: tgtDir,
+                    name: tgtDir.split('/').filter(Boolean).pop() || tgtDir,
+                    node_type: "dir",
+                    destination_path: tgtDir,
+                    has_proposed_sync: true,
+                    reorganization: { is_target: true }
+                  },
+                  currentState: rootState,
+                  onSelect: (st) => handleSwitch(st, tgtDir)
+                });
+              },
+              onMouseEnter: (e) => {
+                setRollover({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: tgtDir,
+                    path: tgtDir,
+                    name: tgtDir.split('/').filter(Boolean).pop() || tgtDir,
+                    node_type: "dir",
+                    destination_path: tgtDir,
+                    has_proposed_sync: true,
+                    reorganization: { is_target: true }
+                  },
+                  state: rootState
+                });
+              },
+              onMouseMove: (e) => {
+                if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+              },
+              onMouseLeave: () => setRollover(null)
+            },
               h("span", { className: "auto-org-tree-node-icon" }, "🎯"),
-              h("span", { className: "auto-org-tree-node-name", style: { color: "#86efac" } }, `Ziel-Hierarchie: ${formatUserPath(tgtDir)}`)
+              h("span", { className: "auto-org-tree-node-name", style: { color: "#86efac" } }, `Ziel-Hierarchie: ${formatUserPath(tgtDir)}`),
+              h("span", {
+                className: `auto-org-badge ${rootState === "approved" ? "auto-org-badge-green" : (rootState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                style: { marginLeft: "auto", fontSize: "0.68rem" }
+              }, rootState === "approved" ? "🟢 Ziel freigegeben" : (rootState === "excluded" ? "⚪ Excluded" : "🟡 Ziel-Vorschlag"))
             )
           )
-        )
+        ),
+        contextMenu && h(FloatingContextMenu, {
+          x: contextMenu.x,
+          y: contextMenu.y,
+          node: contextMenu.node,
+          currentState: contextMenu.currentState,
+          onClose: () => setContextMenu(null),
+          onSelectState: (st) => {
+            if (contextMenu.onSelect) contextMenu.onSelect(st);
+            else handleSwitch(st, contextMenu.node.path);
+          }
+        }),
+        rollover && h(SyncRolloverTooltip, {
+          x: rollover.x,
+          y: rollover.y,
+          node: rollover.node,
+          nodeState: rollover.state
+        })
       );
     }
 
@@ -3098,8 +4216,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const srcClean = formatUserPath(sourcePath || "");
     const tgtClean = formatUserPath(targetPath || "");
     const tgtParts = tgtClean.split('/').filter(Boolean);
+    const singleState = localStatus;
 
-    return h("div", { className: "auto-org-visual-tree-container" },
+    return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
       h("div", { className: "auto-org-tree-header" },
         h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
           h("span", null, expanded ? "▼" : "▶"),
@@ -3107,18 +4226,62 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("span", null, title || "Visuelle Pfad-Hierarchie")
         ),
         showSwitch && h(OverlaySwitchButton, {
-          status: switchStatus,
-          onApprove: onApprove,
-          onExclude: onExclude,
+          status: singleState,
+          onApprove: () => handleSwitch("approved"),
+          onExclude: () => handleSwitch("excluded"),
+          onReset: () => handleSwitch("proposed"),
           size: "sm"
         })
       ),
       expanded && h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem" } },
         // Source Tree
         srcClean && h("div", null,
-          h("div", { className: "auto-org-tree-root-item" },
+          h("div", {
+            className: `auto-org-tree-root-item ${singleState === "approved" ? "auto-org-row-approved" : (singleState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+            style: { cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcClean,
+                  path: srcClean,
+                  name: srcClean.split('/').pop() || srcClean,
+                  node_type: "dir",
+                  destination_path: tgtClean,
+                  has_proposed_sync: true
+                },
+                currentState: singleState,
+                onSelect: (st) => handleSwitch(st, srcClean)
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcClean,
+                  path: srcClean,
+                  name: srcClean.split('/').pop() || srcClean,
+                  node_type: "dir",
+                  destination_path: tgtClean,
+                  has_proposed_sync: true
+                },
+                state: singleState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
+          },
             h("span", null, "📁 Herkunft:"),
-            h("span", { style: { color: "#f87171" } }, srcClean)
+            h("span", { style: { color: "#f87171" } }, srcClean),
+            h("span", {
+              className: `auto-org-badge ${singleState === "approved" ? "auto-org-badge-green" : (singleState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+              style: { marginLeft: "auto", fontSize: "0.68rem" }
+            }, singleState === "approved" ? "🟢 Freigegeben" : (singleState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Vorgeschlagen"))
           )
         ),
         // Animated Connection
@@ -3135,6 +4298,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
             return h("div", {
               key: pidx,
+              className: singleState === "approved" ? "auto-org-row-approved" : (singleState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed"),
               style: {
                 paddingLeft: `${indent}rem`,
                 display: "flex",
@@ -3142,22 +4306,110 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 gap: "0.35rem",
                 color: isLeaf ? "#4ade80" : (isDrive ? "#38bdf8" : "#93c5fd"),
                 fontWeight: isDrive || isLeaf ? 700 : 500,
-                fontSize: "0.78rem"
-              }
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                paddingTop: "0.2rem",
+                paddingBottom: "0.2rem",
+                borderRadius: "0.25rem"
+              },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    path: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    name: part,
+                    node_type: isDrive ? "drive" : (isLeaf ? "file" : "dir"),
+                    destination_path: tgtClean,
+                    has_proposed_sync: true
+                  },
+                  currentState: singleState,
+                  onSelect: (st) => handleSwitch(st, "/" + tgtParts.slice(0, pidx + 1).join('/'))
+                });
+              },
+              onMouseEnter: (e) => {
+                setRollover({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    path: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    name: part,
+                    node_type: isDrive ? "drive" : (isLeaf ? "file" : "dir"),
+                    destination_path: tgtClean,
+                    has_proposed_sync: true
+                  },
+                  state: singleState
+                });
+              },
+              onMouseMove: (e) => {
+                if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+              },
+              onMouseLeave: () => setRollover(null)
             },
               h("span", { style: { color: "#64748b", fontFamily: "monospace" } }, pidx > 0 ? "├── " : ""),
               h("span", null, pidx === 0 ? "💽 /" + part : (isLeaf ? "🎯 " + part : "📁 " + part))
             );
           })
         )
-      )
+      ),
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+          else handleSwitch(st, contextMenu.node.path);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
+      })
     );
   }
 
-  // Visual Dry Run Path Tree (Complete hierarchical filesystem tree for Step 4)
+  // Visual Dry Run Path Tree (Complete hierarchical filesystem tree for Step 4 with context menu and rollover)
   function VisualDryRunPathTree({ actions = [], groups = [], approvedGroupIds, excludedGroupIds, onSwitchGroup }) {
     const [filterText, setFilterText] = useState("");
     const [expandedFolders, setExpandedFolders] = useState({});
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+    const [nodeStates, setNodeStates] = useState({});
+
+    useEffect(() => {
+      apiCall("/filesystem-tree/node-states")
+        .then(data => {
+          if (data && (data.node_states || data.states)) setNodeStates(data.node_states || data.states);
+        })
+        .catch(() => {});
+    }, []);
+
+    function getNodeState(path, act) {
+      if (path && nodeStates[path]) return nodeStates[path];
+      if (act && act.group_id) {
+        if (approvedGroupIds && approvedGroupIds.has(act.group_id)) return "approved";
+        if (excludedGroupIds && excludedGroupIds.has(act.group_id)) return "excluded";
+      }
+      return "proposed";
+    }
+
+    function handleSwitchNode(path, newState, act) {
+      setNodeStates(prev => Object.assign({}, prev, { [path]: newState }));
+      if (act && act.group_id && onSwitchGroup) {
+        onSwitchGroup(act.group_id, newState);
+      }
+      apiCall("/filesystem-tree/node-switch", {
+        method: "POST",
+        body: JSON.stringify({ path: path, state: newState })
+      }).catch(err => console.warn("Failed to persist node state:", err));
+    }
 
     // Filter actions
     const filteredActions = filterText.trim() ?
@@ -3177,7 +4429,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
     const dirs = Object.keys(treeByDir).sort();
 
-    return h("div", { className: "auto-org-visual-tree-container", style: { padding: "1.25rem", borderRadius: "0.75rem" } },
+    return h("div", { className: "auto-org-visual-tree-container", style: { padding: "1.25rem", borderRadius: "0.75rem", position: "relative" } },
       // Top Controls
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
         h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
@@ -3185,7 +4437,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("div", null,
             h("strong", { style: { color: "#ffffff", fontSize: "1.05rem" } }, "Visueller Reorganisations-Pfadbaum"),
             h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
-              `${actions.length} Dateien in ${dirs.length} Quell-Verzeichnissen geordnet nach Zielstruktur`
+              `${actions.length} Dateien in ${dirs.length} Quell-Verzeichnissen geordnet nach Zielstruktur (Rechtsklick: Status umschalten)`
             )
           )
         ),
@@ -3207,18 +4459,92 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       dirs.map((dir, didx) => {
         const dirFiles = treeByDir[dir];
         const isDirExpanded = expandedFolders[dir] !== false; // expanded by default
+        const dirState = nodeStates[dir] || (
+          dirFiles.every(a => getNodeState(a.source_path, a) === "approved") ? "approved" :
+          (dirFiles.every(a => getNodeState(a.source_path, a) === "excluded") ? "excluded" : "proposed")
+        );
 
-        return h("div", { key: didx, style: { marginBottom: "1rem", background: "rgba(30, 41, 59, 0.4)", borderRadius: "0.5rem", padding: "0.5rem 0.75rem", border: "1px solid #334155" } },
+        return h("div", {
+          key: didx,
+          className: `auto-org-row-${dirState}`,
+          style: {
+            marginBottom: "1rem",
+            background: "rgba(30, 41, 59, 0.4)",
+            borderRadius: "0.5rem",
+            padding: "0.5rem 0.75rem",
+            border: "1px solid #334155",
+            transition: "all 0.15s ease"
+          }
+        },
           // Directory Header
           h("div", {
             style: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "0.2rem 0" },
-            onClick: () => setExpandedFolders(prev => Object.assign({}, prev, { [dir]: !isDirExpanded }))
+            onClick: () => setExpandedFolders(prev => Object.assign({}, prev, { [dir]: !isDirExpanded })),
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: dir,
+                  path: dir,
+                  name: dir.split('/').pop() || dir,
+                  node_type: "dir",
+                  destination_path: dirFiles[0] ? dirFiles[0].destination_path : undefined,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: dirFiles.length }
+                },
+                currentState: dirState,
+                onSelect: (st) => {
+                  handleSwitchNode(dir, st);
+                  dirFiles.forEach(a => {
+                    if (a.source_path) handleSwitchNode(a.source_path, st, a);
+                  });
+                }
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: dir,
+                  path: dir,
+                  name: dir.split('/').pop() || dir,
+                  node_type: "dir",
+                  destination_path: dirFiles[0] ? dirFiles[0].destination_path : undefined,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: dirFiles.length }
+                },
+                state: dirState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
           },
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
               h("span", { style: { color: "#60a5fa", fontWeight: 800, fontSize: "0.85rem" } }, isDirExpanded ? "▼" : "▶"),
               h("span", { style: { fontSize: "1.1rem" } }, "📁"),
               h("strong", { style: { color: "#93c5fd", fontSize: "0.9rem", fontFamily: "monospace" } }, formatUserPath(dir)),
               h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, `${dirFiles.length} Dateien`)
+            ),
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: `auto-org-badge ${dirState === "approved" ? "auto-org-badge-green" : (dirState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                style: { cursor: "pointer", border: "none", fontSize: "0.7rem", padding: "0.2rem 0.5rem" },
+                title: "Klicken oder Rechtsklick zum Umschalten aller Dateien in diesem Ordner",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  const next = dirState === "approved" ? "excluded" : (dirState === "excluded" ? "proposed" : "approved");
+                  handleSwitchNode(dir, next);
+                  dirFiles.forEach(a => {
+                    if (a.source_path) handleSwitchNode(a.source_path, next, a);
+                  });
+                }
+              }, dirState === "approved" ? "🟢 Ordner freigegeben" : (dirState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Ordner Vorschlag"))
             )
           ),
 
@@ -3227,12 +4553,69 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             dirFiles.map((act, fidx) => {
               const isLast = fidx === dirFiles.length - 1;
               const fname = act.file_name || (act.source_path ? act.source_path.split('/').pop() : `file_${fidx}`);
+              const fPath = act.source_path || (dir + "/" + fname);
               const tgt = formatUserPath(act.destination_path);
+              const fState = getNodeState(fPath, act);
 
               return h("div", {
                 key: fidx,
-                className: "auto-org-tree-branch-line",
-                style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }
+                className: `auto-org-tree-branch-line auto-org-row-${fState}`,
+                style: {
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                  cursor: "pointer",
+                  borderRadius: "0.25rem",
+                  padding: "0.25rem 0.4rem"
+                },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: act.size_kb ? act.size_kb / 1024 : undefined,
+                      reorganization: {
+                        is_source: true,
+                        target_rules: act.rule_name ? [act.rule_name] : []
+                      }
+                    },
+                    currentState: fState,
+                    onSelect: (st) => handleSwitchNode(fPath, st, act)
+                  });
+                },
+                onMouseEnter: (e) => {
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: act.size_kb ? act.size_kb / 1024 : undefined,
+                      reorganization: {
+                        is_source: true,
+                        target_rules: act.rule_name ? [act.rule_name] : []
+                      }
+                    },
+                    state: fState
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
               },
                 h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, minWidth: "300px" } },
                   h("span", { className: "auto-org-tree-branch-connector" }, isLast ? "└── " : "├── "),
@@ -3247,19 +4630,51 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   act.rule_name && h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, act.rule_name),
                   h("span", { className: `auto-org-badge ${act.safe_to_execute ? "auto-org-badge-green" : "auto-org-badge-red"}`, style: { fontSize: "0.68rem" } },
                     act.safe_to_execute ? "✓ Bereit" : "⚠️ Prüfen"
-                  )
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: `auto-org-badge ${fState === "approved" ? "auto-org-badge-green" : (fState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                    style: { cursor: "pointer", border: "none", fontSize: "0.68rem", padding: "0.15rem 0.45rem" },
+                    title: "Klicken oder Rechtsklick: Status umschalten",
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      const next = fState === "approved" ? "excluded" : (fState === "excluded" ? "proposed" : "approved");
+                      handleSwitchNode(fPath, next, act);
+                    }
+                  }, fState === "approved" ? "🟢 Freigabe" : (fState === "excluded" ? "⚪ Excluded" : "🟡 Vorschlag"))
                 )
               );
             })
           )
         );
+      }),
+
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+          else handleSwitchNode(contextMenu.node.path || contextMenu.node.id, st);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
       })
     );
   }
 
   // Multi-Level Tree Explorer Component for Step 2
   function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule, approvedCategoryIds, excludedCategoryIds, onSwitchCategory }) {
-    return h("div", { className: "auto-org-tree-explorer" },
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+
+    return h("div", { className: "auto-org-tree-explorer", style: { position: "relative" } },
       categories.map((cat) => {
         const isExpanded = expandedBranches.has(cat.id);
         const confPct = Math.round((cat.confidence || 0.95) * 100);
@@ -3269,7 +4684,43 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
         return h("div", {
           key: cat.id,
-          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""} ${catStatus === "approved" ? "auto-org-card-approved" : (catStatus === "excluded" ? "auto-org-card-excluded" : "")}`
+          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""} ${catStatus === "approved" ? "auto-org-card-approved" : (catStatus === "excluded" ? "auto-org-card-excluded" : "")}`,
+          onContextMenu: (e) => {
+            e.preventDefault();
+            setContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              node: {
+                id: cat.id,
+                path: cat.display_name || cat.name,
+                name: cat.name,
+                node_type: "dir",
+                proposed_target: cat.target_path || (subBranches[0] ? subBranches[0].target_path : undefined),
+                has_proposed_sync: true
+              },
+              currentState: catStatus,
+              onSelect: (st) => onSwitchCategory ? onSwitchCategory(cat.id, st) : (st === "approved" && onToggleApproveCategory ? onToggleApproveCategory(cat.id) : null)
+            });
+          },
+          onMouseEnter: (e) => {
+            setRollover({
+              x: e.clientX,
+              y: e.clientY,
+              node: {
+                id: cat.id,
+                path: cat.display_name || cat.name,
+                name: cat.name,
+                node_type: "dir",
+                proposed_target: cat.target_path || (subBranches[0] ? subBranches[0].target_path : undefined),
+                has_proposed_sync: true
+              },
+              state: catStatus
+            });
+          },
+          onMouseMove: (e) => {
+            if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+          },
+          onMouseLeave: () => setRollover(null)
         },
           // Root Header Row
           h("div", {
@@ -3318,7 +4769,49 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           isExpanded && subBranches.length > 0 && h("div", { className: "auto-org-tree-sub-list" },
             subBranches.map((sub) => {
               const subConf = Math.round((sub.confidence || 0.95) * 100);
-              return h("div", { key: sub.id, className: "auto-org-tree-sub-item" },
+              return h("div", {
+                key: sub.id,
+                className: "auto-org-tree-sub-item",
+                style: { cursor: "pointer" },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: sub.id,
+                      path: sub.target_path,
+                      name: sub.name,
+                      node_type: "dir",
+                      proposed_target: sub.target_path,
+                      has_proposed_sync: true
+                    },
+                    currentState: catStatus,
+                    onSelect: (st) => onSwitchCategory ? onSwitchCategory(cat.id, st) : null
+                  });
+                },
+                onMouseEnter: (e) => {
+                  e.stopPropagation();
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: sub.id,
+                      path: sub.target_path,
+                      name: sub.name,
+                      node_type: "dir",
+                      proposed_target: sub.target_path,
+                      has_proposed_sync: true
+                    },
+                    state: catStatus
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
+              },
                 // Left Column: Branch Title, Icon & Path
                 h("div", { style: { flex: 1, minWidth: "260px" } },
                   h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" } },
@@ -3367,6 +4860,22 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             })
           )
         );
+      }),
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
       })
     );
   }

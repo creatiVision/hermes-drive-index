@@ -119,6 +119,12 @@ class CategorySwitchRequest(BaseModel):
     state: str = "approved"  # "approved", "excluded", "proposed"
 
 
+class NodeSwitchRequest(BaseModel):
+    path: str
+    state: str = "approved"  # "approved", "proposed", "excluded"
+    node_id: Optional[str] = None
+
+
 class ModularRuleCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -3950,6 +3956,9 @@ async def _get_indexed_files_and_rules() -> Tuple[List[Tuple[str, int]], List[Di
     return db_files, rules_src, rules_tgt
 
 
+_NODE_SWITCH_STATES: Dict[str, str] = {}
+
+
 def _enrich_filesystem_node(
     node: Dict[str, Any],
     db_files: List[Tuple[str, int]],
@@ -4019,8 +4028,31 @@ def _enrich_filesystem_node(
         "label": reorg_label,
     }
 
+    # User rule: "when green its approved, otherwise yellow, grey for not included folders"
+    node_path = node.get("path", "")
+    node_id = node.get("id", "")
+    if node_path in _NODE_SWITCH_STATES:
+        node["switch_state"] = _NODE_SWITCH_STATES[node_path]
+    elif node_id in _NODE_SWITCH_STATES:
+        node["switch_state"] = _NODE_SWITCH_STATES[node_id]
+    else:
+        if node.get("indexing", {}).get("state") == "EXCLUDED" or node.get("excluded"):
+            node["switch_state"] = "excluded"
+        elif idx_state == "FULL":
+            node["switch_state"] = "approved"
+        else:
+            node["switch_state"] = "proposed"
+
+    has_proposed_sync = bool(
+        (node.get("syncthing", {}).get("synced")) or
+        (is_src and total_moves > 0) or
+        is_tgt
+    )
+    node["has_proposed_sync"] = has_proposed_sync
+
     for ch in node.get("children", []):
         _enrich_filesystem_node(ch, db_files, rules_src, rules_tgt)
+
 
 
 @router.get("/filesystem-tree/full")
@@ -4093,6 +4125,7 @@ async def get_full_filesystem_tree() -> Dict[str, Any]:
             "synced_folders_count": synced_mounts,
             "backup_protected_count": protected_mounts,
         },
+        "node_states": _NODE_SWITCH_STATES,
         "mounts": tree_data.get("mounts", []),
     }
 
@@ -4209,4 +4242,42 @@ async def trigger_filesystem_rescan() -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
     return {"ok": True, "message": "Dateisystembaum-Aktualisierung angestoßen."}
+
+
+@router.post("/filesystem-tree/node-switch")
+async def switch_filesystem_node_state(req: NodeSwitchRequest) -> Dict[str, Any]:
+    """
+    Switches the state of a filesystem node (folder or file) between:
+    - 'approved' (Freigegeben, Grün)
+    - 'proposed' (Vorschlag / Sync-Vorschlag, Gelb)
+    - 'excluded' (Nicht einbezogen / Ausgeschlossen, Grau)
+    """
+    state_normalized = req.state.lower().strip()
+    if state_normalized not in ("approved", "proposed", "excluded"):
+        state_normalized = "proposed"
+
+    _NODE_SWITCH_STATES[req.path] = state_normalized
+    if req.node_id:
+        _NODE_SWITCH_STATES[req.node_id] = state_normalized
+
+    logger.info("Filesystem node %s set to %s", req.path, state_normalized)
+
+    return {
+        "ok": True,
+        "path": req.path,
+        "node_id": req.node_id,
+        "state": state_normalized,
+        "all_states": _NODE_SWITCH_STATES,
+        "message": f"Status für '{req.path}' auf {state_normalized} gesetzt."
+    }
+
+
+@router.get("/filesystem-tree/node-states")
+async def get_filesystem_node_states() -> Dict[str, Any]:
+    """Returns all custom node state overrides."""
+    return {
+        "ok": True,
+        "states": _NODE_SWITCH_STATES,
+        "node_states": _NODE_SWITCH_STATES,
+    }
 

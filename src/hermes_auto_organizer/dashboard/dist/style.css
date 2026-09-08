@@ -2482,7 +2482,322 @@
   border: 1px solid rgba(168, 85, 247, 0.4);
 }
 
+/* =========================================================================
+   Obsidian folders2graph & Interactive Filetree State Switcher & Rollover
+   ========================================================================= */
 
+/* Floating Right-Click Context Menu */
+.auto-org-context-menu {
+  position: fixed;
+  z-index: 99999;
+  min-width: 260px;
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.75), 0 0 20px rgba(99, 102, 241, 0.2);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  animation: autoOrgMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+  user-select: none;
+}
 
+@keyframes autoOrgMenuPop {
+  0% { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
 
+.auto-org-context-menu-header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.2rem;
+}
 
+.auto-org-context-menu-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.auto-org-context-menu-path {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+  margin-top: 0.15rem;
+}
+
+.auto-org-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+  width: 100%;
+}
+
+.auto-org-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.auto-org-context-menu-item.approve:hover {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+.auto-org-context-menu-item.propose:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fde047;
+}
+
+.auto-org-context-menu-item.exclude:hover {
+  background: rgba(107, 114, 128, 0.25);
+  border-color: rgba(156, 163, 175, 0.4);
+  color: #e2e8f0;
+}
+
+.auto-org-context-menu-item.active {
+  font-weight: 700;
+}
+
+.auto-org-context-menu-item.approve.active {
+  background: rgba(34, 197, 94, 0.22);
+  border-color: #22c55e;
+  color: #4ade80;
+}
+
+.auto-org-context-menu-item.propose.active {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: #f59e0b;
+  color: #facc15;
+}
+
+.auto-org-context-menu-item.exclude.active {
+  background: rgba(107, 114, 128, 0.25);
+  border-color: #9ca3af;
+  color: #cbd5e1;
+}
+
+.auto-org-context-menu-desc {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-weight: normal;
+  display: block;
+  margin-top: 0.1rem;
+}
+
+/* Floating Rollover Card / Tooltip */
+.auto-org-rollover-card {
+  position: fixed;
+  z-index: 99998;
+  max-width: 380px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.7), 0 0 16px rgba(56, 189, 248, 0.18);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+  animation: autoOrgFadeIn 0.1s ease-out;
+}
+
+@keyframes autoOrgFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.auto-org-rollover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.5rem;
+}
+
+.auto-org-rollover-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.auto-org-rollover-path {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: #94a3b8;
+  word-break: break-all;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.35rem;
+}
+
+.auto-org-rollover-badge-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.auto-org-rollover-badge-state.approved {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.25);
+}
+
+.auto-org-rollover-badge-state.proposed {
+  background: rgba(245, 158, 11, 0.2);
+  color: #facc15;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25);
+}
+
+.auto-org-rollover-badge-state.excluded {
+  background: rgba(107, 114, 128, 0.2);
+  color: #cbd5e1;
+  border: 1px solid rgba(156, 163, 175, 0.4);
+}
+
+.auto-org-rollover-sync-box {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.auto-org-rollover-sync-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.auto-org-rollover-sync-detail {
+  font-size: 0.72rem;
+  color: #e2e8f0;
+  line-height: 1.35;
+}
+
+.auto-org-rollover-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.auto-org-rollover-footer-hint {
+  font-size: 0.68rem;
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  padding-top: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+/* Row & Node State Styling */
+.auto-org-row-approved {
+  background: rgba(34, 197, 94, 0.08) !important;
+  border-left: 3px solid #22c55e !important;
+}
+
+.auto-org-row-proposed {
+  background: rgba(245, 158, 11, 0.08) !important;
+  border-left: 3px solid #facc15 !important;
+}
+
+.auto-org-row-excluded {
+  background: rgba(107, 114, 128, 0.08) !important;
+  border-left: 3px solid #6b7280 !important;
+  opacity: 0.65;
+}
+
+/* folders2graph Canvas Container */
+.auto-org-f2g-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #090d16;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auto-org-f2g-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+.auto-org-f2g-canvas:active {
+  cursor: grabbing;
+}
+
+.auto-org-f2g-hud {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.auto-org-f2g-badge {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}

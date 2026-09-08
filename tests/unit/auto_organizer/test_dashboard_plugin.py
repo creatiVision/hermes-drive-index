@@ -523,3 +523,44 @@ def test_adopt_suggested_rules_offline_fallback():
         assert data["adopted_count"] >= 1
 
 
+def test_filesystem_node_switch_endpoint():
+    # Approve node (green)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "approved"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "approved"
+    assert data["all_states"]["/media/work-data/projekte"] == "approved"
+
+    # Exclude node (grey)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "excluded"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "excluded"
+
+    # Reset node to proposed (yellow)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "proposed"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "proposed"
+
+    # Get states
+    res = client.get("/api/plugins/auto-organizer/filesystem-tree/node-states")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "/media/work-data/projekte" in data["states"]
+
+
+
