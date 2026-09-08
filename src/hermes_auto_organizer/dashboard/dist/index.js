@@ -1263,6 +1263,7 @@
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [viewMode, setViewMode] = useState("filesystem"); // "filesystem" | "radar"
     const [systemTree, setSystemTree] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeLayer, setActiveLayer] = useState("all"); // "all" | "syncthing" | "backup" | "traffic_light"
@@ -1275,6 +1276,18 @@
     const [hoveredNode, setHoveredNode] = useState(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [isPaused, setIsPaused] = useState(false);
+
+    // Real System Filesystem Tree State
+    const [fsTree, setFsTree] = useState(null);
+    const [fsLoading, setFsLoading] = useState(true);
+    const [fsFilter, setFsFilter] = useState("all"); // "all" | "indexed" | "unindexed" | "reorg" | "syncthing" | "backup"
+    const [fsExpanded, setFsExpanded] = useState(() => new Set([
+      "node_media_work-data", "node_media_privat-data", "node_media_xchg",
+      "node_media_nosync", "node_media_empty", "node_home", "node_"
+    ]));
+    const [fsSelectedNode, setFsSelectedNode] = useState(null);
+    const [isRescanning, setIsRescanning] = useState(false);
+    const [rescanMsg, setRescanMsg] = useState("");
 
     // Viewport transform
     const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
@@ -1304,6 +1317,91 @@
         });
       return () => { mounted = false; };
     }, []);
+
+    // Load full real filesystem tree
+    const loadFsTree = useCallback(() => {
+      setFsLoading(true);
+      apiCall("/filesystem-tree/full")
+        .then((data) => {
+          if (data && data.ok) {
+            setFsTree(data);
+            if (data.mounts && data.mounts.length > 0) {
+              setFsSelectedNode(prev => prev || data.mounts[0]);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load /filesystem-tree/full:", err);
+        })
+        .finally(() => {
+          setFsLoading(false);
+        });
+    }, []);
+
+    useEffect(() => {
+      loadFsTree();
+    }, [loadFsTree]);
+
+    const triggerRescan = useCallback(() => {
+      setIsRescanning(true);
+      setRescanMsg("Scan läuft...");
+      apiCall("/filesystem-tree/rescan", { method: "POST" })
+        .then((res) => {
+          setRescanMsg(res.message || "Dateisystembaum erfolgreich aktualisiert!");
+          setTimeout(() => {
+            loadFsTree();
+            setRescanMsg("");
+          }, 1000);
+        })
+        .catch((err) => {
+          setRescanMsg("Scan fehlgeschlagen");
+          setTimeout(() => setRescanMsg(""), 3000);
+        })
+        .finally(() => {
+          setIsRescanning(false);
+        });
+    }, [loadFsTree]);
+
+    const toggleFsExpand = useCallback((nodeId) => {
+      setFsExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+    }, []);
+
+    const expandAllFs = useCallback(() => {
+      if (!fsTree || !fsTree.mounts) return;
+      const all = new Set();
+      function collect(nodes) {
+        nodes.forEach(n => {
+          all.add(n.id);
+          if (n.children && n.children.length > 0) collect(n.children);
+        });
+      }
+      collect(fsTree.mounts);
+      setFsExpanded(all);
+    }, [fsTree]);
+
+    const collapseAllFs = useCallback(() => {
+      setFsExpanded(new Set());
+    }, []);
+
+    const setFsLevel = useCallback((lvl) => {
+      if (!fsTree || !fsTree.mounts) return;
+      const ids = new Set();
+      function collect(nodes, curLvl) {
+        nodes.forEach(n => {
+          if (curLvl < lvl) {
+            ids.add(n.id);
+            if (n.children) collect(n.children, curLvl + 1);
+          }
+        });
+      }
+      collect(fsTree.mounts, 1);
+      setFsExpanded(ids);
+    }, [fsTree]);
 
     const hostsTree = (systemTree && systemTree.tree) || DEFAULT_SYSTEM_TREE;
 
@@ -1952,10 +2050,150 @@
       const factor = e.deltaY < 0 ? 1.12 : 0.89;
       const newScale = Math.max(0.25, Math.min(3.5, transformRef.current.scale * factor));
       const newPanX = mouseX - (mouseX - transformRef.current.panX) * (newScale / transformRef.current.scale);
-      const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / transformRef.current.scale);
+const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / transformRef.current.scale);
 
       setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
     };
+
+    // Helper to recursively render real filesystem tree nodes
+    function renderFsTreeNode(node, depth = 0) {
+      if (!node) return null;
+      const isExpanded = fsExpanded.has(node.id);
+      const isSelected = fsSelectedNode && fsSelectedNode.id === node.id;
+      const hasChildren = node.children && node.children.length > 0;
+
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch = !q ||
+        (node.name && node.name.toLowerCase().includes(q)) ||
+        (node.path && node.path.toLowerCase().includes(q));
+
+      let matchesFilter = true;
+      if (fsFilter === "indexed") {
+        matchesFilter = node.indexing && node.indexing.count > 0;
+      } else if (fsFilter === "unindexed") {
+        matchesFilter = !node.indexing || node.indexing.count === 0;
+      } else if (fsFilter === "reorg") {
+        matchesFilter = node.reorganization && (node.reorganization.is_source || node.reorganization.is_target);
+      } else if (fsFilter === "syncthing") {
+        matchesFilter = node.syncthing && node.syncthing.synced;
+      } else if (fsFilter === "backup") {
+        matchesFilter = node.backup && node.backup.protected;
+      }
+
+      function hasMatchingDescendant(n) {
+        if (!n.children || n.children.length === 0) return false;
+        return n.children.some(c => {
+          const cSearch = !q || (c.name && c.name.toLowerCase().includes(q)) || (c.path && c.path.toLowerCase().includes(q));
+          let cFilter = true;
+          if (fsFilter === "indexed") cFilter = c.indexing && c.indexing.count > 0;
+          else if (fsFilter === "unindexed") cFilter = !c.indexing || c.indexing.count === 0;
+          else if (fsFilter === "reorg") cFilter = c.reorganization && (c.reorganization.is_source || c.reorganization.is_target);
+          else if (fsFilter === "syncthing") cFilter = c.syncthing && c.syncthing.synced;
+          else if (fsFilter === "backup") cFilter = c.backup && c.backup.protected;
+          return (cSearch && cFilter) || hasMatchingDescendant(c);
+        });
+      }
+
+      if (!matchesSearch && !hasMatchingDescendant(node)) return null;
+      if (!matchesFilter && !hasMatchingDescendant(node)) return null;
+
+      let icon = "📁";
+      if (node.node_type === "mount") icon = "💽";
+      else if (node.reorganization && node.reorganization.is_source) icon = "📤";
+      else if (node.reorganization && node.reorganization.is_target) icon = "📥";
+      else if (node.backup && node.backup.protected) icon = "🛡️";
+
+      const indentPx = depth * 18;
+      const elements = [
+        h("div", {
+          key: node.id,
+          className: `auto-org-fs-tree-row ${isSelected ? "selected" : ""}`,
+          style: { paddingLeft: `${indentPx + 8}px` },
+          onClick: () => setFsSelectedNode(node)
+        },
+          hasChildren ?
+            h("span", {
+              className: "auto-org-fs-chevron",
+              onClick: (e) => {
+                e.stopPropagation();
+                toggleFsExpand(node.id);
+              }
+            }, isExpanded ? "▼" : "▶") :
+            h("span", { style: { width: "16px", display: "inline-block" } }),
+
+          h("span", { style: { fontSize: "1rem" } }, icon),
+
+          h("span", {
+            className: "auto-org-fs-node-name",
+            title: node.path
+          }, node.name),
+
+          node.disk ?
+            h("div", { className: "auto-org-fs-mount-bar", title: `${node.disk.used_gb} GB von ${node.disk.total_gb} GB (${node.disk.percent_used}%) belegt` },
+              h("div", { className: "auto-org-fs-progress-track" },
+                h("div", {
+                  className: "auto-org-fs-progress-fill",
+                  style: {
+                    width: `${node.disk.percent_used}%`,
+                    background: node.disk.percent_used > 85 ? "#ef4444" : node.disk.percent_used > 65 ? "#eab308" : "#10b981"
+                  }
+                })
+              ),
+              h("span", null, `${node.disk.used_gb}/${node.disk.total_gb} GB (${node.disk.percent_used}%)`)
+            ) : null,
+
+          node.indexing ?
+            h("span", {
+              className: node.indexing.state === "FULL" ? "auto-org-badge-index-green" :
+                         node.indexing.state === "PARTIAL" ? "auto-org-badge-index-yellow" :
+                         "auto-org-badge-index-gray",
+              title: `PostgreSQL file_nodes: ${node.indexing.count} Dateien (${node.indexing.size_mb} MB)`
+            }, `${node.indexing.symbol} ${node.indexing.label}`) : null,
+
+          node.reorganization && node.reorganization.is_source ?
+            h("span", {
+              className: "auto-org-badge-reorg-src",
+              title: `Reorganisation: ${node.reorganization.pending_moves} geplante Moves`
+            }, `📤 ${node.reorganization.pending_moves || 0} Moves`) : null,
+
+          node.reorganization && node.reorganization.is_target ?
+            h("span", {
+              className: "auto-org-badge-reorg-tgt",
+              title: "Zielverzeichnis für automatische Sortierungsregeln"
+            }, "📥 Zielordner") : null,
+
+          node.syncthing && node.syncthing.synced ?
+            h("span", {
+              className: "auto-org-badge-syncthing",
+              title: `Syncthing Ordner: ${node.syncthing.label || node.syncthing.folder_id} • Peers: ${(node.syncthing.peers || []).join(", ")}`
+            }, `🔄 ${node.syncthing.label || node.syncthing.folder_id}`) : null,
+
+          node.backup && node.backup.protected ?
+            h("span", {
+              className: "auto-org-badge-backup",
+              title: `Backup: ${node.backup.program} (${node.backup.schedule || "Aktiv"})`
+            }, `🛡️ ${node.backup.program}`) : null,
+
+          node.permissions ?
+            h("span", {
+              className: "auto-org-badge-perm",
+              title: `Berechtigungen: ${node.permissions.mode_str} (${node.permissions.mode_octal}) • Besitzer: ${node.permissions.owner}:${node.permissions.group}`
+            }, `${node.permissions.mode_str} ${node.permissions.owner}`) : null
+        )
+      ];
+
+      if (hasChildren && (isExpanded || q)) {
+        node.children.forEach(ch => {
+          const childEl = renderFsTreeNode(ch, depth + 1);
+          if (childEl) {
+            if (Array.isArray(childEl)) elements.push(...childEl);
+            else elements.push(childEl);
+          }
+        });
+      }
+
+      return elements;
+    }
 
     return h("div", {
       className: "auto-org-multi-tree-modal",
@@ -1965,22 +2203,44 @@
         className: `auto-org-multi-tree-window ${isFullscreen ? "fullscreen" : ""}`,
         ref: containerRef
       },
-        // Top Header
+        // Top Header with Title and Mode Switcher
         h("div", { className: "auto-org-multi-tree-header" },
           h("div", { className: "auto-org-multi-tree-title" },
             h("h3", null,
-              h("span", null, "🌐"),
-              "Multi-Computer File Tree & Backup/Sync Radar"
+              h("span", null, viewMode === "filesystem" ? "🌲" : "🌐"),
+              viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" : "Multi-Computer File Tree & Backup/Sync Radar"
             ),
-            h("div", { className: "auto-org-host-chips" },
-              h("span", { className: "auto-org-host-chip online" }, "💻 laptop: 🟢 Online"),
-              h("span", { className: "auto-org-host-chip online" }, "🖥️ debian1: 🟢 Online (192.168.178.111)"),
-              h("span", { className: "auto-org-host-chip online" }, "🤖 hermes: 🟢 Aktiv"),
-              h("span", { className: "auto-org-host-chip cloud" }, "☁️ gdrive: 🟣 Cloud-Vault"),
-              h("span", { className: "auto-org-host-chip mobile" }, "📱 Note14new: 🟢 P2P Sync (192.168.178.127)")
-            )
+            viewMode === "filesystem" ?
+              h("div", { className: "auto-org-host-chips" },
+                h("span", { className: "auto-org-host-chip online" }, `💽 Gesamtspeicher: ${fsTree && fsTree.host ? fsTree.host.total_storage_gb : 3076.5} GB`),
+                h("span", { className: "auto-org-host-chip online" }, `📊 Belegt: ${fsTree && fsTree.host ? fsTree.host.used_storage_gb : 1575.4} GB`),
+                h("span", { className: "auto-org-host-chip online" }, `💾 Frei: ${fsTree && fsTree.host ? fsTree.host.free_storage_gb : 1350.5} GB`),
+                h("span", { className: "auto-org-host-chip mobile" }, `💻 Host: ${fsTree && fsTree.host ? fsTree.host.hostname : "laptop"}`)
+              ) :
+              h("div", { className: "auto-org-host-chips" },
+                h("span", { className: "auto-org-host-chip online" }, "💻 laptop: 🟢 Online"),
+                h("span", { className: "auto-org-host-chip online" }, "🖥️ debian1: 🟢 Online (192.168.178.111)"),
+                h("span", { className: "auto-org-host-chip online" }, "🤖 hermes: 🟢 Aktiv"),
+                h("span", { className: "auto-org-host-chip cloud" }, "☁️ gdrive: 🟣 Cloud-Vault"),
+                h("span", { className: "auto-org-host-chip mobile" }, "📱 Note14new: 🟢 P2P Sync (192.168.178.127)")
+              )
           ),
-          h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+            // View Mode Switcher
+            h("div", { className: "auto-org-view-switcher" },
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "filesystem" ? "active" : ""}`,
+                onClick: () => setViewMode("filesystem"),
+                title: "Vollständiger realer Verzeichnisbaum aller Mount-Punkte, Partitionen und Ordner"
+              }, "🌲 Realer Dateibaum"),
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "radar" ? "active" : ""}`,
+                onClick: () => setViewMode("radar"),
+                title: "Obsidian-Graph Netzwerk-Radar über alle 5 Rechner und Syncthing-Ringe"
+              }, "🌐 Multi-Computer Radar")
+            ),
             h("button", {
               type: "button",
               className: "auto-org-pill-btn",
@@ -1998,58 +2258,102 @@
 
         // Controls & Filter Toolbar
         h("div", { className: "auto-org-multi-tree-toolbar" },
-          // Layer Selector
-          h("div", { className: "auto-org-toolbar-group" },
-            h("span", { className: "auto-org-toolbar-label" }, "Radar-Layer:"),
-            [
-              { id: "all", label: "🔘 Alle Layer" },
-              { id: "syncthing", label: "🔄 Syncthing Sync-Radar" },
-              { id: "backup", label: "🛡️ Backup-Programme" },
-              { id: "traffic_light", label: "🚦 Index-Ampeln" }
-            ].map(layer =>
-              h("button", {
-                key: layer.id,
-                type: "button",
-                className: `auto-org-pill-btn ${activeLayer === layer.id ? "active" : ""}`,
-                onClick: () => setActiveLayer(layer.id)
-              }, layer.label)
-            )
-          ),
+          viewMode === "filesystem" ?
+            h(React.Fragment, null,
+              // Filesystem Filters
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Filter:"),
+                [
+                  { id: "all", label: "🔘 Alle Ordner" },
+                  { id: "indexed", label: "🟢 Nur Indexierte" },
+                  { id: "unindexed", label: "⚪ Nicht im Index" },
+                  { id: "reorg", label: "📤 Reorganisation" },
+                  { id: "syncthing", label: "🔄 Syncthing" },
+                  { id: "backup", label: "🛡️ Backups" }
+                ].map(flt =>
+                  h("button", {
+                    key: flt.id,
+                    type: "button",
+                    className: `auto-org-pill-btn ${fsFilter === flt.id ? "active" : ""}`,
+                    onClick: () => setFsFilter(flt.id)
+                  }, flt.label)
+                )
+              ),
 
-          // Tree Folding Controls
-          h("div", { className: "auto-org-toolbar-group" },
-            h("span", { className: "auto-org-toolbar-label" }, "Baum-Faltung:"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen" }, "[+] Alles"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen" }, "[-] Nur Hosts"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen" }, "[2] Laufwerke"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen" }, "[3] Ordner")
-          ),
+              // Filesystem Folding Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Faltung:"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAllFs, title: "Alle Äste ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAllFs, title: "Nur Mount-Punkte" }, "[-] Mounts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(2), title: "Bis Ebene 2 ausklappen" }, "[2] Ebene 2"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(3), title: "Bis Ebene 3 ausklappen" }, "[3] Ebene 3")
+              ),
 
-          // Viewport & Auto-Fit Controls
-          h("div", { className: "auto-org-toolbar-group" },
-            h("button", {
-              type: "button",
-              className: "auto-org-pill-btn fit",
-              onClick: autoFitScreen,
-              title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
-            }, "🎯 Auto-Fit Screen"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern" }, "+"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern" }, "-"),
-            h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht" }, "↺ Reset"),
-            h("button", {
-              type: "button",
-              className: "auto-org-pill-btn",
-              onClick: () => setIsPaused(!isPaused),
-              title: isPaused ? "Animation starten" : "Animation pausieren"
-            }, isPaused ? "▶️ Play" : "⏸️ Pause")
-          ),
+              // Rescan Button
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: triggerRescan,
+                  disabled: isRescanning,
+                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems"
+                }, isRescanning ? "⏳ Scannt..." : "🔄 Neu scannen")
+              )
+            ) :
+            h(React.Fragment, null,
+              // Radar Layer Selector
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Radar-Layer:"),
+                [
+                  { id: "all", label: "🔘 Alle Layer" },
+                  { id: "syncthing", label: "🔄 Syncthing Sync-Radar" },
+                  { id: "backup", label: "🛡️ Backup-Programme" },
+                  { id: "traffic_light", label: "🚦 Index-Ampeln" }
+                ].map(layer =>
+                  h("button", {
+                    key: layer.id,
+                    type: "button",
+                    className: `auto-org-pill-btn ${activeLayer === layer.id ? "active" : ""}`,
+                    onClick: () => setActiveLayer(layer.id)
+                  }, layer.label)
+                )
+              ),
 
-          // Search Filter
-          h("div", { className: "auto-org-toolbar-group" },
+              // Tree Folding Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Baum-Faltung:"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen" }, "[-] Nur Hosts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen" }, "[2] Laufwerke"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen" }, "[3] Ordner")
+              ),
+
+              // Viewport & Auto-Fit Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: autoFitScreen,
+                  title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
+                }, "🎯 Auto-Fit Screen"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern" }, "+"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern" }, "-"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht" }, "↺ Reset"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn",
+                  onClick: () => setIsPaused(!isPaused),
+                  title: isPaused ? "Animation starten" : "Animation pausieren"
+                }, isPaused ? "▶️ Play" : "⏸️ Pause")
+              )
+            ),
+
+          // Search Filter (Shared across both modes)
+          h("div", { className: "auto-org-toolbar-group", style: { marginLeft: "auto" } },
             h("input", {
               type: "text",
               className: "auto-org-input",
-              style: { padding: "0.22rem 0.55rem", fontSize: "0.75rem", width: "160px" },
+              style: { padding: "0.22rem 0.55rem", fontSize: "0.75rem", width: "190px" },
               placeholder: "🔍 Pfad / Name filtern...",
               value: searchQuery,
               onChange: (e) => setSearchQuery(e.target.value)
@@ -2057,157 +2361,422 @@
           )
         ),
 
-        // Main Body: Canvas + Inspector Drawer
+        // Main Body: Content (Filesystem View OR Radar Canvas) + Inspector Drawer
         h("div", { className: "auto-org-multi-tree-body" },
-          // Canvas Viewport
-          h("div", { className: "auto-org-canvas-viewport" },
-            h("canvas", {
-              ref: canvasRef,
-              className: "auto-org-tree-canvas",
-              onMouseDown: handleMouseDown,
-              onMouseMove: handleMouseMove,
-              onMouseUp: handleMouseUp,
-              onWheel: handleWheel
-            })
-          ),
-
-          // Inspector Drawer
-          selectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
-            h("div", { className: "auto-org-inspector-header" },
-              h("div", null,
-                h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
-                  h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
-                  h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+          viewMode === "filesystem" ?
+            // Real Filesystem Tree View Container
+            h("div", { className: "auto-org-fs-view-container" },
+              // Summary Strip
+              h("div", { className: "auto-org-fs-tree-summary" },
+                h("div", { className: "auto-org-fs-stats-strip" },
+                  h("span", { className: "auto-org-fs-stat-badge" }, `💽 ${fsTree && fsTree.summary ? fsTree.summary.total_mounts : 7} Mount-Punkte`),
+                  h("span", { className: "auto-org-fs-stat-badge" }, `📁 ${fsTree && fsTree.summary ? fsTree.summary.total_directories_scanned : 847} Ordner`),
+                  h("span", { className: "auto-org-fs-stat-badge" }, `📄 ${fsTree && fsTree.summary ? fsTree.summary.total_files_discovered.toLocaleString() : "25.210"} Dateien`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#34d399", borderColor: "rgba(16,185,129,0.3)" } }, `🟢 ${fsTree && fsTree.summary ? fsTree.summary.total_files_indexed_in_db.toLocaleString() : "2.515"} im Index`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#fbbf24", borderColor: "rgba(245,158,11,0.3)" } }, `📤 ${fsTree && fsTree.summary ? fsTree.summary.total_reorg_moves_pending.toLocaleString() : "14.580"} Moves geplant`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#38bdf8", borderColor: "rgba(6,182,212,0.3)" } }, `🔄 ${fsTree && fsTree.summary ? fsTree.summary.synced_folders_count : 590} Syncthing-Pfade`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#c084fc", borderColor: "rgba(168,85,247,0.3)" } }, `🛡️ ${fsTree && fsTree.summary ? fsTree.summary.backup_protected_count : 27} Backups`)
                 ),
-                h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
-                  `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
+                rescanMsg && h("span", { style: { color: "#34d399", fontSize: "0.75rem", fontWeight: 600 } }, rescanMsg)
+              ),
+
+              // Scrollable Tree Rows
+              h("div", { className: "auto-org-fs-tree-scroll" },
+                fsLoading ?
+                  h("div", { style: { padding: "3rem", textAlign: "center", color: "#94a3b8" } },
+                    h("div", { style: { fontSize: "1.5rem", marginBottom: "0.5rem" } }, "⏳"),
+                    "Lade realen Dateisystembaum & analysiere PostgreSQL-Index..."
+                  ) :
+                  fsTree && fsTree.mounts && fsTree.mounts.length > 0 ?
+                    fsTree.mounts.map(m => renderFsTreeNode(m, 0)) :
+                    h("div", { style: { padding: "2rem", color: "#94a3b8", textAlign: "center" } }, "Keine Mount-Punkte gefunden.")
+              )
+            ) :
+            // Canvas Viewport for Radar Mode
+            h("div", { className: "auto-org-canvas-viewport" },
+              h("canvas", {
+                ref: canvasRef,
+                className: "auto-org-tree-canvas",
+                onMouseDown: handleMouseDown,
+                onMouseMove: handleMouseMove,
+                onMouseUp: handleMouseUp,
+                onWheel: handleWheel
+              })
+            ),
+
+          // Detail Inspector Drawer (Right Side)
+          viewMode === "filesystem" ?
+            // Filesystem Selected Node Inspector
+            (fsSelectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
+              h("div", { className: "auto-org-inspector-header" },
+                h("div", null,
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                    h("span", { style: { fontSize: "1.25rem" } }, fsSelectedNode.node_type === "mount" ? "💽" : fsSelectedNode.reorganization && fsSelectedNode.reorganization.is_source ? "📤" : "📁"),
+                    h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, fsSelectedNode.name)
+                  ),
+                  h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                    `Typ: ${fsSelectedNode.node_type === "mount" ? "Partition / Mount-Point" : "Verzeichnis"}`
+                  )
+                ),
+                h("span", {
+                  className: `auto-org-ampel-badge ${fsSelectedNode.indexing && fsSelectedNode.indexing.state === "FULL" ? "green" : fsSelectedNode.indexing && fsSelectedNode.indexing.state === "PARTIAL" ? "yellow" : "gray"}`,
+                  style: { fontSize: "0.72rem" }
+                }, fsSelectedNode.indexing ? `${fsSelectedNode.indexing.symbol} ${fsSelectedNode.indexing.state}` : "⚪ UNINDEXED")
+              ),
+
+              // Section 1: Exact Host Path & Partition
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort & Partition"),
+                h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" } },
+                  h("div", { style: { fontFamily: "monospace", fontSize: "0.76rem", color: "#93c5fd", wordBreak: "break-all" } },
+                    fsSelectedNode.path
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-pill-btn",
+                    style: { padding: "0.15rem 0.45rem", fontSize: "0.68rem" },
+                    onClick: () => {
+                      navigator.clipboard.writeText(fsSelectedNode.path);
+                      alert("Pfad in Zwischenablage kopiert: " + fsSelectedNode.path);
+                    },
+                    title: "Pfad kopieren"
+                  }, "📋 Kopieren")
+                ),
+                fsSelectedNode.mount_point && h("div", { className: "auto-org-meta-row", style: { marginTop: "0.4rem" } },
+                  h("span", { className: "auto-org-meta-label" }, "Mount-Point:"),
+                  h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, fsSelectedNode.mount_point)
+                ),
+                fsSelectedNode.device && h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Gerät / Dateisystem:"),
+                  h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.device} (${fsSelectedNode.fstype || "ext4"})`)
+                ),
+                fsSelectedNode.disk && h(React.Fragment, null,
+                  h("div", { style: { margin: "0.4rem 0 0.2rem 0" } },
+                    h("div", { className: "auto-org-fs-progress-track", style: { width: "100%", height: "8px" } },
+                      h("div", {
+                        className: "auto-org-fs-progress-fill",
+                        style: {
+                          width: `${fsSelectedNode.disk.percent_used}%`,
+                          background: fsSelectedNode.disk.percent_used > 85 ? "#ef4444" : fsSelectedNode.disk.percent_used > 65 ? "#eab308" : "#10b981"
+                        }
+                      })
+                    )
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Belegung:"),
+                    h("span", { className: "auto-org-meta-val" }, `${fsSelectedNode.disk.used_gb} GB belegt von ${fsSelectedNode.disk.total_gb} GB (${fsSelectedNode.disk.percent_used}%)`)
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Freier Speicher:"),
+                    h("span", { className: "auto-org-meta-val", style: { color: "#34d399" } }, `${fsSelectedNode.disk.free_gb} GB verfügbar`)
+                  )
                 )
               ),
-              h("span", {
-                className: `auto-org-ampel-badge ${selectedNode.status.state === "INDEXED" || selectedNode.status.state === "PROTECTED" ? "green" : selectedNode.status.state === "PENDING" ? "yellow" : "red"}`,
-                style: { fontSize: "0.72rem" }
-              }, `${selectedNode.status.symbol} ${selectedNode.status.state}`)
-            ),
 
-            // Exact Host Path
-            h("div", { className: "auto-org-inspector-section" },
-              h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
-              h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
-                formatUserPath(selectedNode.path)
+              // Section 2: PostgreSQL Indexing Status
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🗄️ PostgreSQL Index-Status"),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Index-Abdeckung:"),
+                  h("span", {
+                    className: fsSelectedNode.indexing && fsSelectedNode.indexing.state === "FULL" ? "auto-org-badge auto-org-badge-green" :
+                               fsSelectedNode.indexing && fsSelectedNode.indexing.state === "PARTIAL" ? "auto-org-badge auto-org-badge-yellow" :
+                               "auto-org-badge auto-org-badge-gray"
+                  }, fsSelectedNode.indexing ? `${fsSelectedNode.indexing.symbol} ${fsSelectedNode.indexing.label}` : "⚪ Nicht indexiert")
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateien in file_nodes:"),
+                  h("span", { className: "auto-org-meta-val", style: { color: "#38bdf8" } },
+                    `${fsSelectedNode.indexing ? fsSelectedNode.indexing.count : 0} indexierte Dateien`
+                  )
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Indexiertes Volumen:"),
+                  h("span", { className: "auto-org-meta-val" },
+                    `${fsSelectedNode.indexing ? fsSelectedNode.indexing.size_mb : 0} MB`
+                  )
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateien im Dateisystem:"),
+                  h("span", { className: "auto-org-meta-val" },
+                    `${fsSelectedNode.approx_total_files || fsSelectedNode.direct_files_count || 0} Dateien (${fsSelectedNode.approx_size_mb || 0} MB)`
+                  )
+                )
               ),
-              h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, selectedNode.status.label)
-            ),
 
-            // Syncthing Radar Details
-            h("div", { className: "auto-org-inspector-section" },
-              h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
-              selectedNode.syncthing && selectedNode.syncthing.synced ?
-                h(React.Fragment, null,
-                  h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Status:"),
-                    h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
-                  ),
-                  selectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
-                    h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, selectedNode.syncthing.folder_id)
-                  ),
-                  h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
-                    h("span", { className: "auto-org-meta-val" }, selectedNode.syncthing.type || "sendreceive (beidseitig)")
-                  ),
-                  h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
-                    h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
-                      (selectedNode.syncthing.peers && selectedNode.syncthing.peers.length > 0) ? selectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+              // Section 3: Reorganization & Movements
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📤 Reorganisation & Movements"),
+                fsSelectedNode.reorganization && (fsSelectedNode.reorganization.is_source || fsSelectedNode.reorganization.is_target) ?
+                  h(React.Fragment, null,
+                    fsSelectedNode.reorganization.is_source && h("div", null,
+                      h("div", { style: { fontSize: "0.74rem", fontWeight: 700, color: "#fbbf24", marginBottom: "0.3rem" } },
+                        `📤 Verschiebe-Quelle (${fsSelectedNode.reorganization.pending_moves || 0} Moves geplant):`
+                      ),
+                      (fsSelectedNode.reorganization.source_rules || []).map((r, rIdx) =>
+                        h("div", { key: rIdx, style: { fontSize: "0.72rem", padding: "0.3rem", background: "rgba(30, 41, 59, 0.5)", borderRadius: "0.25rem", marginBottom: "0.25rem" } },
+                          h("div", { style: { fontWeight: 600, color: "#f1f5f9" } }, r.name),
+                          h("div", { style: { color: "#94a3b8", fontSize: "0.68rem" } }, `Muster: ${r.pattern} • Ziel: ${r.target_template}`)
+                        )
+                      )
+                    ),
+                    fsSelectedNode.reorganization.is_target && h("div", { style: { marginTop: "0.4rem" } },
+                      h("div", { style: { fontSize: "0.74rem", fontWeight: 700, color: "#38bdf8", marginBottom: "0.3rem" } },
+                        "📥 Zielverzeichnis für Regeln:"
+                      ),
+                      (fsSelectedNode.reorganization.target_rules || []).map((r, rIdx) =>
+                        h("div", { key: rIdx, style: { fontSize: "0.72rem", padding: "0.3rem", background: "rgba(30, 41, 59, 0.5)", borderRadius: "0.25rem", marginBottom: "0.25rem" } },
+                          h("div", { style: { fontWeight: 600, color: "#f1f5f9" } }, r.name),
+                          h("div", { style: { color: "#94a3b8", fontSize: "0.68rem" } }, `Zielvorlage: ${r.target_template}`)
+                        )
+                      )
                     )
-                  )
-                ) :
-                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
-            ),
-
-            // Backup Details
-            h("div", { className: "auto-org-inspector-section" },
-              h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup-Programme & Schutz"),
-              selectedNode.backup && selectedNode.backup.protected ?
-                h(React.Fragment, null,
-                  h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Programm:"),
-                    h("span", { className: "auto-org-badge auto-org-badge-blue" }, selectedNode.backup.program || "Automatisches Backup")
-                  ),
-                  selectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
-                    h("span", { className: "auto-org-meta-val" }, selectedNode.backup.schedule)
-                  ),
-                  selectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
-                    h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, selectedNode.backup.target)
-                  ),
-                  selectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
-                    h("span", { className: "auto-org-meta-label" }, "Retention:"),
-                    h("span", { className: "auto-org-meta-val" }, selectedNode.backup.retention)
-                  )
-                ) :
-                h("div", { style: { fontSize: "0.75rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für diesen Ast definiert")
-            ),
-
-            // Volume & File Statistics
-            h("div", { className: "auto-org-inspector-section" },
-              h("div", { className: "auto-org-inspector-section-title" }, "📊 Speicher-Statistiken"),
-              h("div", { className: "auto-org-meta-row" },
-                h("span", { className: "auto-org-meta-label" }, "Dateianzahl:"),
-                h("span", { className: "auto-org-meta-val" }, selectedNode.file_count ? `${selectedNode.file_count.toLocaleString()} Dateien` : "-")
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Keine automatischen Sortierregeln für diesen Ordner hinterlegt.")
               ),
-              h("div", { className: "auto-org-meta-row" },
-                h("span", { className: "auto-org-meta-label" }, "Gesamtgröße:"),
-                h("span", { className: "auto-org-meta-val" }, selectedNode.size_mb ? `${selectedNode.size_mb.toLocaleString()} MB` : "-")
-              )
-            ),
 
-            // Quick Actions
-            h("div", { style: { display: "flex", gap: "0.4rem", marginTop: "auto" } },
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-outline",
-                style: { flex: 1, fontSize: "0.75rem" },
-                onClick: () => toggleExpand(selectedNode.id)
-              }, expandedIds.has(selectedNode.id) ? "Ast Einklappen" : "Ast Ausklappen"),
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-primary",
-                style: { flex: 1, fontSize: "0.75rem" },
-                onClick: () => centerNode(selectedNode)
-              }, "🎯 Zentrieren")
-            )
-          )
+              // Section 4: Syncthing Sync
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
+                fsSelectedNode.syncthing && fsSelectedNode.syncthing.synced ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Status:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
+                    ),
+                    fsSelectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, fsSelectedNode.syncthing.folder_id)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.syncthing.type || "sendreceive")
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
+                      h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
+                        (fsSelectedNode.syncthing.peers && fsSelectedNode.syncthing.peers.length > 0) ? fsSelectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
+              ),
+
+              // Section 5: Backups
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup & Sicherung"),
+                fsSelectedNode.backup && fsSelectedNode.backup.protected ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Programm:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-blue" }, fsSelectedNode.backup.program || "Automatisches Backup")
+                    ),
+                    fsSelectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.backup.schedule)
+                    ),
+                    fsSelectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, fsSelectedNode.backup.target)
+                    ),
+                    fsSelectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Retention:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.backup.retention)
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für dieses Verzeichnis definiert")
+              ),
+
+              // Section 6: Permissions
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔒 POSIX Berechtigungen & Host-Rechte"),
+                fsSelectedNode.permissions ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Besitzer & Gruppe:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.permissions.owner}:${fsSelectedNode.permissions.group}`)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Rechtemaske:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.permissions.mode_str} (${fsSelectedNode.permissions.mode_octal})`)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Agent Leserechte:"),
+                      h("span", { className: `auto-org-badge ${fsSelectedNode.permissions.readable ? "auto-org-badge-green" : "auto-org-badge-red"}` },
+                        fsSelectedNode.permissions.readable ? "✓ Voll lesbar" : "🔒 Zugriff beschränkt"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Berechtigungen konnten nicht ermittelt werden.")
+              )
+            )) :
+            // Radar Selected Node Inspector
+            (selectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
+              h("div", { className: "auto-org-inspector-header" },
+                h("div", null,
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                    h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
+                    h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+                  ),
+                  h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                    `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
+                  )
+                ),
+                h("span", {
+                  className: `auto-org-ampel-badge ${selectedNode.status.state === "INDEXED" || selectedNode.status.state === "PROTECTED" ? "green" : selectedNode.status.state === "PENDING" ? "yellow" : "red"}`,
+                  style: { fontSize: "0.72rem" }
+                }, `${selectedNode.status.symbol} ${selectedNode.status.state}`)
+              ),
+
+              // Exact Host Path
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
+                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
+                  formatUserPath(selectedNode.path)
+                ),
+                h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, selectedNode.status.label)
+              ),
+
+              // Syncthing Radar Details
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
+                selectedNode.syncthing && selectedNode.syncthing.synced ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Status:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
+                    ),
+                    selectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, selectedNode.syncthing.folder_id)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.syncthing.type || "sendreceive (beidseitig)")
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
+                      h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
+                        (selectedNode.syncthing.peers && selectedNode.syncthing.peers.length > 0) ? selectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
+              ),
+
+              // Backup Details
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup-Programme & Schutz"),
+                selectedNode.backup && selectedNode.backup.protected ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Programm:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-blue" }, selectedNode.backup.program || "Automatisches Backup")
+                    ),
+                    selectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.backup.schedule)
+                    ),
+                    selectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, selectedNode.backup.target)
+                    ),
+                    selectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Retention:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.backup.retention)
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.75rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für diesen Ast definiert")
+              ),
+
+              // Volume & File Statistics
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📊 Speicher-Statistiken"),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateianzahl:"),
+                  h("span", { className: "auto-org-meta-val" }, selectedNode.file_count ? `${selectedNode.file_count.toLocaleString()} Dateien` : "-")
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Gesamtgröße:"),
+                  h("span", { className: "auto-org-meta-val" }, selectedNode.size_mb ? `${selectedNode.size_mb.toLocaleString()} MB` : "-")
+                )
+              ),
+
+              // Quick Actions
+              h("div", { style: { display: "flex", gap: "0.4rem", marginTop: "auto" } },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { flex: 1, fontSize: "0.75rem" },
+                  onClick: () => toggleExpand(selectedNode.id)
+                }, expandedIds.has(selectedNode.id) ? "Ast Einklappen" : "Ast Ausklappen"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-primary",
+                  style: { flex: 1, fontSize: "0.75rem" },
+                  onClick: () => centerNode(selectedNode)
+                }, "🎯 Zentrieren")
+              )
+            ))
         ),
 
         // Bottom Legend Footer
         h("div", { className: "auto-org-multi-tree-footer" },
-          h("div", { className: "auto-org-legend-items" },
-            h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
-            h("div", { className: "auto-org-legend-item" },
-              h("span", { className: "auto-org-legend-dot green" }),
-              h("span", null, "🟢 Indexiert & Bereinigt")
+          viewMode === "filesystem" ?
+            h("div", { className: "auto-org-legend-items" },
+              h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot green" }),
+                h("span", null, "🟢 Vollständig indexiert (PostgreSQL)")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "🟡 Teilweise indexiert")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { style: { width: "8px", height: "8px", borderRadius: "50%", background: "#64748b", display: "inline-block" } }),
+                h("span", null, "⚪ Nicht im Index")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "📤 Reorganisations-Quelle (Moves geplant)")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot cyan" }),
+                h("span", null, "📥 Reorganisations-Ziel")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot cyan" }),
+                h("span", null, "🔄 Syncthing Mesh")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot purple" }),
+                h("span", null, "🛡️ Backup-Schutz")
+              )
+            ) :
+            h("div", { className: "auto-org-legend-items" },
+              h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot green" }),
+                h("span", null, "🟢 Indexiert & Bereinigt")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "🟡 Vorschlag / Ausstehend")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot red" }),
+                h("span", null, "🔴 Dumpzone / Unsortiert")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot purple" }),
+                h("span", null, "🟣 Backup Gesichert (pg/docker/rclone)")
+              ),
             ),
-            h("div", { className: "auto-org-legend-item" },
-              h("span", { className: "auto-org-legend-dot yellow" }),
-              h("span", null, "🟡 Vorschlag / Ausstehend")
-            ),
-            h("div", { className: "auto-org-legend-item" },
-              h("span", { className: "auto-org-legend-dot red" }),
-              h("span", null, "🔴 Dumpzone / Unsortiert")
-            ),
-            h("div", { className: "auto-org-legend-item" },
-              h("span", { className: "auto-org-legend-dot purple" }),
-              h("span", null, "🟣 Backup Gesichert (pg/docker/rclone)")
-            ),
-            h("div", { className: "auto-org-legend-item" },
-              h("span", { className: "auto-org-legend-dot cyan" }),
-              h("span", null, "🔄 Syncthing P2P Mesh")
-            )
-          ),
           h("div", null,
-            "💡 Tipp: Klicken Sie auf einen Knoten zum Auf-/Zuklappen oder 'Auto-Fit Screen' zum Einpassen auf 1 Bildschirm."
+            viewMode === "filesystem" ?
+              "💡 Tipp: Klicken Sie auf einen Ordner für die Tiefenprüfung oder 'Neu scannen' zur Live-Aktualisierung." :
+              "💡 Tipp: Klicken Sie auf einen Knoten zum Auf-/Zuklappen oder 'Auto-Fit Screen' zum Einpassen auf 1 Bildschirm."
           )
         )
       )

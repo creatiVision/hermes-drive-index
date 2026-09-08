@@ -416,3 +416,46 @@ def test_system_tree_endpoint():
         assert mobile is not None
         assert any(c["id"] == "drive_mobile_share" for c in mobile["children"])
 
+
+def test_filesystem_tree_full_endpoint():
+    res = client.get("/api/plugins/auto-organizer/filesystem-tree/full")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "summary" in data
+    assert "total_mounts" in data["summary"]
+    assert "total_directories_scanned" in data["summary"]
+    assert "total_files_discovered" in data["summary"]
+    assert "total_files_indexed_in_db" in data["summary"]
+    assert "total_reorg_moves_pending" in data["summary"]
+    assert "mounts" in data
+    assert len(data["mounts"]) >= 1
+
+    # Verify root mount node properties
+    first_mount = data["mounts"][0]
+    assert "path" in first_mount
+    assert "node_type" in first_mount
+    assert "permissions" in first_mount
+    assert "indexing" in first_mount
+    assert "reorganization" in first_mount
+    assert "syncthing" in first_mount
+    assert "backup" in first_mount
+
+
+def test_filesystem_tree_browse_endpoint():
+    res = client.get("/api/plugins/auto-organizer/filesystem-tree/browse?path=/media/work-data")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["path"] == "/media/work-data"
+    assert "children" in data
+    assert isinstance(data["children"], list)
+
+
+def test_filesystem_tree_rescan_endpoint():
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/rescan")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "message" in data
+

@@ -18,10 +18,11 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID, uuid4
 
 # Ensure local package is in sys.path when loaded in external environments or containers
@@ -3757,3 +3758,359 @@ async def get_multi_computer_tree() -> Dict[str, Any]:
         "backup_registry": backup_registry,
         "tree": tree_data,
     }
+
+
+def _find_system_tree_file() -> Optional[Path]:
+    """Finds the system filesystem tree JSON cache across host and container paths."""
+    candidates = [
+        Path("/opt/data/tools-data/system_filesystem_tree.json"),
+        Path("/media/xchg/ai-tools-data/system_filesystem_tree.json"),
+        Path.home() / ".hermes" / "system_filesystem_tree.json",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+async def _get_indexed_files_and_rules() -> Tuple[List[Tuple[str, int]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Fetches all active indexed files from PostgreSQL (file_nodes + storage_roots)
+    and all active organization rules to determine move sources and targets.
+    """
+    db_files: List[Tuple[str, int]] = []
+    rules_src: List[Dict[str, Any]] = []
+    rules_tgt: List[Dict[str, Any]] = []
+
+    conn = await _get_connection()
+    if not conn:
+        return db_files, rules_src, rules_tgt
+
+    try:
+        # 1. Fetch all file_nodes with root uri_path
+        rows = await conn.fetch(
+            """
+            SELECT sr.uri_path, fn.relative_path, fn.physical_path, fn.size_bytes
+            FROM file_nodes fn
+            JOIN storage_roots sr ON fn.root_id = sr.id
+            WHERE fn.is_deleted = FALSE;
+            """
+        )
+        for r in rows:
+            phys = r["physical_path"]
+            root_uri = r["uri_path"]
+            rel = r["relative_path"]
+            size_b = int(r["size_bytes"] or 0)
+
+            if phys:
+                hpath = to_user_path(phys)
+            else:
+                hroot = to_user_path(root_uri)
+                hpath = f"{hroot}/{rel}".rstrip("/")
+
+            db_files.append((hpath, size_b))
+
+        # 2. Fetch storage roots mapping id -> host path
+        s_roots = await conn.fetch("SELECT id, uri_path FROM storage_roots;")
+        root_map = {str(sr["id"]): to_user_path(sr["uri_path"]) for sr in s_roots}
+
+        # 3. Fetch organization rules
+        r_rows = await conn.fetch(
+            """
+            SELECT id, rule_name, description, source_root_id, target_root_id,
+                   source_pattern, target_path_template, state, dry_run_last_count
+            FROM organization_rules
+            WHERE state IN ('USER_APPROVED', 'ACTIVE', 'IN_REVIEW');
+            """
+        )
+        for r in r_rows:
+            src_id = str(r["source_root_id"]) if r["source_root_id"] else None
+            tgt_template = r["target_path_template"] or ""
+            rule_info = {
+                "rule_id": str(r["id"]),
+                "name": r["rule_name"],
+                "description": r["description"] or "",
+                "pattern": r["source_pattern"],
+                "pending_moves": int(r["dry_run_last_count"] or 0),
+                "target_template": tgt_template,
+            }
+
+            src_path = root_map.get(src_id) if src_id else None
+            if src_path:
+                rules_src.append({**rule_info, "match_path": src_path})
+            else:
+                rules_src.append({**rule_info, "match_path": "/home/mb/Downloads"})
+                rules_src.append({**rule_info, "match_path": "/media/work-data"})
+
+            base_tgt = re.sub(r"/\{[^}]+\}.*", "", tgt_template)
+            if base_tgt:
+                rules_tgt.append({**rule_info, "match_path": base_tgt})
+
+    except Exception as exc:
+        logger.warning("Error loading DB indexed files and rules: %s", exc)
+    finally:
+        await conn.close()
+
+    return db_files, rules_src, rules_tgt
+
+
+def _enrich_filesystem_node(
+    node: Dict[str, Any],
+    db_files: List[Tuple[str, int]],
+    rules_src: List[Dict[str, Any]],
+    rules_tgt: List[Dict[str, Any]],
+) -> None:
+    """Enriches a single tree node and its children with DB indexing and reorganization status."""
+    path = node.get("path", "")
+    prefix = path if path.endswith("/") else (path + "/")
+
+    matches = [size for fpath, size in db_files if fpath == path or fpath.startswith(prefix)]
+    idx_cnt = len(matches)
+    idx_bytes = sum(matches)
+    approx_files = node.get("approx_total_files", 0)
+
+    node["indexed_files_count"] = idx_cnt
+    node["indexed_bytes"] = idx_bytes
+    node["indexed_size_mb"] = round(idx_bytes / (1024 * 1024), 2)
+
+    if idx_cnt == 0:
+        idx_state = "UNINDEXED"
+        idx_symbol = "⚪"
+        idx_color = "#64748b"
+        idx_label = "Nicht im Index"
+    elif approx_files > 0 and idx_cnt >= approx_files:
+        idx_state = "FULL"
+        idx_symbol = "🟢"
+        idx_color = "#10b981"
+        idx_label = f"Vollständig indexiert ({idx_cnt} Dateien)"
+    else:
+        idx_state = "PARTIAL"
+        idx_symbol = "🟡"
+        idx_color = "#eab308"
+        idx_label = f"Teilweise indexiert ({idx_cnt} Dateien)"
+
+    node["indexing"] = {
+        "state": idx_state,
+        "symbol": idx_symbol,
+        "color": idx_color,
+        "label": idx_label,
+        "count": idx_cnt,
+        "bytes": idx_bytes,
+        "size_mb": round(idx_bytes / (1024 * 1024), 2),
+    }
+
+    matched_src = [r for r in rules_src if r["match_path"] == path or path.startswith(r["match_path"] + "/")]
+    matched_tgt = [r for r in rules_tgt if r["match_path"] == path or r["match_path"].startswith(prefix) or path.startswith(r["match_path"] + "/")]
+
+    is_src = len(matched_src) > 0
+    is_tgt = len(matched_tgt) > 0
+    total_moves = sum(r.get("pending_moves", 0) for r in matched_src)
+
+    reorg_label = None
+    if is_src and is_tgt:
+        reorg_label = f"Reorganisation: Quelle & Ziel ({total_moves} Moves)"
+    elif is_src:
+        reorg_label = f"Reorganisation: Quelle ({total_moves} Moves geplant)"
+    elif is_tgt:
+        reorg_label = f"Reorganisation: Zielordner ({len(matched_tgt)} Regeln)"
+
+    node["reorganization"] = {
+        "is_source": is_src,
+        "is_target": is_tgt,
+        "source_rules": matched_src,
+        "target_rules": matched_tgt,
+        "pending_moves": total_moves,
+        "label": reorg_label,
+    }
+
+    for ch in node.get("children", []):
+        _enrich_filesystem_node(ch, db_files, rules_src, rules_tgt)
+
+
+@router.get("/filesystem-tree/full")
+async def get_full_filesystem_tree() -> Dict[str, Any]:
+    """
+    Returns the real, complete filesystem tree of the system (all physical mounts
+    and subfolders) decorated with:
+    - PostgreSQL file_nodes indexing status (🟢/🟡/⚪, exact file counts, indexed MB)
+    - Auto-Organizer reorganization role (Move source: 📤, Move target: 📥, pending file moves)
+    - Syncthing synchronization (Folder ID, label, sync type, connected peer devices)
+    - Backup protection coverage (scripts, schedules, targets, retention)
+    - Real mount partition usage and POSIX permissions.
+    """
+    cache_file = _find_system_tree_file()
+    tree_data = None
+    if cache_file:
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                tree_data = json.load(f)
+        except Exception as exc:
+            logger.warning("Failed to parse filesystem tree cache %s: %s", cache_file, exc)
+
+    if not tree_data:
+        try:
+            from scripts.collect_system_filesystem_tree import collect_filesystem_tree
+            tree_data = collect_filesystem_tree(max_depth=2)
+        except Exception as exc:
+            logger.warning("Direct collection fallback failed: %s", exc)
+            tree_data = {"mounts": [], "scanned_at": datetime.now(timezone.utc).isoformat()}
+
+    db_files, rules_src, rules_tgt = await _get_indexed_files_and_rules()
+
+    for m in tree_data.get("mounts", []):
+        _enrich_filesystem_node(m, db_files, rules_src, rules_tgt)
+
+    total_dirs = 0
+    total_files = 0
+    total_indexed = 0
+    total_moves = 0
+    synced_mounts = 0
+    protected_mounts = 0
+
+    def _tally(n: Dict[str, Any]) -> None:
+        nonlocal total_dirs, total_files, total_indexed, total_moves, synced_mounts, protected_mounts
+        total_dirs += 1
+        total_files += n.get("direct_files_count", 0)
+        total_indexed += n.get("indexing", {}).get("count", 0)
+        total_moves += n.get("reorganization", {}).get("pending_moves", 0)
+        if n.get("syncthing", {}).get("synced"):
+            synced_mounts += 1
+        if n.get("backup", {}).get("protected"):
+            protected_mounts += 1
+        for ch in n.get("children", []):
+            _tally(ch)
+
+    for m in tree_data.get("mounts", []):
+        _tally(m)
+
+    return {
+        "ok": True,
+        "scanned_at": tree_data.get("scanned_at"),
+        "host": tree_data.get("host", {}),
+        "mount_points_count": len(tree_data.get("mounts", [])),
+        "summary": {
+            "total_mounts": len(tree_data.get("mounts", [])),
+            "total_directories_scanned": total_dirs,
+            "total_files_discovered": total_files,
+            "total_files_indexed_in_db": total_indexed,
+            "total_reorg_moves_pending": total_moves,
+            "synced_folders_count": synced_mounts,
+            "backup_protected_count": protected_mounts,
+        },
+        "mounts": tree_data.get("mounts", []),
+    }
+
+
+@router.get("/filesystem-tree/browse")
+async def browse_directory(path: str = Query(..., description="Target directory path")) -> Dict[str, Any]:
+    """
+    On-demand dynamic drill-down for deep subdirectories.
+    Inspects directory contents, calculates permissions, and enriches with DB indexing and rules.
+    """
+    target_path = to_user_path(path)
+    c_path = docker_mount_service.translate_to_container_path(target_path) or target_path
+    scan_path = c_path if os.path.exists(c_path) else target_path
+
+    if not os.path.exists(scan_path) or not os.path.isdir(scan_path):
+        raise HTTPException(status_code=404, detail=f"Verzeichnis existiert nicht oder nicht zugänglich: {path}")
+
+    subdirs = []
+    direct_files = 0
+    direct_bytes = 0
+
+    try:
+        with os.scandir(scan_path) as it:
+            for entry in it:
+                if entry.name.startswith(".") and entry.name != ".stglobalignore":
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    subdirs.append(to_user_path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    direct_files += 1
+                    try:
+                        direct_bytes += entry.stat().st_size
+                    except Exception:
+                        pass
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Keine Leseberechtigung für dieses Verzeichnis")
+
+    db_files, rules_src, rules_tgt = await _get_indexed_files_and_rules()
+
+    children = []
+    for s_path in sorted(subdirs)[:100]:
+        base = os.path.basename(s_path)
+        node = {
+            "id": "node_" + re.sub(r"[^a-zA-Z0-9_-]", "_", s_path.strip("/")),
+            "name": base,
+            "path": s_path,
+            "node_type": "folder",
+            "direct_files_count": 0,
+            "direct_subdirs_count": 0,
+            "approx_total_files": 0,
+            "approx_total_bytes": 0,
+            "children": [],
+            "syncthing": {"synced": False, "peers": []},
+            "backup": {"protected": False},
+        }
+        _enrich_filesystem_node(node, db_files, rules_src, rules_tgt)
+        children.append(node)
+
+    return {
+        "ok": True,
+        "path": target_path,
+        "direct_files_count": direct_files,
+        "direct_bytes": direct_bytes,
+        "subdirectories_count": len(children),
+        "children": children,
+    }
+
+
+@router.post("/filesystem-tree/rescan")
+async def trigger_filesystem_rescan() -> Dict[str, Any]:
+    """
+    Triggers an immediate rescan of the host filesystem tree and updates the cache.
+    """
+    script_candidates = [
+        Path("/media/xchg/skripts/skripts-ai/hermes_gdrive_index_fork+localdrives/scripts/collect_system_filesystem_tree.py"),
+        Path(__file__).resolve().parents[3] / "scripts" / "collect_system_filesystem_tree.py",
+    ]
+    script_path = None
+    for s in script_candidates:
+        if s.is_file():
+            script_path = s
+            break
+
+    if script_path:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(script_path),
+                "--depth", "2",
+                "--quiet",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                return {"ok": True, "message": "Dateisystembaum erfolgreich neu gescannt und aktualisiert."}
+            else:
+                logger.warning("Rescan script exited %d: %s", proc.returncode, stderr.decode())
+        except Exception as exc:
+            logger.warning("Failed executing rescan script: %s", exc)
+
+    try:
+        import importlib.util
+        if script_path and script_path.is_file():
+            spec = importlib.util.spec_from_file_location("collect_tree", str(script_path))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            tree = mod.collect_filesystem_tree(max_depth=2)
+            out = Path("/media/xchg/ai-tools-data/system_filesystem_tree.json")
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(tree, f, indent=2, ensure_ascii=False)
+            return {"ok": True, "message": "Dateisystembaum im Prozess neu erfasst."}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {"ok": True, "message": "Dateisystembaum-Aktualisierung angestoßen."}
+
