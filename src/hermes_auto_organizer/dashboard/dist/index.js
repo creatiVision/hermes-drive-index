@@ -110,16 +110,40 @@
         font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.02em;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+        border: 1px solid transparent;
+        outline: none;
+        font-family: inherit;
+      }
+      .auto-org-ampel-badge:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.2);
+      }
+      .auto-org-ampel-badge:active {
+        transform: translateY(0);
+        filter: brightness(0.95);
       }
       .auto-org-ampel-badge.yellow {
         background: rgba(234, 179, 8, 0.15) !important;
         border: 1px solid #eab308 !important;
         color: #fde047 !important;
       }
+      .auto-org-ampel-badge.yellow:hover {
+        background: rgba(234, 179, 8, 0.28) !important;
+        border-color: #facc15 !important;
+        box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+      }
       .auto-org-ampel-badge.green {
         background: rgba(34, 197, 94, 0.15) !important;
         border: 1px solid #22c55e !important;
         color: #86efac !important;
+      }
+      .auto-org-ampel-badge.green:hover {
+        background: rgba(34, 197, 94, 0.28) !important;
+        border-color: #4ade80 !important;
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
       }
       .auto-org-ampel-dot {
         width: 8px;
@@ -1187,11 +1211,18 @@
                 h("span", { className: "auto-org-neural-dot" }),
                 h("span", null, `⚡ ${confPct}%`)
               ),
-              h("span", {
-                className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+              h("button", {
+                type: "button",
+                className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
+                style: { cursor: "pointer" },
+                title: isApproved ? "Freigabe zurücknehmen" : "Kategorie freigeben",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  onToggleApproveCategory && onToggleApproveCategory(cat.id);
+                }
               },
                 h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                isApproved ? "🟢 Freigegeben" : "🟡 Prüfung"
+                isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag (Klicken zum Freigeben)"
               )
             )
           ),
@@ -1347,7 +1378,7 @@
     const [expandedGroups, setExpandedGroups] = useState({});
 
     // Step 1 Drive Approval, Dismiss, and Tree-Position Hover State
-    const [approvedDriveIds, setApprovedDriveIds] = useState(new Set(["d_privat", "d_work", "d_downloads", "d_gdrive"]));
+    const [approvedDriveIds, setApprovedDriveIds] = useState(new Set());
     const [excludedDriveIds, setExcludedDriveIds] = useState(new Set());
     const [hoveredDriveId, setHoveredDriveId] = useState(null);
     const [showExcludedDrives, setShowExcludedDrives] = useState(false);
@@ -1386,7 +1417,14 @@
         if (pscan) {
           setProactiveScan(pscan);
           if (pscan.drives && pscan.drives.length > 0) {
-            setApprovedDriveIds(prev => prev.size > 0 ? prev : new Set(pscan.drives.map(d => d.id)));
+            setApprovedDriveIds(prev => {
+              const driveIds = pscan.drives.map(d => d.id);
+              const hasAnyRealId = Array.from(prev).some(id => driveIds.includes(id));
+              if (!hasAnyRealId) {
+                return new Set(driveIds);
+              }
+              return prev;
+            });
           }
         }
         if (etax) setEmergentTaxonomy(etax);
@@ -1570,11 +1608,12 @@
     const handleApproveEmergentTaxonomy = async () => {
       setLoading(true);
       try {
+        const nextApproved = !isEmergentApproved;
         const res = await apiCall("/taxonomy/emergent/approve", {
           method: "POST",
-          body: JSON.stringify({ approved: true })
+          body: JSON.stringify({ approved: nextApproved })
         });
-        setNotice(res.message || "Natürliches Organisationssystem erfolgreich freigegeben!");
+        setNotice(res.message || (nextApproved ? "Natürliches Organisationssystem erfolgreich freigegeben!" : "Freigabe des Kategoriensystems zurückgesetzt."));
         await loadData();
       } catch (err) {
         setNotice(`Fehler bei der Freigabe: ${err.message}`);
@@ -2337,7 +2376,7 @@
               },
                 // Card Header: Checkbox, Name, Ampel, Dismiss
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                  h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0 } },
                     h("input", {
                       type: "checkbox",
                       className: "auto-org-checkbox",
@@ -2348,8 +2387,15 @@
                     h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive")
                   ),
                   h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                    h("span", {
-                      className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                    h("button", {
+                      type: "button",
+                      className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
+                      style: { cursor: "pointer" },
+                      title: isApproved ? "Klicken zum Zurückstellen (auf Gelb/Vorschlag)" : "Klicken zum Freigeben (auf Grün)",
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        toggleApproveDrive(d.id);
+                      }
                     },
                       h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
                       isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag"
@@ -2557,7 +2603,7 @@
                   },
                     // Header Row: Checkbox, Group Title, Ampel Badge
                     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
-                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                      h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                         h("input", {
                           type: "checkbox",
                           className: "auto-org-checkbox",
@@ -2568,8 +2614,15 @@
                         h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.files.length} Dateien`)
                       ),
                       h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                        h("span", {
-                          className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                        h("button", {
+                          type: "button",
+                          className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
+                          style: { cursor: "pointer" },
+                          title: isApproved ? "Klicken zum Zurückstellen (auf Gelb/Vorschlag)" : "Klicken zum Freigeben (auf Grün)",
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            toggleApproveAnomalyGroup(grp.id);
+                          }
                         },
                           h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
                           isApproved ? "🟢 Freigegeben zur Sortierung" : "🟡 Vorschlag (Ausstehend)"
@@ -2842,11 +2895,18 @@
                 h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
                   "Natürlich entstandenes Organisationssystem (Emergente Taxonomie)"
                 ),
-                h("span", {
-                  className: `auto-org-ampel-badge ${isEmergentApproved ? "green" : "yellow"}`
+                h("button", {
+                  type: "button",
+                  className: `auto-org-ampel-badge ${isEmergentApproved ? "green" : "yellow"}`,
+                  style: { cursor: "pointer" },
+                  title: isEmergentApproved ? "Klicken, um Freigabe zurückzuziehen (auf Gelb/Vorschlag)" : "Klicken, um Kategoriensystem freizugeben (auf Grün)",
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    handleApproveEmergentTaxonomy();
+                  }
                 },
                   h("span", { className: `auto-org-ampel-dot ${isEmergentApproved ? "green" : "yellow"}` }),
-                  isEmergentApproved ? "Freigegeben vom User & Aktiv" : "Vorschlag (Ausstehend)"
+                  isEmergentApproved ? "🟢 Freigegeben vom User & Aktiv" : "🟡 Vorschlag (Klicken zum Freigeben)"
                 )
               ),
               h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
@@ -2860,7 +2920,7 @@
                 style: { padding: "0.6rem 1.3rem", fontWeight: 700 },
                 onClick: handleApproveEmergentTaxonomy,
                 disabled: loading
-              }, isEmergentApproved ? "✓ Kategoriensystem ist freigegeben" : "🟢 Natürlich entstandenes System freigeben")
+              }, isEmergentApproved ? "✓ Kategoriensystem freigegeben (Klicken zum Umschalten)" : "🟢 Natürlich entstandenes System freigeben")
             )
           ),
 
@@ -3102,7 +3162,16 @@
                   h("div", { className: "auto-org-tree-node-title" },
                     h("span", { className: "auto-org-tree-node-icon" }, node.icon || "📁"),
                     h("span", null, node.name),
-                    h("span", { className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}` },
+                    h("button", {
+                      type: "button",
+                      className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`,
+                      style: { cursor: "pointer", border: "none" },
+                      title: isApproved ? "Klicken zum Pausieren" : "Klicken zum Freigeben",
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        handleToggleNodeApproval(node.id, isApproved);
+                      }
+                    },
                       isApproved ? "✓ Freigegeben" : "⏳ Vorschlag / Entwurf"
                     ),
                     node.mount_valid ?
@@ -3622,7 +3691,7 @@
             },
               // Header Row with Checkbox & Ampel Badge
               h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
-                h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                   h("input", {
                     type: "checkbox",
                     className: "auto-org-checkbox",
@@ -3636,11 +3705,21 @@
                   )
                 ),
                 h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" } },
-                  h("span", {
-                    className: `auto-org-ampel-badge ${isActive ? "green" : "yellow"}`
+                  h("button", {
+                    type: "button",
+                    className: `auto-org-ampel-badge ${isActive ? "green" : "yellow"}`,
+                    style: { cursor: "pointer" },
+                    title: isActive ? "Regel ist aktiv im System" : "Klicken, um Regel sofort freizugeben und auf Grün zu schalten",
+                    disabled: adoptingRules,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      if (!isActive) {
+                        handleAdoptSuggestedRules([sr.id]);
+                      }
+                    }
                   },
                     h("span", { className: `auto-org-ampel-dot ${isActive ? "green" : "yellow"}` }),
-                    isActive ? "🟢 Freigegeben vom User" : "🟡 Vorschlag (Ausstehend)"
+                    isActive ? "🟢 Freigegeben vom User" : "🟡 Vorschlag (Klicken zum Freigeben)"
                   ),
                   h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${sr.matched_files_count || 0} Dateien • ${confPct}% Konfidenz`)
                 )
@@ -3705,10 +3784,10 @@
                 h("button", {
                   type: "button",
                   className: `auto-org-btn ${isActive ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
-                  style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600 },
+                  style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600, background: isActive ? "transparent" : "#16a34a", borderColor: isActive ? "#334155" : "#22c55e" },
                   disabled: adoptingRules || isActive,
                   onClick: () => handleAdoptSuggestedRules([sr.id])
-                }, isActive ? "✓ Aktiv" : "🟢 Regel freigeben")
+                }, isActive ? "✓ Aktiv im System" : "🟢 Regel freigeben")
               )
             );
           })
@@ -3939,7 +4018,7 @@
                     },
                       // Card Header Row: Checkbox, Title, Badges, Ampelsystem
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
-                        h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                        h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                           h("input", {
                             type: "checkbox",
                             className: "auto-org-checkbox",
@@ -3953,11 +4032,18 @@
                           )
                         ),
                         h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                          h("span", {
-                            className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
+                          h("button", {
+                            type: "button",
+                            className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`,
+                            style: { cursor: "pointer" },
+                            title: isApproved ? "Freigabe zurücknehmen (auf Gelb/Zurückgestellt)" : "Klicken zum Freigeben zur Ausführung (auf Grün)",
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              toggleGroupApproval(grp.group_id);
+                            }
                           },
                             h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                            isApproved ? "🟢 Freigegeben zur Ausführung" : "🟡 Vorschlag / Zurückgestellt"
+                            isApproved ? "🟢 Freigegeben zur Ausführung" : "🟡 Vorschlag (Klicken zum Freigeben)"
                           ),
                           h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.file_count} Dateien`),
                           h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, `${grp.total_size_kb} KB`)

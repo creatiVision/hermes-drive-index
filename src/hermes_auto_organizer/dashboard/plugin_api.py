@@ -549,7 +549,9 @@ async def get_suggested_rules() -> Dict[str, Any]:
     active_names = set()
     if conn:
         try:
-            active_rules = await conn.fetch("SELECT rule_name FROM organization_rules;")
+            active_rules = await conn.fetch(
+                "SELECT rule_name FROM organization_rules WHERE state = 'USER_APPROVED' OR state = 'ACTIVE';"
+            )
             active_names = {r["rule_name"] for r in active_rules}
 
             tax_matches = await conn.fetch(
@@ -804,6 +806,16 @@ async def get_suggested_rules() -> Dict[str, Any]:
         },
     ]
 
+    name_aliases = {
+        "Verträge & Policen konsolidieren": {"Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"},
+        "Medien & Kreativ-Assets bündeln": {"Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"},
+        "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": {"Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"},
+    }
+
+    for s in suggestions:
+        aliases = name_aliases.get(s["name"], {s["name"]})
+        s["is_already_active"] = bool(aliases.intersection(active_names))
+
     return {
         "ok": True,
         "total_suggestions": len(suggestions),
@@ -823,11 +835,18 @@ async def adopt_suggested_rules(req: AdoptSuggestedRulesRequest) -> Dict[str, An
         sug_resp = await get_suggested_rules()
         suggestions = sug_resp.get("suggested_rules", [])
 
+        name_aliases = {
+            "Verträge & Policen konsolidieren": ["Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"],
+            "Medien & Kreativ-Assets bündeln": ["Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"],
+            "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": ["Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"],
+        }
+
         adopted = 0
         for s in suggestions:
             if req.adopt_all or (req.rule_ids and s["id"] in req.rule_ids):
+                aliases = name_aliases.get(s["name"], [s["name"]])
                 existing = await conn.fetchval(
-                    "SELECT id FROM organization_rules WHERE rule_name = $1", s["name"]
+                    "SELECT id FROM organization_rules WHERE rule_name = ANY($1::text[])", aliases
                 )
                 if existing:
                     await conn.execute(
