@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install -e '.[test]'
+      - run: python -m pip install -e '.[test,organizer]' fastapi httpx
       - run: python -m pytest
 
   package:
