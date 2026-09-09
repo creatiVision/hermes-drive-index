@@ -51,13 +51,13 @@ def _config_from_args(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hermes Google Drive & Local Drives index and file manager")
     parser.add_argument("--version", action="version", version=f"hermes-drive-index {__version__}")
-    parser.add_argument("--config", help="Path to a local TOML config file.")
-    parser.add_argument("--root-folder-id", dest="root_folder_id", help="Drive root folder ID override.")
-    parser.add_argument("--db-path", dest="db_path", help="Index DB path override.")
-    parser.add_argument("--base-dir", dest="base_dir", help="Base directory override.")
+    parser.add_argument("--config", metavar="PATH", help="Path to a local TOML config file.")
+    parser.add_argument("--root-folder-id", dest="root_folder_id", metavar="ID", help="Drive root folder ID override.")
+    parser.add_argument("--db-path", dest="db_path", metavar="PATH", help="Index DB path override.")
+    parser.add_argument("--base-dir", dest="base_dir", metavar="DIR", help="Base directory override.")
     parser.add_argument("--ocr", dest="ocr_enabled", action="store_true", default=None, help="Enable optional OCR for scanned PDFs.")
     parser.add_argument("--no-ocr", dest="ocr_enabled", action="store_false", help="Disable OCR even if config/env enables it.")
-    parser.add_argument("--ocr-pdf-arg", dest="ocr_pdf_args", action="append", help="Override OCRmyPDF preprocessing/config args.")
+    parser.add_argument("--ocr-pdf-arg", dest="ocr_pdf_args", action="append", metavar="ARG", help="Override OCRmyPDF preprocessing/config args.")
     parser.add_argument("--ocr-image", dest="ocr_image_enabled", action="store_true", default=None, help="Enable optional OCR indexing for supported images.")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -81,58 +81,58 @@ def main(argv: list[str] | None = None) -> int:
 
     bench_p = sub.add_parser("benchmark-ocr", help="Run read-only aggregate OCR parameter benchmark.")
     bench_p.add_argument("--json", action="store_true")
-    bench_p.add_argument("--mode", dest="modes", action="append")
-    bench_p.add_argument("--limit", type=int)
-    bench_p.add_argument("--golden")
+    bench_p.add_argument("--mode", dest="modes", action="append", metavar="MODE")
+    bench_p.add_argument("--limit", type=int, metavar="N")
+    bench_p.add_argument("--golden", metavar="PATH")
 
     sp = sub.add_parser("search")
-    sp.add_argument("query")
-    sp.add_argument("--top", type=int, default=8)
+    sp.add_argument("query", metavar="QUERY")
+    sp.add_argument("--top", type=int, default=8, metavar="N")
     sp.add_argument("--json", action="store_true")
 
     # Local drive and cleanup subcommands
     dupes_p = sub.add_parser("duplicates", help="Scan for exact duplicates, near duplicates, and version variants.")
-    dupes_p.add_argument("folder")
+    dupes_p.add_argument("folder", metavar="FOLDER")
     dupes_p.add_argument("--json", action="store_true", default=True)
 
     old_p = sub.add_parser("cleanup-old", help="Analyze old files and generate tiered cleanup inventory.")
-    old_p.add_argument("folder")
-    old_p.add_argument("--days", type=int, default=90)
+    old_p.add_argument("folder", metavar="FOLDER")
+    old_p.add_argument("--days", type=int, default=90, metavar="DAYS")
     old_p.add_argument("--json", action="store_true", default=True)
 
     dl_p = sub.add_parser("organize-downloads", help="Plan sorting flat downloads folder by type and date.")
-    dl_p.add_argument("folder")
+    dl_p.add_argument("folder", metavar="FOLDER")
     dl_p.add_argument("--no-date", dest="by_date", action="store_false", default=True)
     dl_p.add_argument("--json", action="store_true", default=True)
 
     doc_p = sub.add_parser("organize-documents", help="Plan intelligent 4-6 folder structure for documents.")
-    doc_p.add_argument("folder")
+    doc_p.add_argument("folder", metavar="FOLDER")
     doc_p.add_argument("--json", action="store_true", default=True)
 
     # SKILL.md workflow commands
     ana_p = sub.add_parser("organize-analyze", help="Analyze folder: check access, nesting, patterns, duplicates.")
-    ana_p.add_argument("folder")
+    ana_p.add_argument("folder", metavar="FOLDER")
     ana_p.add_argument("--json", action="store_true")
 
     plan_p = sub.add_parser("organize-plan", help="Propose reorganization plan with before-to-after mapping.")
-    plan_p.add_argument("folder")
+    plan_p.add_argument("folder", metavar="FOLDER")
     plan_p.add_argument("--mode", choices=["downloads", "documents"], default="downloads")
     plan_p.add_argument("--json", action="store_true")
 
     exec_p = sub.add_parser("organize-execute", help="Execute reorganization plan upon explicit approval.")
-    exec_p.add_argument("folder")
+    exec_p.add_argument("folder", metavar="FOLDER")
     exec_p.add_argument("--mode", choices=["downloads", "documents"], default="downloads")
-    exec_p.add_argument("--approval", default="", help="User approval string ('approve' or 'go ahead').")
+    exec_p.add_argument("--approval", default="", metavar="STR", help="User approval string ('approve' or 'go ahead').")
     exec_p.add_argument("--dry-run", action="store_true", default=False)
     exec_p.add_argument("--json", action="store_true")
 
     # Local indexing & selective sync
     idx_p = sub.add_parser("index-local", help="Index a local directory directly into the SQLite index.")
-    idx_p.add_argument("folder")
+    idx_p.add_argument("folder", metavar="FOLDER")
     idx_p.add_argument("--json", action="store_true", default=True)
 
     sync_p = sub.add_parser("sync-plan", help="Plan selective sync between designated local and Drive folders.")
-    sync_p.add_argument("--mapping", default=None)
+    sync_p.add_argument("--mapping", default=None, metavar="NAME")
     sync_p.add_argument("--json", action="store_true", default=True)
 
     args = parser.parse_args(argv)
