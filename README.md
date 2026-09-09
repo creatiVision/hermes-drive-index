@@ -322,6 +322,7 @@ The test suite includes:
 - Two-tier hashing verification and extraction cache benchmarks.
 - Cross-device `EXDEV` move and collision safety tests.
 - Public-data guard checks preventing leakage of private tokens or credentials.
+- CI/pull-request verification runs these checks automatically on `push` and `pull_request` (see `.github/workflows/ci.yml`).
 
 ---
 
