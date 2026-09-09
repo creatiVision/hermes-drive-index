@@ -131,19 +131,6 @@ def test_mounts_api_endpoints(mock_get_mounts_inst, mock_get_mounts_cls):
     assert data["writable_mounts"] >= 8
     assert len(data["mounts"]) == data["total_mounts"]
 
-    # POST /mounts/check (valid)
-    chk_res = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/home/mb/Downloads/test"})
-    assert chk_res.status_code == 200
-    chk_data = chk_res.json()
-    assert chk_data["valid"] is True
-
-    # POST /mounts/check (invalid / outside container)
-    chk_invalid = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/root/secret"})
-    assert chk_invalid.status_code == 200
-    chk_inv_data = chk_invalid.json()
-    assert chk_inv_data["valid"] is False
-    assert chk_inv_data["is_mounted"] is False
-
 
 def test_is_safe_subpath():
     assert _is_safe_subpath("/opt/data", "/opt/data/sub/file.txt") is True

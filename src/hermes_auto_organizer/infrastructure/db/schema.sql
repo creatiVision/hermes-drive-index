@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS organization_rules (
     target_root_id UUID REFERENCES storage_roots(id) ON DELETE RESTRICT,
     target_path_template TEXT NOT NULL,
     state VARCHAR(32) DEFAULT 'DRAFT',
+    source VARCHAR(32) DEFAULT 'user',
     dry_run_last_count INT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

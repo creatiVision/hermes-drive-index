@@ -372,17 +372,33 @@ def _scan_directory_node(
 
             for entry in entries:
                 try:
-                    if entry.is_dir(follow_symlinks=False):
+                    # Symlink policy: resolve to the real target and use the ORIGINAL
+                    # directory (no symlink entries in the tree). If the link target
+                    # is a regular file (or unresolvable), skip it entirely.
+                    entry_path = entry.path
+                    is_link = entry.is_symlink()
+                    real_path = os.path.realpath(entry_path) if is_link else None
+                    scan_isdir = entry.is_dir(follow_symlinks=False)
+                    if is_link:
+                        if real_path and os.path.isdir(real_path):
+                            scan_isdir = True
+                            entry_path = real_path
+                        else:
+                            continue
+                    if scan_isdir:
                         direct_dirs += 1
                         if current_depth < max_depth:
                             child_node = _scan_directory_node(
-                                entry.path,
+                                entry_path,
                                 depth,
                                 max_depth,
                                 mount_info,
                                 st_folders,
-                                current_depth=current_depth + 1
+                                current_depth=current_depth + 1,
                             )
+                            if is_link:
+                                child_node["is_symlink"] = True
+                                child_node["real_path"] = real_path
                             children_nodes.append(child_node)
                     elif entry.is_file(follow_symlinks=False):
                         direct_files += 1
@@ -445,6 +461,7 @@ def _scan_directory_node(
         "name": basename,
         "path": path,
         "node_type": node_type,
+        "is_symlink": False,
         "mount_point": mount_info.get("mount_point"),
         "device": mount_info.get("device"),
         "fstype": mount_info.get("fstype"),

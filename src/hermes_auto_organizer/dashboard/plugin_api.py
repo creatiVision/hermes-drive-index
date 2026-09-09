@@ -362,7 +362,7 @@ async def list_mounts() -> Dict[str, Any]:
 @router.get("/sources/tree")
 async def get_source_tree(path: str = Query("/", description="Root path to browse")) -> Dict[str, Any]:
     tree_file = _find_system_tree_file()
-    if tree_file.exists():
+    if tree_file is not None and tree_file.exists():
         try:
             raw = json.loads(tree_file.read_text(encoding="utf-8"))
             mounts = raw.get("mounts", [])
@@ -626,21 +626,25 @@ async def list_rules() -> Dict[str, Any]:
 
     if conn is not None:
         try:
-            repo = PostgresRuleRepository(_db_pool)
+            rows = await conn.fetch(
+                """SELECT id, rule_name, description, source_pattern,
+                          condition_json, target_path_template, state,
+                          dry_run_last_count, created_at, updated_at
+                   FROM organization_rules ORDER BY created_at DESC;"""
+            )
             adopted = [
                 {
-                    "id": str(r.id),
-                    "rule_name": r.rule_name,
-                    "description": r.description,
-                    "source_pattern": r.source_pattern,
-                    "condition_json": r.condition_json,
-                    "target_path_template": r.target_path_template,
-                    "state": r.state.value,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
-                    "thought_process": _build_rule_thought_process(r),
+                    "id": str(r["id"]),
+                    "rule_name": r["rule_name"],
+                    "description": r["description"],
+                    "source_pattern": r["source_pattern"],
+                    "condition_json": r["condition_json"] if isinstance(r["condition_json"], dict) else json.loads(r["condition_json"]),
+                    "target_path_template": r["target_path_template"],
+                    "state": r["state"],
+                    "thought_process": "Regel basiert auf Dateimustern und Schlüsselworterkennung.",
                     "source": "user",
                 }
-                for r in await repo.list_rules()
+                for r in rows
             ]
         except Exception as exc:
             logger.warning("list_rules DB failed: %s", exc)
@@ -1025,6 +1029,11 @@ async def preview_dry_run(req: PreviewRequest) -> Dict[str, Any]:
                 state=RuleState(rr["state"]),
             ))
 
+        actions: List[Dict[str, Any]] = []
+        seen_dest: set[str] = set()
+        collisions = 0
+        blocked = 0
+
         if not rules:
             result = {
                 "batch_id": batch_id,
@@ -1067,11 +1076,6 @@ async def preview_dry_run(req: PreviewRequest) -> Dict[str, Any]:
                 uri_path="/", watch_mode=WatchMode.MANUAL, is_active=True,
             )
 
-            actions: List[Dict[str, Any]] = []
-            seen_dest: set[str] = set()
-            collisions = 0
-            blocked = 0
-
             for rule in rules:
                 intents = DryRunEngine.simulate_rule(rule, nodes, target_root)
                 for intent in intents:
@@ -1095,18 +1099,18 @@ async def preview_dry_run(req: PreviewRequest) -> Dict[str, Any]:
                         "rule_name": rule.rule_name,
                     })
 
-        summary = {
-            "total": len(actions),
-            "valid": len(actions) - collisions - blocked,
-            "collisions": collisions,
-            "blocked": blocked,
-        }
+            summary = {
+                "total": len(actions),
+                "valid": len(actions) - collisions - blocked,
+                "collisions": collisions,
+                "blocked": blocked,
+            }
 
-        result = {
-            "batch_id": batch_id,
-            "actions": actions,
-            "summary": summary,
-        }
+            result = {
+                "batch_id": batch_id,
+                "actions": actions,
+                "summary": summary,
+            }
 
         # Persist to plugin_state
         if conn is not None:
