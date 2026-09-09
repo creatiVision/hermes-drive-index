@@ -18,6 +18,7 @@ from hermes_auto_organizer.dashboard.plugin_api import router
 from hermes_auto_organizer.infrastructure.storage.docker_mounts import (
     DockerMountService,
     docker_mount_service,
+    _is_safe_subpath,
 )
 
 app = FastAPI()
@@ -108,22 +109,33 @@ def test_validate_destination_path_unmounted():
     assert "außerhalb der gemounteten Docker-Verzeichnisse" in res["message"]
 
 
-def test_mounts_api_endpoints():
-    with patch("os.path.exists", return_value=True), patch("os.access", return_value=True):
-        # GET /mounts
-        res = client.get("/api/plugins/auto-organizer/mounts")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["ok"] is True
-        assert data["total_mounts"] >= 10
-        assert data["writable_mounts"] >= 8
-        assert len(data["mounts"]) == data["total_mounts"]
+@patch("hermes_auto_organizer.infrastructure.storage.docker_mounts.DockerMountService.get_mounts")
+@patch("hermes_auto_organizer.infrastructure.storage.docker_mounts.docker_mount_service.get_mounts")
+def test_mounts_api_endpoints(mock_get_mounts_inst, mock_get_mounts_cls):
+    dummy_mounts = [
+        {"host_path": "/home/mb/Downloads", "container_path": "/opt/data/downloads", "is_writable": True, "free_gb": 50, "label": "Downloads (Dumpzone)", "rw": True},
+        {"host_path": "/media/work-data", "container_path": "/opt/data/work-data", "is_writable": True, "free_gb": 50, "label": "Arbeitsdateien (work-data)", "rw": True},
+    ] + [{"host_path": f"/dummy{i}", "container_path": f"/opt/data/dummy{i}", "is_writable": True, "free_gb": 10, "label": f"Dummy{i}", "rw": True} for i in range(6)] + [
+        {"host_path": "/ro1", "container_path": "/opt/data/ro1", "is_writable": False, "free_gb": 10, "label": "RO1", "rw": False},
+        {"host_path": "/ro2", "container_path": "/opt/data/ro2", "is_writable": False, "free_gb": 10, "label": "RO2", "rw": False},
+    ]
+    mock_get_mounts_inst.return_value = dummy_mounts
+    mock_get_mounts_cls.return_value = dummy_mounts
 
-        # POST /mounts/check (valid)
-        chk_res = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/home/mb/Downloads/test"})
-        assert chk_res.status_code == 200
-        chk_data = chk_res.json()
-        assert chk_data["valid"] is True
+    # GET /mounts
+    res = client.get("/api/plugins/auto-organizer/mounts")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["total_mounts"] >= 10
+    assert data["writable_mounts"] >= 8
+    assert len(data["mounts"]) == data["total_mounts"]
+
+    # POST /mounts/check (valid)
+    chk_res = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/home/mb/Downloads/test"})
+    assert chk_res.status_code == 200
+    chk_data = chk_res.json()
+    assert chk_data["valid"] is True
 
     # POST /mounts/check (invalid / outside container)
     chk_invalid = client.post("/api/plugins/auto-organizer/mounts/check", json={"path": "/root/secret"})
@@ -131,3 +143,15 @@ def test_mounts_api_endpoints():
     chk_inv_data = chk_invalid.json()
     assert chk_inv_data["valid"] is False
     assert chk_inv_data["is_mounted"] is False
+
+
+def test_is_safe_subpath():
+    assert _is_safe_subpath("/opt/data", "/opt/data/sub/file.txt") is True
+    assert _is_safe_subpath("/opt/data", "/opt/data") is True
+    assert _is_safe_subpath("/opt/data", "/opt/data_fake/file.txt") is False
+    assert _is_safe_subpath("/opt/data", "/opt/data/../secret") is False
+    assert _is_safe_subpath("/opt/data", "") is False
+    assert _is_safe_subpath("", "/opt/data") is False
+    assert _is_safe_subpath(None, "/opt/data") is False
+    assert _is_safe_subpath("/opt/data", None) is False
+

@@ -21,12 +21,27 @@ from hermes_auto_organizer.dashboard.plugin_api import (
     list_roots,
     dry_run_simulation,
     _DRY_RUN_CACHE,
+    _db_pool,
 )
 from fastapi import FastAPI
 
 app = FastAPI()
 app.include_router(router, prefix="/api/plugins/auto-organizer")
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_db_pool():
+    """Close + reset the global connection pool after each test to avoid
+    cross-test event-loop contamination (the pool is a module-level singleton)."""
+    yield
+    import asyncio
+    import hermes_auto_organizer.dashboard.plugin_api as _api
+    _api._db_pool = None
+    try:
+        asyncio.get_event_loop().run_until_complete(_db_pool.close()) if _db_pool else None
+    except Exception:
+        pass
 
 
 def test_manifest_structure():
