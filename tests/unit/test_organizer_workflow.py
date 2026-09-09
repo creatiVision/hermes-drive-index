@@ -56,8 +56,8 @@ def test_organizer_plan_and_execution_workflow(tmp_path: Path):
     plan = propose_plan(tmp_path, organize_mode="downloads")
     assert plan.counts["moved"] == 2
     presentation = format_plan_presentation(plan)
-    assert "**Totals**:" in presentation
-    assert "Reply 'approve' or 'go ahead' to execute" in presentation
+    assert "Summary Totals" in presentation
+    assert "Reply **'approve'** or **'go ahead'** to execute" in presentation
 
     # Step 7: dry-run mode
     dry_res = execute_on_approval(plan, dry_run=True)

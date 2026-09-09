@@ -121,6 +121,7 @@ def test_mounts_api_endpoints(mock_get_mounts_inst, mock_get_mounts_cls):
     ]
     mock_get_mounts_inst.return_value = dummy_mounts
     mock_get_mounts_cls.return_value = dummy_mounts
+
     # GET /mounts
     res = client.get("/api/plugins/auto-organizer/mounts")
     assert res.status_code == 200

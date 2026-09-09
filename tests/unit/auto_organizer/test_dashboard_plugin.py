@@ -21,12 +21,27 @@ from hermes_auto_organizer.dashboard.plugin_api import (
     list_roots,
     dry_run_simulation,
     _DRY_RUN_CACHE,
+    _db_pool,
 )
 from fastapi import FastAPI
 
 app = FastAPI()
 app.include_router(router, prefix="/api/plugins/auto-organizer")
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_db_pool():
+    """Close + reset the global connection pool after each test to avoid
+    cross-test event-loop contamination (the pool is a module-level singleton)."""
+    yield
+    import asyncio
+    import hermes_auto_organizer.dashboard.plugin_api as _api
+    _api._db_pool = None
+    try:
+        asyncio.get_event_loop().run_until_complete(_db_pool.close()) if _db_pool else None
+    except Exception:
+        pass
 
 
 def test_manifest_structure():
@@ -381,4 +396,186 @@ def test_cross_drive_reconciliation_and_clarification():
         clarify_data = res_clarify.json()
         assert clarify_data["ok"] is True
         assert clarify_data["decision"] == "intended_backup"
+
+
+def test_system_tree_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.get("/api/plugins/auto-organizer/system-tree")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert "summary" in data
+        assert data["summary"]["total_hosts"] == 5
+        assert "hosts" in data
+        assert len(data["hosts"]) == 5
+        assert "syncthing" in data
+        assert "backup_registry" in data
+        assert "docker_backup" in data["backup_registry"]
+        assert "pg_backup" in data["backup_registry"]
+        assert "tree" in data
+        assert len(data["tree"]) == 5
+
+        # Check laptop node
+        laptop = next((h for h in data["tree"] if h["computer_id"] == "kimi-laptop"), None)
+        assert laptop is not None
+        assert laptop["status"]["symbol"] == "🟢"
+        assert len(laptop["children"]) >= 4
+
+        # Check debian1 node
+        debian = next((h for h in data["tree"] if h["computer_id"] == "kimi-debian1"), None)
+        assert debian is not None
+        assert any(c["id"] == "drive_debian1_docker" for c in debian["children"])
+
+        # Check mobile node
+        mobile = next((h for h in data["tree"] if h["computer_id"] == "note14new"), None)
+        assert mobile is not None
+        assert any(c["id"] == "drive_mobile_share" for c in mobile["children"])
+
+
+def test_filesystem_tree_full_endpoint():
+    res = client.get("/api/plugins/auto-organizer/filesystem-tree/full")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "summary" in data
+    assert "total_mounts" in data["summary"]
+    assert "total_directories_scanned" in data["summary"]
+    assert "total_files_discovered" in data["summary"]
+    assert "total_files_indexed_in_db" in data["summary"]
+    assert "total_reorg_moves_pending" in data["summary"]
+    assert "mounts" in data
+    assert len(data["mounts"]) >= 1
+
+    # Verify root mount node properties
+    first_mount = data["mounts"][0]
+    assert "path" in first_mount
+    assert "node_type" in first_mount
+    assert "permissions" in first_mount
+    assert "indexing" in first_mount
+    assert "reorganization" in first_mount
+    assert "syncthing" in first_mount
+    assert "backup" in first_mount
+
+
+def test_filesystem_tree_browse_endpoint():
+    from unittest.mock import MagicMock
+    mock_scandir = MagicMock()
+    mock_scandir.__enter__.return_value = []
+    with patch("os.path.exists", return_value=True), \
+         patch("os.path.isdir", return_value=True), \
+         patch("os.scandir", return_value=mock_scandir):
+        res = client.get("/api/plugins/auto-organizer/filesystem-tree/browse?path=/media/work-data")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["path"] == "/media/work-data"
+        assert "children" in data
+        assert isinstance(data["children"], list)
+
+
+def test_filesystem_tree_rescan_endpoint():
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/rescan")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "message" in data
+
+
+def test_suggested_rule_switch_endpoint():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        # Approve
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "approved"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "approved"
+        assert "rule_test_1" in data["approved_rules"]
+
+        # Exclude
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "excluded"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "excluded"
+        assert "rule_test_1" in data["excluded_rules"]
+        assert "rule_test_1" not in data["approved_rules"]
+
+        # Reset to proposed
+        res = client.post("/api/plugins/auto-organizer/rules/suggested/switch", json={"rule_id": "rule_test_1", "state": "proposed"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "proposed"
+        assert "rule_test_1" not in data["approved_rules"]
+        assert "rule_test_1" not in data["excluded_rules"]
+
+
+def test_emergent_category_switch_endpoint():
+    # Approve category
+    res = client.post("/api/plugins/auto-organizer/taxonomy/emergent/category-switch", json={"category_id": "cat_test_fin", "state": "approved"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "approved"
+    assert "cat_test_fin" in data["approved_category_ids"]
+
+    # Exclude category
+    res = client.post("/api/plugins/auto-organizer/taxonomy/emergent/category-switch", json={"category_id": "cat_test_fin", "state": "excluded"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "excluded"
+    assert "cat_test_fin" in data["excluded_category_ids"]
+    assert "cat_test_fin" not in data["approved_category_ids"]
+
+
+def test_adopt_suggested_rules_offline_fallback():
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=None):
+        res = client.post("/api/plugins/auto-organizer/rules/adopt-suggested", json={"adopt_all": True})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["adopted_count"] >= 1
+
+
+def test_filesystem_node_switch_endpoint():
+    # Approve node (green)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "approved"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "approved"
+    assert data["all_states"]["/media/work-data/projekte"] == "approved"
+
+    # Exclude node (grey)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "excluded"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "excluded"
+
+    # Reset node to proposed (yellow)
+    res = client.post("/api/plugins/auto-organizer/filesystem-tree/node-switch", json={
+        "path": "/media/work-data/projekte",
+        "state": "proposed"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["state"] == "proposed"
+
+    # Get states
+    res = client.get("/api/plugins/auto-organizer/filesystem-tree/node-states")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert "/media/work-data/projekte" in data["states"]
+
+
 

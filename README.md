@@ -221,6 +221,95 @@ hermes-organizer rollback --batch-id <UUID>
 
 ---
 
+## Dashboard Web Plugin — Step-by-Step User Guide
+
+The Hermes Auto-Organizer Dashboard Plugin integrates seamlessly into the Hermes Agent Web Dashboard (`http://localhost:9119/organizer`).
+
+### 1. Opening the Web Interface
+- **Direct URL**: Open your browser at [http://localhost:9119/organizer](http://localhost:9119/organizer).
+- **Navigation via Sidebar**: Click **Plugins** in the left sidebar, then select **Auto Organizer** (or click the top-bar tab `Auto Organizer`).
+- **Troubleshooting Black Screen / Browser Cache**: If you see a blank or black screen, your browser is holding cached JavaScript assets from an earlier version. Perform a **hard reload**:
+  - **Chrome / Firefox / Edge**: Press `Ctrl + Shift + R` or `Ctrl + F5` (on Mac: `Cmd + Shift + R`).
+  - Or test in an Incognito / Private browsing window.
+
+---
+
+### 2. The 4-Step Guided Organization Workflow
+
+The dashboard features a guided, safety-first 4-step wizard:
+
+#### Step 1: Quelle & Ist-Stand (Source Detection & Ingestion)
+- **Proactive Storage Scan**: Hermes automatically identifies active local partitions, mounts, and Google Drive directories.
+- **Select Source Folders**: Choose unorganized dumpzones (e.g. `~/Downloads`, `~/Schreibtisch`) or specific workspace folders to analyze.
+- **Trigger Vectorization**: Click **"Embedding & Indexing starten"** to extract metadata and compute semantic embeddings in PostgreSQL (`pgvector` with HNSW).
+
+#### Step 2: Organisationssystem & Baum-Freigabe (Target Tree Approval)
+- **Synthesized Ideal Tree**: Inspect the target folder structure generated from semantic clusters and historical file naming patterns.
+- **Interactive Multi-Level Tree Explorer**:
+  - View AI confidence matches (`⚡ 95%`) and underlying file count.
+  - Expand sub-branches (`▼` / `▶`) and inspect destination paths.
+  - Use the overlay switch button or right-click to approve (`🟢 Freigeben`), stage (`🟡 Als Vorschlag`), or exclude (`⚪ Nicht einbezogen`).
+
+#### Step 3: Proaktive Filter-Regeln & Zuordnung (Rule Configuration)
+- **Parametric Rule Cards**: Review match conditions (MIME types, keywords, regex, date intervals) and target path templates.
+- **Live Match Previews**: View matched file tallies and target destination paths before executing any move.
+
+#### Step 4: Simulation & Reorganisation (Dry-Run & Sandbox Execution)
+- **Safety Dry-Run**: Every move is pre-simulated and verified for collisions, cross-device (`EXDEV`) boundaries, and write permissions.
+- **Three Visualization Modes**:
+  1. **🌳 Visueller Reorganisations-Pfadbaum** (`VisualDryRunPathTree`): Direct file-by-file tree showing source $\to$ destination with branch connectors (`├──`, `└──`, `──▶`).
+  2. **🕸️ Obsidian Transfer Graph** (`ObsidianFlowGraph`): Particle flow canvas visualizing files streaming from dump sources to target organizational hubs.
+  3. **📑 Semantische Gruppen**: High-level semantic card overview for bulk approvals.
+- **Atomic Execution & 1-Click Rollback**:
+  - Click **"Ausführung starten"** to execute approved moves.
+  - Operations are logged to the LIFO journal. Click **"Journal & Rollback"** in the top bar to revert any batch instantly.
+
+---
+
+### 3. Multi-Computer Tree & Radar Window (🌐 Global File System)
+
+Click the top-bar button **"🌐 Multi-Computer Tree & Radar (5 Hosts)"** at any time to open the full-screen system explorer:
+
+1. **🕸️ `folders2graph` Obsidian-Graph View**:
+   - Modeled after the Obsidian [folders2graph](https://github.com/Ratibus11/folders2graph) plugin.
+   - **Weighted Nodes**: Hub folders with more descendants scale up logarithmically (`radius = 11 + log2(N+1)*3`), making large data directories immediately visible.
+   - **Subtree Folding**: Click any folder node to collapse its subtree (renders with a glowing halo and a `+N` count pill). Click again or `Shift + Click` to unfold recursively.
+   - **Dynamic Physics & HUD Controls**: Zoom, pan, drag nodes, `Auto-Fit`, `[+] Alles`, `[-] Nur Mounts`, and search filter.
+2. **🌲 Realer Dateibaum**:
+   - Hierarchical collapsible directory tree displaying exact host mounts (`/media/...`, `/home/...`).
+   - Shows active backup protection badges (🛡️ `pg-backup.sh`, `docker-backup.sh`, `rclone`) and Syncthing sync state.
+3. **🌐 Multi-Computer Radar**:
+   - Visualizes LAN topology across machines (`kimi-laptop`, `kimi-debian1`, `agy-laptop`, `agy-debian1`, `hermes-laptop`) and their synchronized P2P Syncthing folders.
+
+---
+
+### 4. Interactive State Switching & Hover Rollover
+
+- **Mouse Rollover (Hover-Card)**: Moving your cursor over any folder or file displays the `SyncRolloverTooltip`:
+  - Indicates whether proposed moves or Syncthing transfers exist.
+  - Displays target destination path, rule matches, file sizes, permissions, and indexing state.
+- **Strict Color Rules**:
+  - 🟢 **Grün (`approved`)**: Genehmigt & aktiv einbezogen.
+  - 🟡 **Gelb (`proposed`)**: Als Vorschlag für Synchronisation oder Reorganisation markiert.
+  - ⚪ **Grau (`excluded`)**: Nicht einbezogen / explizit ignoriert.
+- **Right-Click Context Menu**:
+  - **Rechtsklick** auf ein beliebiges Element öffnet das schwebende Obsidian-Kontextmenü.
+  - Wählen Sie per Klick 🟢 *Freigeben*, 🟡 *Als Vorschlag* oder ⚪ *Nicht einbezogen*.
+  - Änderungen werden sofort in der UI reflektiert und persistent im Backend (`POST /api/plugins/auto-organizer/filesystem-tree/node-switch`) gespeichert.
+
+---
+
+### 5. Automated Web UI Test Harness
+
+To test and debug the web UI without opening a desktop browser, run the included headless Chrome test:
+```bash
+./scripts/test_web_ui.js
+```
+This script launches headless Chrome via the Chrome DevTools Protocol (CDP), navigates to `http://127.0.0.1:9119/organizer`, tests all modals, canvas renders, right-click context menus, and captures diagnostic screenshots in `/tmp/screen_organizer.png`, `/tmp/screen_f2g.png`, and `/tmp/screen_context_menu.png`.
+
+
+---
+
 ## Testing & Quality Assurance
 
 Run the test suite:

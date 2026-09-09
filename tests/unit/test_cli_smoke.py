@@ -57,6 +57,21 @@ def test_ocr_flags_thread_to_config(tmp_path):
     assert cfg.ocr_image_enabled is True
 
 
+def test_cli_help_metavar_formatting(capsys):
+    from hermes_auto_organizer.adapters import cli as auto_cli
+
+    with pytest.raises(SystemExit):
+        auto_cli.main(["ingest", "--help"])
+    out = capsys.readouterr().out
+    assert "--root PATH" in out
+    assert "--name NAME" in out
+
+    with pytest.raises(SystemExit):
+        cli.main(["duplicates", "--help"])
+    out = capsys.readouterr().out
+    assert "FOLDER" in out
+
+
 def test_cli_duplicates_and_cleanup_commands(tmp_path, capsys):
     (tmp_path / "junk.tmp").write_text("temp")
     (tmp_path / "pic.png").write_bytes(b"image")

@@ -34,15 +34,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Ingest
     ingest_p = subparsers.add_parser("ingest", help="Scan and ingest a storage root")
-    ingest_p.add_argument("--root", required=True, help="Path to local storage root")
-    ingest_p.add_argument("--name", required=True, help="Unique name for the storage root")
+    ingest_p.add_argument("--root", required=True, metavar="PATH", help="Path to local storage root")
+    ingest_p.add_argument("--name", required=True, metavar="NAME", help="Unique name for the storage root")
 
     # Sync Obsidian
     sync_p = subparsers.add_parser("sync-obsidian", help="Export status and reports to Obsidian Vault")
 
     # Dry-Run
     dry_p = subparsers.add_parser("dry-run", help="Simulate a rule and preview moves")
-    dry_p.add_argument("--rule-id", required=True, help="Rule UUID to dry run")
+    dry_p.add_argument("--rule-id", required=True, metavar="UUID", help="Rule UUID to dry run")
 
     return parser
 

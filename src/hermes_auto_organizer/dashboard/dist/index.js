@@ -110,16 +110,40 @@
         font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.02em;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+        border: 1px solid transparent;
+        outline: none;
+        font-family: inherit;
+      }
+      .auto-org-ampel-badge:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.2);
+      }
+      .auto-org-ampel-badge:active {
+        transform: translateY(0);
+        filter: brightness(0.95);
       }
       .auto-org-ampel-badge.yellow {
         background: rgba(234, 179, 8, 0.15) !important;
         border: 1px solid #eab308 !important;
         color: #fde047 !important;
       }
+      .auto-org-ampel-badge.yellow:hover {
+        background: rgba(234, 179, 8, 0.28) !important;
+        border-color: #facc15 !important;
+        box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+      }
       .auto-org-ampel-badge.green {
         background: rgba(34, 197, 94, 0.15) !important;
         border: 1px solid #22c55e !important;
         color: #86efac !important;
+      }
+      .auto-org-ampel-badge.green:hover {
+        background: rgba(34, 197, 94, 0.28) !important;
+        border-color: #4ade80 !important;
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
       }
       .auto-org-ampel-dot {
         width: 8px;
@@ -272,7 +296,7 @@
 
   const { React } = SDK;
   const h = React.createElement;
-  const { useState, useEffect, useCallback, useRef } = React;
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
   const API_BASE = "/api/plugins/auto-organizer";
 
@@ -542,7 +566,832 @@
     }
   ];
 
+  // Floating Right-Click Context Menu for File/Folder State Switching
+  function FloatingContextMenu({ x, y, node, onClose, onSelectState, currentState }) {
+    const menuRef = useRef(null);
+
+    useEffect(() => {
+      function handleKeyDown(e) {
+        if (e.key === "Escape") onClose();
+      }
+      function handleClickOutside(e) {
+        if (menuRef.current && !menuRef.current.contains(e.target)) {
+          onClose();
+        }
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [onClose]);
+
+    if (!node) return null;
+
+    const menuWidth = 270;
+    const menuHeight = 230;
+    const posX = Math.max(10, Math.min(x, window.innerWidth - menuWidth - 15));
+    const posY = Math.max(10, Math.min(y, window.innerHeight - menuHeight - 15));
+
+    const nodeName = node.name || node.label || node.file_name || node.id || "Element";
+    const nodePath = formatUserPath(node.path || node.uri_path || node.physical_path || node.relative_path || "");
+    const nodeType = node.node_type === "mount" ? "💽 Mount-Punkt" :
+                     node.node_type === "file" ? "📄 Datei" :
+                     node.node_type === "drive" ? "💽 Laufwerk" : "📁 Ordner";
+
+    return h("div", {
+      ref: menuRef,
+      className: "auto-org-context-menu",
+      style: { left: `${posX}px`, top: `${posY}px` },
+      onClick: (e) => e.stopPropagation(),
+      onContextMenu: (e) => e.preventDefault()
+    },
+      h("div", { className: "auto-org-context-menu-header" },
+        h("div", { className: "auto-org-context-menu-title" },
+          h("span", null, nodeType.split(" ")[0]),
+          h("span", null, nodeName)
+        ),
+        nodePath && h("div", { className: "auto-org-context-menu-path", title: nodePath }, nodePath)
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item approve ${currentState === "approved" ? "active" : ""}`,
+        onClick: () => { onSelectState("approved"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "🟢"),
+        h("div", null,
+          h("div", null, "Freigeben (Grün)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Genehmigt & aktiv einbezogen")
+        )
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item propose ${currentState === "proposed" ? "active" : ""}`,
+        onClick: () => { onSelectState("proposed"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "🟡"),
+        h("div", null,
+          h("div", null, "Als Vorschlag (Gelb)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Vorgeschlagener Sync / Transfer")
+        )
+      ),
+      h("button", {
+        type: "button",
+        className: `auto-org-context-menu-item exclude ${currentState === "excluded" ? "active" : ""}`,
+        onClick: () => { onSelectState("excluded"); onClose(); }
+      },
+        h("span", { style: { fontSize: "1.1rem" } }, "⚪"),
+        h("div", null,
+          h("div", null, "Nicht einbezogen (Grau)"),
+          h("span", { className: "auto-org-context-menu-desc" }, "Ausschließen & nicht synchronisieren")
+        )
+      )
+    );
+  }
+
+  // Floating Rollover Card / Tooltip showing proposed sync / move information
+  function SyncRolloverTooltip({ x, y, node, nodeState }) {
+    if (!node) return null;
+
+    const hasSyncthing = Boolean(node.syncthing && (node.syncthing.synced || node.syncthing.folder_id));
+    const hasReorg = Boolean(node.reorganization && (node.reorganization.is_source || node.reorganization.is_target || (node.reorganization.pending_moves && node.reorganization.pending_moves > 0)));
+    const hasProposedSync = Boolean(node.has_proposed_sync || hasSyncthing || hasReorg || node.targetPath || node.proposed_target || node.destination_path);
+
+    const st = nodeState || node.switch_state || (node.indexing && node.indexing.state === "FULL" ? "approved" : "proposed");
+
+    const tooltipWidth = 360;
+    const tooltipHeight = 240;
+    const posX = Math.max(10, Math.min(x + 14, window.innerWidth - tooltipWidth - 20));
+    const posY = Math.max(10, Math.min(y + 14, window.innerHeight - tooltipHeight - 20));
+
+    const stateLabel = st === "approved" ? "🟢 Freigegeben (Aktiv)" :
+                       st === "excluded" ? "⚪ Nicht einbezogen (Ausgeschlossen)" :
+                       "🟡 Vorschlag (Sync / Reorganisation)";
+
+    const nodeName = node.name || node.label || node.file_name || node.id || "Element";
+    const nodePath = formatUserPath(node.path || node.uri_path || node.physical_path || node.relative_path || "");
+    let icon = node.node_type === "mount" ? "💽" :
+               node.node_type === "file" ? "📄" :
+               node.node_type === "drive" ? "💽" : "📁";
+
+    return h("div", {
+      className: "auto-org-rollover-card",
+      style: { left: `${posX}px`, top: `${posY}px` }
+    },
+      h("div", { className: "auto-org-rollover-header" },
+        h("div", { className: "auto-org-rollover-title" },
+          h("span", null, icon),
+          h("span", null, nodeName)
+        ),
+        h("span", { className: `auto-org-rollover-badge-state ${st}` }, stateLabel)
+      ),
+
+      nodePath && h("div", { className: "auto-org-rollover-path" }, nodePath),
+
+      // Proposed Sync / Move Section
+      hasProposedSync ?
+        h("div", { className: "auto-org-rollover-sync-box" },
+          h("div", { className: "auto-org-rollover-sync-title" },
+            h("span", null, "🔄"),
+            h("span", null, "Vorgeschlagener Sync & Reorganisation:")
+          ),
+          hasSyncthing && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Syncthing: ${node.syncthing.label || node.syncthing.folder_id || "P2P Mesh Synchron"}` +
+            (node.syncthing.peers && node.syncthing.peers.length ? ` (Peers: ${node.syncthing.peers.join(", ")})` : "")
+          ),
+          node.reorganization && node.reorganization.is_source && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Quell-Ordner: ${node.reorganization.pending_moves || 0} geplante Moves zur Reorganisation`
+          ),
+          node.reorganization && node.reorganization.is_target && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Ziel-Ordner für ${node.reorganization.target_rules ? node.reorganization.target_rules.length : 1} Filter-Regeln`
+          ),
+          (node.targetPath || node.proposed_target || node.destination_path) && h("div", { className: "auto-org-rollover-sync-detail" },
+            `• Zielpfad: 🎯 ${formatUserPath(node.targetPath || node.proposed_target || node.destination_path)}`
+          )
+        ) : null,
+
+      // Meta grid
+      h("div", { className: "auto-org-rollover-meta-grid" },
+        node.indexing && h("div", null, `Index: ${node.indexing.symbol} ${node.indexing.count || 0} Dateien`),
+        node.size_mb !== undefined && h("div", null, `Größe: ${node.size_mb >= 1024 ? (node.size_mb/1024).toFixed(1) + " GB" : node.size_mb.toFixed(1) + " MB"}`),
+        node.backup && node.backup.protected && h("div", null, `Backup: 🛡️ ${node.backup.program || "Aktiv"}`),
+        node.permissions && h("div", null, `Rechte: ${node.permissions.mode_str} (${node.permissions.owner})`)
+      ),
+
+      h("div", { className: "auto-org-rollover-footer-hint" },
+        h("span", null, "💡"),
+        h("span", null, "Rechtsklick: Status umschalten (Freigeben / Vorschlag / Nicht einbezogen)")
+      )
+    );
+  }
+
+  // Obsidian folders2graph Component (Full Interactive Folder Tree Graph)
+  // Modeled after https://github.com/Ratibus11/folders2graph
+  function Folders2GraphView({
+    fsTree,
+    nodeStates = {},
+    onSwitchNodeState,
+    onOpenContextMenu,
+    onShowRollover,
+    onHideRollover,
+    searchQuery = "",
+    isPaused = false
+  }) {
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+
+    const [foldedIds, setFoldedIds] = useState(() => new Set());
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
+    const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
+
+    const isDraggingRef = useRef(false);
+    const dragNodeRef = useRef(null);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const hasDraggedRef = useRef(false);
+
+    // Build graph hierarchy from fsTree mounts
+    const graphData = useMemo(() => {
+      const nodes = [];
+      const links = [];
+      const processed = new Set();
+
+      const mounts = (fsTree && fsTree.mounts && fsTree.mounts.length > 0) ? fsTree.mounts : [
+        { id: "node_work_data", name: "work-data", path: "/media/work-data", node_type: "mount", children: [
+          { id: "node_work_001", name: "001_cv-bookaccount", path: "/media/work-data/001_cv-bookaccount", node_type: "folder", children: [
+            { id: "node_work_2025", name: "2025", path: "/media/work-data/001_cv-bookaccount/2025", node_type: "folder", children: [
+              { id: "node_file_invoices", name: "Rechnungen_2025.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Rechnungen_2025.pdf", node_type: "file", size_mb: 2.4, targetPath: "/media/privat-data/10_PrivatBüro/Archiv/2025/" }
+            ]}
+          ]},
+          { id: "node_work_002", name: "002_cv-projects", path: "/media/work-data/002_cv-projects", node_type: "folder", children: [] }
+        ]},
+        { id: "node_privat_data", name: "privat-data", path: "/media/privat-data/10_PrivatBüro", node_type: "mount", children: [
+          { id: "node_privat_steuern", name: "Steuern", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", children: [] },
+          { id: "node_privat_archiv", name: "Archiv", path: "/media/privat-data/10_PrivatBüro/Archiv", node_type: "folder", children: [] }
+        ]},
+        { id: "node_xchg", name: "xchg", path: "/media/xchg", node_type: "mount", syncthing: { synced: true, label: "xchg-mesh", peers: ["laptop", "debian1", "Note14new"] }, children: [
+          { id: "node_xchg_kb", name: "ai-knowledge-base", path: "/media/xchg/ai-knowledge-base", node_type: "folder", syncthing: { synced: true }, children: [] },
+          { id: "node_xchg_workspaces", name: "ai-agents-workspaces", path: "/media/xchg/ai-agents-workspaces", node_type: "folder", children: [] }
+        ]},
+        { id: "node_downloads", name: "Downloads", path: "/home/mb/Downloads", node_type: "mount", reorganization: { is_source: true, pending_moves: 45 }, children: [] }
+      ];
+
+      function countDescendants(n) {
+        if (!n.children || n.children.length === 0) return 0;
+        let c = n.children.length;
+        n.children.forEach(ch => { c += countDescendants(ch); });
+        return c;
+      }
+
+      function traverse(n, parentNode = null, depth = 0, angleHint = 0) {
+        if (!n) return;
+        const nid = n.id || n.path || `node_${nodes.length}`;
+        if (processed.has(nid)) return;
+        processed.add(nid);
+
+        const descCount = countDescendants(n);
+        // folders2graph: weight node radius by descendants
+        const radius = n.node_type === "mount" ? 26 :
+                       n.node_type === "file" ? 8 :
+                       Math.max(12, Math.min(22, 11 + Math.log2(descCount + 1) * 3));
+
+        const st = nodeStates[n.path] || nodeStates[nid] || n.switch_state ||
+                   (n.indexing && n.indexing.state === "FULL" ? "approved" : "proposed");
+
+        const hasProposedSync = Boolean(
+          n.has_proposed_sync ||
+          (n.syncthing && (n.syncthing.synced || n.syncthing.folder_id)) ||
+          (n.reorganization && (n.reorganization.is_source || n.reorganization.is_target || (n.reorganization.pending_moves && n.reorganization.pending_moves > 0))) ||
+          n.targetPath || n.proposed_target
+        );
+
+        // Initial coordinates (radial organic layout)
+        let initX = 0;
+        let initY = 0;
+        if (!parentNode) {
+          const mIdx = mounts.indexOf(n);
+          const totalM = mounts.length;
+          const a = (mIdx / totalM) * Math.PI * 2 - Math.PI / 2;
+          initX = Math.cos(a) * 220;
+          initY = Math.sin(a) * 200;
+        } else {
+          const spread = Math.PI * 0.45;
+          const a = angleHint;
+          const dist = 75 + Math.min(60, descCount * 4);
+          initX = parentNode.x + Math.cos(a) * dist;
+          initY = parentNode.y + Math.sin(a) * dist;
+        }
+
+        const gNode = {
+          id: nid,
+          name: n.name || (n.path ? n.path.split("/").filter(Boolean).pop() : nid),
+          path: n.path || "",
+          node_type: n.node_type || (n.disk ? "mount" : "folder"),
+          raw: n,
+          radius: radius,
+          descendantCount: descCount,
+          state: st,
+          hasProposedSync: hasProposedSync,
+          parentId: parentNode ? parentNode.id : null,
+          depth: depth,
+          x: initX,
+          y: initY,
+          vx: 0,
+          vy: 0
+        };
+        nodes.push(gNode);
+
+        if (parentNode) {
+          links.push({
+            sourceId: parentNode.id,
+            targetId: gNode.id,
+            type: "hierarchy"
+          });
+        }
+
+        // Proposed sync / move edge
+        if (n.targetPath || (n.reorganization && n.reorganization.target_rules && n.reorganization.target_rules.length > 0)) {
+          const tgtPath = n.targetPath || (n.reorganization.target_rules[0] && n.reorganization.target_rules[0].match_path);
+          if (tgtPath) {
+            links.push({
+              sourceId: gNode.id,
+              targetPath: tgtPath,
+              type: "proposed_sync",
+              label: "Move / Sync"
+            });
+          }
+        }
+
+        if (n.children && n.children.length > 0) {
+          const childCount = n.children.length;
+          n.children.forEach((ch, cidx) => {
+            const childAngle = childCount === 1 ? angleHint : (angleHint - Math.PI * 0.3 + (cidx * (Math.PI * 0.6)) / (childCount - 1));
+            traverse(ch, gNode, depth + 1, childAngle);
+          });
+        }
+      }
+
+      mounts.forEach((m, idx) => {
+        const a = (idx / mounts.length) * Math.PI * 2 - Math.PI / 2;
+        traverse(m, null, 0, a);
+      });
+
+      return { nodes, links };
+    }, [fsTree, nodeStates]);
+
+    // Track mutable simulation state across frames
+    const simRef = useRef({ nodes: [], links: [], nodeMap: new Map() });
+
+    useEffect(() => {
+      const prevMap = simRef.current.nodeMap;
+      const simNodes = graphData.nodes.map(n => {
+        const prev = prevMap.get(n.id);
+        if (prev) {
+          n.x = prev.x;
+          n.y = prev.y;
+          n.vx = prev.vx;
+          n.vy = prev.vy;
+        }
+        return n;
+      });
+      const nodeMap = new Map(simNodes.map(n => [n.id, n]));
+      simRef.current = { nodes: simNodes, links: graphData.links, nodeMap };
+    }, [graphData]);
+
+    // Check which nodes are visible based on foldedIds
+    const isNodeVisible = useCallback((node) => {
+      if (!node) return false;
+      let curr = node;
+      const map = simRef.current.nodeMap;
+      while (curr && curr.parentId) {
+        if (foldedIds.has(curr.parentId)) return false;
+        curr = map.get(curr.parentId);
+      }
+      return true;
+    }, [foldedIds]);
+
+    // Fold / Unfold toggle
+    const toggleFold = useCallback((nodeId, recursive = false) => {
+      setFoldedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) {
+          next.delete(nodeId);
+          if (recursive) {
+            // Unfold all descendants
+            const map = simRef.current.nodeMap;
+            function unfoldKids(id) {
+              const kids = Array.from(map.values()).filter(n => n.parentId === id);
+              kids.forEach(k => {
+                next.delete(k.id);
+                unfoldKids(k.id);
+              });
+            }
+            unfoldKids(nodeId);
+          }
+        } else {
+          next.add(nodeId);
+        }
+        return next;
+      });
+    }, []);
+
+    // Canvas rendering & physics loop
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      let animId;
+      let frameCount = 0;
+
+      function renderFrame() {
+        const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 900, height: 600 };
+        let width = rect.width || 900;
+        let height = rect.height || 600;
+
+        const dpr = window.devicePixelRatio || 1;
+        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+          canvas.width = width * dpr;
+          canvas.height = height * dpr;
+          canvas.style.width = width + "px";
+          canvas.style.height = height + "px";
+        }
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        // Clear Canvas with Obsidian Dark Cosmic Backdrop
+        ctx.fillStyle = "#090d16";
+        ctx.fillRect(0, 0, width, height);
+
+        // Cosmic background grid dots
+        ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+        const step = 40;
+        for (let gx = 0; gx < width; gx += step) {
+          for (let gy = 0; gy < height; gy += step) {
+            ctx.fillRect(gx, gy, 1, 1);
+          }
+        }
+
+        const t = transformRef.current;
+        const cx = width / 2;
+        const cy = height / 2;
+
+        ctx.translate(cx + t.panX, cy + t.panY);
+        ctx.scale(t.scale, t.scale);
+
+        const { nodes, links, nodeMap } = simRef.current;
+        const visibleNodes = nodes.filter(n => isNodeVisible(n));
+        const visNodeSet = new Set(visibleNodes.map(n => n.id));
+
+        // Physics Simulation Step
+        if (!isPaused) {
+          frameCount++;
+          const damp = 0.86;
+          const kSpring = 0.045;
+          const centerG = 0.0025;
+
+          // Center gravity
+          visibleNodes.forEach(n => {
+            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+            n.vx -= n.x * centerG;
+            n.vy -= n.y * centerG;
+          });
+
+          // Node-to-node repulsion
+          const vLen = visibleNodes.length;
+          for (let i = 0; i < vLen; i++) {
+            const n1 = visibleNodes[i];
+            for (let j = i + 1; j < vLen; j++) {
+              const n2 = visibleNodes[j];
+              const dx = n2.x - n1.x;
+              const dy = n2.y - n1.y;
+              const dist = Math.hypot(dx, dy) || 1;
+              if (dist < 320) {
+                const rep = 1400 / (dist * dist);
+                const rx = (dx / dist) * rep;
+                const ry = (dy / dist) * rep;
+                if (!dragNodeRef.current || dragNodeRef.current.id !== n1.id) {
+                  n1.vx -= rx;
+                  n1.vy -= ry;
+                }
+                if (!dragNodeRef.current || dragNodeRef.current.id !== n2.id) {
+                  n2.vx += rx;
+                  n2.vy += ry;
+                }
+              }
+            }
+          }
+
+          // Link spring forces
+          links.forEach(l => {
+            const s = nodeMap.get(l.sourceId);
+            const tNode = nodeMap.get(l.targetId);
+            if (s && tNode && visNodeSet.has(s.id) && visNodeSet.has(tNode.id)) {
+              const dx = tNode.x - s.x;
+              const dy = tNode.y - s.y;
+              const dist = Math.hypot(dx, dy) || 1;
+              const ideal = (s.radius + tNode.radius + 60);
+              const force = (dist - ideal) * kSpring;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
+                s.vx += fx;
+                s.vy += fy;
+              }
+              if (!dragNodeRef.current || dragNodeRef.current.id !== tNode.id) {
+                tNode.vx -= fx;
+                tNode.vy -= fy;
+              }
+            }
+          });
+
+          // Update positions with velocities
+          visibleNodes.forEach(n => {
+            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+            n.vx *= damp;
+            n.vy *= damp;
+            n.x += n.vx;
+            n.y += n.vy;
+          });
+        }
+
+        // Draw Links
+        links.forEach(l => {
+          const s = nodeMap.get(l.sourceId);
+          const tNode = nodeMap.get(l.targetId);
+          if (!s || !tNode || !visNodeSet.has(s.id) || !visNodeSet.has(tNode.id)) return;
+
+          const isHighlighted = (hoveredNodeId && (hoveredNodeId === s.id || hoveredNodeId === tNode.id));
+
+          if (l.type === "hierarchy") {
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(tNode.x, tNode.y);
+            ctx.strokeStyle = isHighlighted ? "rgba(96, 165, 250, 0.75)" : "rgba(255, 255, 255, 0.12)";
+            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
+            ctx.stroke();
+          } else if (l.type === "proposed_sync") {
+            // Proposed sync / move curved glowing edge
+            ctx.save();
+            ctx.setLineDash([5, 4]);
+            const midX = (s.x + tNode.x) / 2 + (tNode.y - s.y) * 0.2;
+            const midY = (s.y + tNode.y) / 2 - (tNode.x - s.x) * 0.2;
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.quadraticCurveTo(midX, midY, tNode.x, tNode.y);
+            ctx.strokeStyle = "#facc15";
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            // Flowing particle
+            const flowT = (frameCount * 0.02) % 1;
+            const px = (1 - flowT) * (1 - flowT) * s.x + 2 * (1 - flowT) * flowT * midX + flowT * flowT * tNode.x;
+            const py = (1 - flowT) * (1 - flowT) * s.y + 2 * (1 - flowT) * flowT * midY + flowT * flowT * tNode.y;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowColor = "#facc15";
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            ctx.restore();
+          }
+        });
+
+        // Draw Nodes
+        const q = (searchQuery || "").trim().toLowerCase();
+
+        visibleNodes.forEach(n => {
+          const isSelected = selectedNodeId === n.id;
+          const isHovered = hoveredNodeId === n.id;
+          const isFolded = foldedIds.has(n.id) && n.descendantCount > 0;
+          const matchesQ = q && (n.name.toLowerCase().includes(q) || n.path.toLowerCase().includes(q));
+
+          // Color based on user rule:
+          // green: approved
+          // yellow: otherwise (proposed)
+          // grey: not included (excluded)
+          const nodeColor = n.state === "approved" ? "#22c55e" :
+                            n.state === "excluded" ? "#6b7280" : "#facc15";
+
+          ctx.save();
+
+          // Proposed sync beacon ring (pulsating)
+          if (n.hasProposedSync) {
+            const pulse = (Math.sin(frameCount * 0.06) + 1) * 0.5;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.radius + 4 + pulse * 4, 0, Math.PI * 2);
+            ctx.strokeStyle = n.state === "approved" ? "rgba(34, 197, 94, 0.4)" : "rgba(250, 204, 21, 0.5)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+
+          // Node Glow
+          ctx.shadowColor = isHovered || isSelected ? "#ffffff" : nodeColor;
+          ctx.shadowBlur = isHovered ? 18 : isSelected ? 14 : 8;
+
+          // Node Circle Fill
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+          const grad = ctx.createRadialGradient(n.x - n.radius * 0.3, n.y - n.radius * 0.3, 1, n.x, n.y, n.radius);
+          grad.addColorStop(0, isHovered ? "#ffffff" : (n.state === "excluded" ? "#4b5563" : nodeColor));
+          grad.addColorStop(1, n.state === "approved" ? "#15803d" : n.state === "excluded" ? "#1f2937" : "#b45309");
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Node Border
+          ctx.strokeStyle = isHovered ? "#ffffff" : isSelected ? "#60a5fa" : (n.state === "approved" ? "#4ade80" : n.state === "excluded" ? "#9ca3af" : "#fde047");
+          ctx.lineWidth = isHovered ? 3 : 1.8;
+          ctx.stroke();
+
+          // Folded Half-Disc / Ring Indicator (like folders2graph)
+          if (isFolded) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.radius + 3, 0, Math.PI * 2);
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = "#60a5fa";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+            // Folded badge "+N"
+            ctx.fillStyle = "#2563eb";
+            ctx.beginPath();
+            ctx.roundRect(n.x + n.radius - 2, n.y - n.radius - 8, 26, 14, 4);
+            ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 9px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`+${n.descendantCount}`, n.x + n.radius + 11, n.y - n.radius - 1);
+          }
+
+          // Inner Icon
+          let icon = n.node_type === "mount" ? "💽" :
+                     n.node_type === "file" ? "📄" : "📁";
+          ctx.font = `${Math.round(n.radius * 0.95)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(icon, n.x, n.y);
+
+          // Name Label below node
+          ctx.font = matchesQ ? "bold 12px sans-serif" : "11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          const labelY = n.y + n.radius + 4;
+          const textW = ctx.measureText(n.name).width;
+
+          // Label backdrop pill
+          ctx.fillStyle = matchesQ ? "rgba(234, 179, 8, 0.3)" : isHovered ? "rgba(15, 23, 42, 0.95)" : "rgba(15, 23, 42, 0.75)";
+          ctx.beginPath();
+          ctx.roundRect(n.x - textW / 2 - 4, labelY - 1, textW + 8, 16, 4);
+          ctx.fill();
+
+          ctx.fillStyle = matchesQ ? "#fde047" : isHovered ? "#ffffff" : "#cbd5e1";
+          ctx.fillText(n.name, n.x, labelY + 1);
+
+          ctx.restore();
+        });
+
+        ctx.restore();
+        animId = requestAnimationFrame(renderFrame);
+      }
+
+      animId = requestAnimationFrame(renderFrame);
+      return () => cancelAnimationFrame(animId);
+    }, [isPaused, isNodeVisible, foldedIds, hoveredNodeId, selectedNodeId, searchQuery]);
+
+    // Canvas Mouse Interaction Handlers
+    const getNodeAtScreen = useCallback((clientX, clientY) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const cx = canvas.clientWidth / 2;
+      const cy = canvas.clientHeight / 2;
+      const t = transformRef.current;
+
+      const worldX = (clientX - rect.left - cx - t.panX) / t.scale;
+      const worldY = (clientY - rect.top - cy - t.panY) / t.scale;
+
+      const { nodes } = simRef.current;
+      for (const n of nodes) {
+        if (isNodeVisible(n)) {
+          const dist = Math.hypot(n.x - worldX, n.y - worldY);
+          if (dist <= n.radius + 6) return n;
+        }
+      }
+      return null;
+    }, [isNodeVisible]);
+
+    const handleMouseDown = useCallback((e) => {
+      if (e.button !== 0) return; // Left click only
+      const target = getNodeAtScreen(e.clientX, e.clientY);
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+      hasDraggedRef.current = false;
+      isDraggingRef.current = true;
+
+      if (target) {
+        dragNodeRef.current = target;
+      } else {
+        dragNodeRef.current = null;
+      }
+    }, [getNodeAtScreen]);
+
+    const handleMouseMove = useCallback((e) => {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > 4) hasDraggedRef.current = true;
+
+      if (isDraggingRef.current) {
+        if (dragNodeRef.current) {
+          const t = transformRef.current;
+          dragNodeRef.current.x += dx / t.scale;
+          dragNodeRef.current.y += dy / t.scale;
+          dragNodeRef.current.vx = 0;
+          dragNodeRef.current.vy = 0;
+        } else {
+          setTransform(prev => ({
+            ...prev,
+            panX: prev.panX + dx,
+            panY: prev.panY + dy
+          }));
+        }
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      } else {
+        // Rollover hover test
+        const hit = getNodeAtScreen(e.clientX, e.clientY);
+        if (hit) {
+          setHoveredNodeId(hit.id);
+          if (onShowRollover) {
+            onShowRollover(e.clientX, e.clientY, hit.raw, hit.state);
+          }
+        } else {
+          setHoveredNodeId(null);
+          if (onHideRollover) onHideRollover();
+        }
+      }
+    }, [getNodeAtScreen, onShowRollover, onHideRollover]);
+
+    const handleMouseUp = useCallback((e) => {
+      isDraggingRef.current = false;
+      dragNodeRef.current = null;
+
+      if (!hasDraggedRef.current && e.button === 0) {
+        const hit = getNodeAtScreen(e.clientX, e.clientY);
+        if (hit) {
+          setSelectedNodeId(hit.id);
+          if (hit.descendantCount > 0) {
+            // Fold / Unfold on click!
+            toggleFold(hit.id, e.shiftKey);
+          }
+        }
+      }
+    }, [getNodeAtScreen, toggleFold]);
+
+    const handleContextMenu = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const hit = getNodeAtScreen(e.clientX, e.clientY);
+      if (hit && onOpenContextMenu) {
+        onOpenContextMenu(e, hit.raw);
+      }
+    }, [getNodeAtScreen, onOpenContextMenu]);
+
+    const handleWheel = useCallback((e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      setTransform(prev => ({
+        ...prev,
+        scale: Math.max(0.2, Math.min(4.0, prev.scale * factor))
+      }));
+    }, []);
+
+    const handleAutoFit = useCallback(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const { nodes } = simRef.current;
+      const vis = nodes.filter(n => isNodeVisible(n));
+      if (vis.length === 0) return;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      vis.forEach(n => {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+
+      const spanX = Math.max(100, maxX - minX + 80);
+      const spanY = Math.max(100, maxY - minY + 80);
+      const w = canvas.clientWidth || 900;
+      const h = canvas.clientHeight || 600;
+
+      const scale = Math.max(0.3, Math.min(1.5, Math.min(w / spanX, h / spanY)));
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+
+      setTransform({ scale, panX: -midX * scale, panY: -midY * scale });
+    }, [isNodeVisible]);
+
+    return h("div", {
+      className: "auto-org-f2g-container",
+      ref: containerRef,
+      onMouseLeave: () => {
+        if (onHideRollover) onHideRollover();
+        setHoveredNodeId(null);
+      }
+    },
+      // HUD Overlay with Tools
+      h("div", { className: "auto-org-f2g-hud" },
+        h("div", { className: "auto-org-f2g-badge" },
+          h("span", { style: { fontSize: "1.1rem" } }, "🕸️"),
+          h("strong", null, "Obsidian folders2graph Struktur-Graph"),
+          h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, "• Force Physics & Faltung")
+        ),
+        h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap" } },
+          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen" }, "🎯 Auto-Fit"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen" }, "[+] Alles"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => {
+            const map = simRef.current.nodeMap;
+            const mountIds = new Set(Array.from(map.values()).filter(n => n.node_type === "mount").map(n => n.id));
+            setFoldedIds(mountIds);
+          }, title: "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })) }, "+"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })) }, "-"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }) }, "↺ Reset")
+        ),
+        // Color Legend
+        h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
+          h("span", { className: "auto-org-rollover-badge-state approved", style: { fontSize: "0.68rem" } }, "🟢 Freigegeben"),
+          h("span", { className: "auto-org-rollover-badge-state proposed", style: { fontSize: "0.68rem" } }, "🟡 Vorschlag"),
+          h("span", { className: "auto-org-rollover-badge-state excluded", style: { fontSize: "0.68rem" } }, "⚪ Nicht einbezogen"),
+          h("span", { style: { color: "#60a5fa", fontSize: "0.68rem", display: "flex", alignItems: "center", gap: "0.2rem" } },
+            h("span", null, "💡"),
+            h("span", null, "Rechtsklick zum Ändern")
+          )
+        )
+      ),
+
+      // Interactive Graph Canvas
+      h("canvas", {
+        ref: canvasRef,
+        className: "auto-org-f2g-canvas",
+        onMouseDown: handleMouseDown,
+        onMouseMove: handleMouseMove,
+        onMouseUp: handleMouseUp,
+        onWheel: handleWheel,
+        onContextMenu: handleContextMenu
+      })
+    );
+  }
+
   function ObsidianFlowGraph({
+
     isPaused = false,
     speedMultiplier = 1,
     onTogglePause = null,
@@ -948,7 +1797,1922 @@
           formatUserPath(tooltipData.node.path)
         ),
         h("div", { style: { fontSize: "0.72rem", color: "#94a3b8" } },
-          `${tooltipData.node.count} Dateien • Realer Speicherpfad`
+        )
+      )
+    );
+  }
+
+  // Default Fallback Tree Data for Multi-Computer File Tree & Radar
+  const DEFAULT_SYSTEM_TREE = [
+    {
+      id: "comp_laptop",
+      name: "💻 kimi-laptop",
+      path: "host://kimi-laptop",
+      node_type: "computer",
+      computer_id: "kimi-laptop",
+      role: "Haupt-Workstation & Kontrollzentrum",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Online & Synchronisiert" },
+      syncthing: { synced: true, folder_id: null, label: "Syncthing Node (laptop)", type: "mesh", peers: ["debian1", "Note14new"], status: "SYNCED" },
+      backup: { protected: true, program: "pg-backup.sh, docker-backup.sh, rclone", schedule: "Täglich + Boot", target: "/media/xchg/ai-tools-data/", retention: "7 Tage daily / 12 Monate" },
+      file_count: 5240,
+      size_mb: 14250.0,
+      children: [
+        {
+          id: "drive_laptop_xchg",
+          name: "📁 /media/xchg (Shared Exchange)",
+          path: "/media/xchg",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Vollständig indexiert & P2P geteilt" },
+          syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1", "Note14new"], status: "SYNCED" },
+          backup: { protected: true, program: "Syncthing Mesh + pg/docker backup Dumps", schedule: "Echtzeit P2P", target: "kimi-debian1 / Note14new", retention: "Permanent" },
+          file_count: 1840,
+          size_mb: 4820.0,
+          children: [
+            {
+              id: "node_xchg_workspaces",
+              name: "ai-agents-workspaces",
+              path: "/media/xchg/ai-agents-workspaces",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Aktiv" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+              backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich", target: "/media/xchg/ai-agents-workspaces/hermes/backups", retention: "24h Snapshot" },
+              file_count: 480,
+              size_mb: 940.0,
+              children: [
+                { id: "node_xchg_hermes", name: "hermes (.hermes Core & Plugins)", path: "/media/xchg/ai-agents-workspaces/hermes", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Live" }, syncthing: { synced: true, peers: ["debian1"] }, backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich" }, file_count: 310, size_mb: 620.0, children: [] },
+                { id: "node_xchg_kimi", name: "kimi (Kimi-Code CLI Workspace)", path: "/media/xchg/ai-agents-workspaces/kimi", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Live" }, syncthing: { synced: true, peers: ["debian1"] }, backup: { protected: true, program: "Syncthing Mesh" }, file_count: 120, size_mb: 210.0, children: [] }
+              ]
+            },
+            {
+              id: "node_xchg_knowledge",
+              name: "ai-knowledge-base (Obsidian Vault)",
+              path: "/media/xchg/ai-knowledge-base",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Graph-Indexiert" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1", "Note14new"], status: "SYNCED" },
+              backup: { protected: true, program: "graphify-index-obsidian.py", schedule: "Täglich 04:00", target: "/media/xchg/ai-graph", retention: "Knowledge Graph" },
+              file_count: 620,
+              size_mb: 1150.0,
+              children: []
+            },
+            {
+              id: "node_xchg_tools",
+              name: "ai-tools-data (MCP & Backups)",
+              path: "/media/xchg/ai-tools-data",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Backup Depot" },
+              syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+              backup: { protected: true, program: "pg-backup.sh & docker-backup.sh", schedule: "Täglich 03:00 / Boot", target: "Lokales Tausch-Depot", retention: "7 Tage daily / 12 Monate monthly" },
+              file_count: 390,
+              size_mb: 2180.0,
+              children: [
+                { id: "node_xchg_pg_backups", name: "postgres-backups (SQL Dumps)", path: "/media/xchg/ai-tools-data/postgres-backups", node_type: "backup_archive", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Sicherungsarchiv" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup.sh", schedule: "03:00 / Boot" }, file_count: 28, size_mb: 1120.0, children: [] },
+                { id: "node_xchg_docker_backups", name: "docker-backups (Volume Tars)", path: "/media/xchg/ai-tools-data/docker-backups", node_type: "backup_archive", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Sicherungsarchiv" }, syncthing: { synced: true }, backup: { protected: true, program: "docker-backup.sh", schedule: "Täglich 03:00" }, file_count: 14, size_mb: 840.0, children: [] }
+              ]
+            },
+            {
+              id: "node_xchg_handy",
+              name: "Handy (P2P Dropzone Smartphone)",
+              path: "/media/xchg/Handy",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "Mobil Synchronisiert" },
+              syncthing: { synced: true, folder_id: "6yrmn-6pvpe", label: "Handy-Share", type: "sendreceive", peers: ["Note14new"], status: "SYNCED" },
+              backup: { protected: true, program: "Syncthing P2P", schedule: "Echtzeit" },
+              file_count: 350,
+              size_mb: 550.0,
+              children: [
+                { id: "node_handy_share", name: "xx_handy_share (Direktaustausch)", path: "/media/xchg/Handy/xx_handy_share", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "In Sync" }, syncthing: { synced: true, folder_id: "6yrmn-6pvpe", peers: ["Note14new"] }, backup: { protected: false }, file_count: 12, size_mb: 45.0, children: [] },
+                { id: "node_handy_dcim", name: "xx_handy_Bilder(DCIM) (Kamera)", path: "/media/xchg/Handy/xx_handy_Bilder(DCIM)", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "In Sync" }, syncthing: { synced: true, folder_id: "awwa2-tvdxp", peers: ["Note14new"] }, backup: { protected: false }, file_count: 310, size_mb: 460.0, children: [] }
+              ]
+            }
+          ]
+        },
+        {
+          id: "drive_laptop_workdata",
+          name: "💼 /media/work-data (Projekte & Buchhaltung)",
+          path: "/media/work-data",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Strukturiert & Cloud-Gespiegelt" },
+          syncthing: { synced: true, folder_id: "szf3z-s9szj", label: "work-data", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: true, program: "rclone gdrive + pg-backup", schedule: "Periodisch & PG Dump", target: "gdrive://creatiVision", retention: "Cloud Versioning" },
+          file_count: 1420,
+          size_mb: 3840.0,
+          children: [
+            {
+              id: "node_work_bookaccount",
+              name: "001_cv-bookaccount (Buchhaltung & Finanzen)",
+              path: "/media/work-data/001_cv-bookaccount",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Offsite Cloud-Spiegelung" },
+              syncthing: { synced: true, folder_id: "szf3z-s9szj", label: "work-data", type: "sendreceive", peers: ["debian1"] },
+              backup: { protected: true, program: "rclone gdrive sync", schedule: "Periodisch", target: "gdrive://creatiVision/Accounting", retention: "Unbegrenzt (Audit-Proof)" },
+              file_count: 480,
+              size_mb: 1250.0,
+              children: [
+                { id: "node_bookaccount_2025", name: "2025 (Ausgangs- & Eingangsrechnungen)", path: "/media/work-data/001_cv-bookaccount/2025", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Vollständig freigegeben" }, syncthing: { synced: true }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 180, size_mb: 420.0, children: [] },
+                { id: "node_bookaccount_2026", name: "2026 (Laufendes Geschäftsjahr)", path: "/media/work-data/001_cv-bookaccount/2026", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "PENDING", color: "#eab308", symbol: "🟡", label: "Laufende Zuordnung" }, syncthing: { synced: true }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 65, size_mb: 110.0, children: [] }
+              ]
+            },
+            {
+              id: "node_work_projects",
+              name: "002_cv-projects (Webdesign & Kunden)",
+              path: "/media/work-data/002_cv-projects",
+              node_type: "folder",
+              computer_id: "kimi-laptop",
+              status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "In Arbeit / Synchron" },
+              syncthing: { synced: true, folder_id: "szf3z-s9szj", peers: ["debian1"] },
+              backup: { protected: true, program: "Syncthing Mesh (laptop ↔ debian1)" },
+              file_count: 780,
+              size_mb: 2100.0,
+              children: [
+                { id: "node_projects_stulz", name: "stulz (Kundenportal Stulz)", path: "/media/work-data/002_cv-projects/stulz", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Synchron" }, syncthing: { synced: true }, backup: { protected: true }, file_count: 320, size_mb: 950.0, children: [] },
+                { id: "node_projects_wp", name: "webdesign-wp-lc-ps (WordPress Frameworks)", path: "/media/work-data/002_cv-projects/webdesign-wp-lc-ps", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Synchron" }, syncthing: { synced: true }, backup: { protected: true }, file_count: 460, size_mb: 1150.0, children: [] }
+              ]
+            }
+          ]
+        },
+        {
+          id: "drive_laptop_privat",
+          name: "📁 /media/privat-data (10_PrivatBüro)",
+          path: "/media/privat-data/10_PrivatBüro",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Taxonomie freigegeben & geschützt" },
+          syncthing: { synced: true, folder_id: "qm5k5-dm6p4", label: "privat", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: true, program: "pg-backup + rclone gdrive", schedule: "Monatlich + Cloud", target: "gdrive://creatiVision/PrivatBüro", retention: "Permanent" },
+          file_count: 890,
+          size_mb: 2480.0,
+          children: [
+            { id: "node_privat_steuern", name: "Steuern (Steuerbescheide & Erklärungen)", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#10b981", symbol: "🟢", label: "Archiviert & Bereinigt" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup + Cloud" }, file_count: 140, size_mb: 340.0, children: [] },
+            { id: "node_privat_vertraege", name: "Versicherungen_Vertraege (Policen & Verträge)", path: "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege", node_type: "folder", computer_id: "kimi-laptop", status: { state: "PROTECTED", color: "#10b981", symbol: "🟢", label: "Archiviert & Bereinigt" }, syncthing: { synced: true }, backup: { protected: true, program: "pg-backup + Cloud" }, file_count: 95, size_mb: 280.0, children: [] }
+          ]
+        },
+        {
+          id: "drive_laptop_downloads",
+          name: "⬇️ /home/mb/Downloads (Dumpzone)",
+          path: "/home/mb/Downloads",
+          node_type: "drive",
+          computer_id: "kimi-laptop",
+          status: { state: "DUMPZONE", color: "#ef4444", symbol: "🔴", label: "Dumpzone (45 unsortierte Dateien)" },
+          syncthing: { synced: true, folder_id: "downloads", label: "home-mb-Downloads", type: "sendreceive", peers: ["debian1"], status: "SYNCED" },
+          backup: { protected: false, program: null, schedule: "Nicht gesichert (Flüchtige Eingangszone)", target: "Reorganisation in Zielordner empfohlen", retention: "Temporär" },
+          file_count: 45,
+          size_mb: 620.0,
+          children: [
+            { id: "node_dl_invoices", name: "Rechnungen & Belege (→ 001_cv)", path: "/home/mb/Downloads/*.pdf (Belege)", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "PENDING", color: "#eab308", symbol: "🟡", label: "Verschiebung vorgeschlagen" }, syncthing: { synced: true }, backup: { protected: false }, file_count: 22, size_mb: 180.0, children: [] },
+            { id: "node_dl_installer", name: "Installer & Archive (→ Papierkorb)", path: "/home/mb/Downloads/*.deb, *.tar.gz", node_type: "subfolder", computer_id: "kimi-laptop", status: { state: "DUMPZONE", color: "#ef4444", symbol: "🔴", label: "Veraltete Installer" }, syncthing: { synced: true }, backup: { protected: false }, file_count: 9, size_mb: 325.0, children: [] }
+          ]
+        }
+      ]
+    },
+    {
+      id: "comp_debian1",
+      name: "🖥️ kimi-debian1 (Server)",
+      path: "host://192.168.178.111",
+      node_type: "computer",
+      computer_id: "kimi-debian1",
+      role: "PostgreSQL 16, pgvector & Docker Server",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Online & Docker Engine Aktiv" },
+      syncthing: { synced: true, folder_id: null, label: "Syncthing Node (debian1)", type: "mesh", peers: ["laptop"], status: "SYNCED" },
+      backup: { protected: true, program: "docker-backup.sh, pg-backup.sh", schedule: "Täglich 03:00 / Boot", target: "/media/xchg/ai-tools-data/", retention: "7 Tage daily / 12 Monate monthly" },
+      file_count: 4120,
+      size_mb: 8640.0,
+      children: [
+        {
+          id: "drive_debian1_xchg",
+          name: "📁 /media/xchg (P2P Replikation)",
+          path: "/media/xchg",
+          node_type: "drive",
+          computer_id: "kimi-debian1",
+          status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "P2P Spiegel" },
+          syncthing: { synced: true, folder_id: "jfx5u-kwxmw", label: "xchg", peers: ["laptop"], status: "SYNCED" },
+          backup: { protected: true, program: "Syncthing Mesh" },
+          file_count: 1840,
+          size_mb: 4820.0,
+          children: []
+        },
+        {
+          id: "drive_debian1_docker",
+          name: "🐳 /var/lib/docker/volumes (Container Data)",
+          path: "/var/lib/docker/volumes",
+          node_type: "drive",
+          computer_id: "kimi-debian1",
+          status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich 03:00 Gesichert" },
+          syncthing: { synced: false, peers: [] },
+          backup: { protected: true, program: "docker-backup.sh", schedule: "Täglich 03:00", target: "/media/xchg/ai-tools-data/docker-backups", retention: "7 Tage" },
+          file_count: 1650,
+          size_mb: 2400.0,
+          children: [
+            { id: "node_debian1_shared_pg", name: "shared-pg_data (PostgreSQL 16 + pgvector)", path: "/var/lib/docker/volumes/shared-pg_data", node_type: "subfolder", computer_id: "kimi-debian1", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "DB-Gesichert" }, syncthing: { synced: false }, backup: { protected: true, program: "pg-backup.sh", schedule: "Boot + 03:00" }, file_count: 420, size_mb: 1100.0, children: [] },
+            { id: "node_debian1_n8n", name: "n8n_data (Workflows & Execution States)", path: "/var/lib/docker/volumes/n8n_data", node_type: "subfolder", computer_id: "kimi-debian1", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich gesichert" }, syncthing: { synced: false }, backup: { protected: true, program: "docker-backup.sh" }, file_count: 1230, size_mb: 1300.0, children: [] }
+          ]
+        },
+        {
+          id: "drive_debian1_pg_backups",
+          name: "📦 /var/backups/postgres (Lokale SQL-Dumps)",
+          path: "/var/backups/postgres",
+          node_type: "backup_archive",
+          computer_id: "kimi-debian1",
+          status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Konsistente Dumps" },
+          syncthing: { synced: false, peers: [] },
+          backup: { protected: true, program: "pg-backup.sh" },
+          file_count: 28,
+          size_mb: 1420.0,
+          children: []
+        }
+      ]
+    },
+    {
+      id: "comp_hermes",
+      name: "🤖 hermes-laptop (KI-Agent)",
+      path: "host://hermes-laptop",
+      node_type: "computer",
+      computer_id: "hermes-laptop",
+      role: "Autonome Reorganisation, Vektorisierung & Plugin Host",
+      status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Gateway & Watchdog Aktiv" },
+      syncthing: { synced: true, folder_id: null, label: "Shared via xchg", type: "mesh", peers: ["laptop", "debian1"], status: "SYNCED" },
+      backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich", target: "/media/xchg/ai-agents-workspaces/hermes/backups", retention: "24h Snapshots" },
+      file_count: 930,
+      size_mb: 1770.0,
+      children: [
+        { id: "drive_hermes_workspace", name: "🧠 .hermes Core & Plugins", path: "/media/xchg/ai-agents-workspaces/hermes/.hermes", node_type: "drive", computer_id: "hermes-laptop", status: { state: "INDEXED", color: "#10b981", symbol: "🟢", label: "Aktiv" }, syncthing: { synced: true }, backup: { protected: true, program: "hermes-backup-config.sh", schedule: "Stündlich" }, file_count: 310, size_mb: 620.0, children: [] },
+        { id: "drive_hermes_graphify", name: "🌐 Graphify Knowledge Base Index", path: "/media/xchg/ai-graph", node_type: "drive", computer_id: "hermes-laptop", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Täglich 04:00 neu indiziert" }, syncthing: { synced: true }, backup: { protected: true, program: "graphify-index-obsidian.py" }, file_count: 620, size_mb: 1150.0, children: [] }
+      ]
+    },
+    {
+      id: "comp_gdrive",
+      name: "☁️ Google Drive (Cloud Mirror)",
+      path: "gdrive://creatiVision",
+      node_type: "cloud",
+      computer_id: "gdrive",
+      role: "Offsite Cloud-Tresor & Freigabe-Portal",
+      status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Offsite Geschützt & Versioniert" },
+      syncthing: { synced: false, label: "Cloud Connector", type: "cloud", peers: ["laptop"], status: "CLOUD_SYNC" },
+      backup: { protected: true, program: "rclone / gdrive sync", schedule: "Periodisch via Sync-Manager", target: "gdrive://creatiVision", retention: "Google Workspace Drive Versioning" },
+      file_count: 2150,
+      size_mb: 12400.0,
+      children: [
+        { id: "drive_gdrive_accounting", name: "📊 Accounting (Buchhaltung Cloud-Mirror)", path: "gdrive://creatiVision/Accounting", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Spiegelung Aktiv" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 480, size_mb: 1250.0, children: [] },
+        { id: "drive_gdrive_brand", name: "🎨 Brand & Assets (Master Medien)", path: "gdrive://creatiVision/Brand", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Master-Depot" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 820, size_mb: 3450.0, children: [] },
+        { id: "drive_gdrive_backups", name: "📦 Backups (Verschlüsselte Offsite Dumps)", path: "gdrive://creatiVision/Backups", node_type: "cloud_vault", computer_id: "gdrive", status: { state: "PROTECTED", color: "#a855f7", symbol: "🟣", label: "Georedundant" }, syncthing: { synced: false }, backup: { protected: true, program: "rclone gdrive sync" }, file_count: 850, size_mb: 7700.0, children: [] }
+      ]
+    },
+    {
+      id: "comp_mobile",
+      name: "📱 Note14new (Smartphone)",
+      path: "mobile://192.168.178.127",
+      node_type: "computer",
+      computer_id: "note14new",
+      role: "Mobiles Endgerät & Kamera-Upload",
+      status: { state: "INDEXED", color: "#06b6d4", symbol: "🟢", label: "P2P Verbunden (192.168.178.127:22000)" },
+      syncthing: { synced: true, folder_id: "6yrmn-6pvpe", label: "Syncthing Node (Note14new)", type: "p2p_device", peers: ["laptop"], status: "SYNCED" },
+      backup: { protected: true, program: "Syncthing Auto-Replication", schedule: "Echtzeit bei WLAN-Verbindung", target: "/media/xchg/Handy/", retention: "Permanent auf Laptop archiviert" },
+      file_count: 322,
+      size_mb: 505.0,
+      children: [
+        { id: "drive_mobile_share", name: "📤 Handy-Share (Transfer-Ordner)", path: "mobile://Handy-Share", node_type: "drive", computer_id: "note14new", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "P2P Synchron" }, syncthing: { synced: true, folder_id: "6yrmn-6pvpe", peers: ["laptop"] }, backup: { protected: true, program: "Syncthing P2P Replikation" }, file_count: 12, size_mb: 45.0, children: [] },
+        { id: "drive_mobile_dcim", name: "📷 Handy-Bilder (DCIM Kamera-Stream)", path: "mobile://DCIM", node_type: "drive", computer_id: "note14new", status: { state: "INDEXED", color: "#06b6d4", symbol: "🔄", label: "P2P Synchron" }, syncthing: { synced: true, folder_id: "awwa2-tvdxp", peers: ["laptop"] }, backup: { protected: true, program: "Syncthing P2P Replikation" }, file_count: 310, size_mb: 460.0, children: [] }
+      ]
+    }
+  ];
+
+  // Multi-Computer File Tree & Backup/Sync Radar Window Component
+  function MultiComputerTreeWindow({ onClose }) {
+    const canvasRef = useRef(null);
+    const containerRef = useRef(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [viewMode, setViewMode] = useState("folders2graph"); // "folders2graph" | "filesystem" | "radar"
+    const [nodeStates, setNodeStates] = useState({});
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, node, currentState }
+    const [rollover, setRollover] = useState(null); // { x, y, node, nodeState }
+    const [systemTree, setSystemTree] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [activeLayer, setActiveLayer] = useState("all"); // "all" | "syncthing" | "backup" | "traffic_light"
+    const [expandedIds, setExpandedIds] = useState(() => new Set([
+      "comp_laptop", "comp_debian1", "comp_hermes", "comp_gdrive", "comp_mobile",
+      "drive_laptop_xchg", "drive_laptop_workdata", "drive_laptop_privat", "drive_laptop_downloads",
+      "drive_debian1_docker", "drive_mobile_share"
+    ]));
+    const [selectedNode, setSelectedNode] = useState(null);
+    const [hoveredNode, setHoveredNode] = useState(null);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isPaused, setIsPaused] = useState(false);
+
+    // Real System Filesystem Tree State
+    const [fsTree, setFsTree] = useState(null);
+    const [fsLoading, setFsLoading] = useState(true);
+    const [fsFilter, setFsFilter] = useState("all"); // "all" | "indexed" | "unindexed" | "reorg" | "syncthing" | "backup"
+    const [fsExpanded, setFsExpanded] = useState(() => new Set([
+      "node_media_work-data", "node_media_privat-data", "node_media_xchg",
+      "node_media_nosync", "node_media_empty", "node_home", "node_"
+    ]));
+    const [fsSelectedNode, setFsSelectedNode] = useState(null);
+    const [isRescanning, setIsRescanning] = useState(false);
+    const [rescanMsg, setRescanMsg] = useState("");
+
+    // Viewport transform
+    const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const hasDraggedRef = useRef(false);
+
+    // Fetch /system-tree on mount
+    useEffect(() => {
+      let mounted = true;
+      apiCall("/system-tree")
+        .then((data) => {
+          if (mounted && data && data.ok && data.tree) {
+            setSystemTree(data);
+            if (data.tree.length > 0 && !selectedNode) {
+              setSelectedNode(data.tree[0]);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load /system-tree:", err);
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
+      return () => { mounted = false; };
+    }, []);
+
+    // Load full real filesystem tree
+    const loadFsTree = useCallback(() => {
+      setFsLoading(true);
+      apiCall("/filesystem-tree/full")
+        .then((data) => {
+          if (data && data.ok) {
+            setFsTree(data);
+            if (data.node_states) {
+              setNodeStates(prev => Object.assign({}, data.node_states, prev));
+            }
+            if (data.mounts && data.mounts.length > 0) {
+              setFsSelectedNode(prev => prev || data.mounts[0]);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load /filesystem-tree/full:", err);
+        })
+        .finally(() => {
+          setFsLoading(false);
+        });
+    }, []);
+
+    // Node state switcher handler (optimistic UI + backend call)
+    const handleSwitchNodeState = useCallback((node, newState) => {
+      if (!node) return;
+      const key = node.path || node.id;
+      setNodeStates(prev => {
+        const next = Object.assign({}, prev, { [key]: newState });
+        if (node.path) next[node.path] = newState;
+        if (node.id) next[node.id] = newState;
+        return next;
+      });
+
+      apiCall("/filesystem-tree/node-switch", {
+        method: "POST",
+        body: JSON.stringify({
+          path: node.path || node.uri_path || node.id,
+          node_id: node.id,
+          state: newState
+        })
+      }).catch(err => {
+        console.warn("Could not persist node state switch:", err);
+      });
+    }, []);
+
+    const handleOpenContextMenu = useCallback((e, node) => {
+      if (!node) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setRollover(null);
+      const st = nodeStates[node.path] || nodeStates[node.id] || node.switch_state || "proposed";
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        node: node,
+        currentState: st
+      });
+    }, [nodeStates]);
+
+    const handleShowRollover = useCallback((x, y, node, state) => {
+      if (!node) return;
+      setRollover({ x, y, node, nodeState: state });
+    }, []);
+
+    const handleHideRollover = useCallback(() => {
+      setRollover(null);
+    }, []);
+
+
+    useEffect(() => {
+      loadFsTree();
+    }, [loadFsTree]);
+
+    const triggerRescan = useCallback(() => {
+      setIsRescanning(true);
+      setRescanMsg("Scan läuft...");
+      apiCall("/filesystem-tree/rescan", { method: "POST" })
+        .then((res) => {
+          setRescanMsg(res.message || "Dateisystembaum erfolgreich aktualisiert!");
+          setTimeout(() => {
+            loadFsTree();
+            setRescanMsg("");
+          }, 1000);
+        })
+        .catch((err) => {
+          setRescanMsg("Scan fehlgeschlagen");
+          setTimeout(() => setRescanMsg(""), 3000);
+        })
+        .finally(() => {
+          setIsRescanning(false);
+        });
+    }, [loadFsTree]);
+
+    const toggleFsExpand = useCallback((nodeId) => {
+      setFsExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+    }, []);
+
+    const expandAllFs = useCallback(() => {
+      if (!fsTree || !fsTree.mounts) return;
+      const all = new Set();
+      function collect(nodes) {
+        nodes.forEach(n => {
+          all.add(n.id);
+          if (n.children && n.children.length > 0) collect(n.children);
+        });
+      }
+      collect(fsTree.mounts);
+      setFsExpanded(all);
+    }, [fsTree]);
+
+    const collapseAllFs = useCallback(() => {
+      setFsExpanded(new Set());
+    }, []);
+
+    const setFsLevel = useCallback((lvl) => {
+      if (!fsTree || !fsTree.mounts) return;
+      const ids = new Set();
+      function collect(nodes, curLvl) {
+        nodes.forEach(n => {
+          if (curLvl < lvl) {
+            ids.add(n.id);
+            if (n.children) collect(n.children, curLvl + 1);
+          }
+        });
+      }
+      collect(fsTree.mounts, 1);
+      setFsExpanded(ids);
+    }, [fsTree]);
+
+    const hostsTree = (systemTree && systemTree.tree) || DEFAULT_SYSTEM_TREE;
+
+    // Toggle node expand/collapse
+    const toggleExpand = useCallback((nodeId) => {
+      setExpandedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+    }, []);
+
+    const expandAll = useCallback(() => {
+      const all = new Set();
+      function collect(nodes) {
+        nodes.forEach(n => {
+          all.add(n.id);
+          if (n.children && n.children.length > 0) collect(n.children);
+        });
+      }
+      collect(hostsTree);
+      setExpandedIds(all);
+    }, [hostsTree]);
+
+    const collapseAll = useCallback(() => {
+      setExpandedIds(new Set());
+    }, []);
+
+    const setLevel = useCallback((lvl) => {
+      const ids = new Set();
+      function collect(nodes, curLvl) {
+        nodes.forEach(n => {
+          if (curLvl < lvl) {
+            ids.add(n.id);
+            if (n.children) collect(n.children, curLvl + 1);
+          }
+        });
+      }
+      collect(hostsTree, 1);
+      setExpandedIds(ids);
+    }, [hostsTree]);
+
+    // Center node in viewport
+    const centerNode = useCallback((node) => {
+      if (!node || !canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const w = canvas.clientWidth || 1000;
+      const h = canvas.clientHeight || 650;
+      const s = 1.15;
+      const px = (w / 2) - (node.x * s);
+      const py = (h / 2) - (node.y * s);
+      setTransform({ scale: s, panX: px, panY: py });
+    }, []);
+
+    // Compute Layout Positions
+    const layout = useMemo(() => {
+      const canvas = canvasRef.current;
+      const width = canvas ? canvas.clientWidth : 1100;
+      const height = canvas ? canvas.clientHeight : 680;
+      const cx = width / 2;
+      const cy = height / 2;
+
+      const nodes = [];
+      const links = [];
+      const crossLinks = [];
+
+      // Central Backbone Hub
+      const centralHub = {
+        id: "hub_lan_backbone",
+        name: "🌐 LAN Mesh & Sync Backbone",
+        path: "LAN 192.168.178.0/24 • Syncthing Ring • Offsite Cloud",
+        node_type: "hub",
+        computer_id: "backbone",
+        x: cx,
+        y: cy,
+        radius: 26,
+        color: "#6366f1",
+        icon: "🌐",
+        isHub: true,
+        visible: true,
+        status: { state: "PROTECTED", color: "#6366f1", symbol: "🌐", label: "Backbone Aktiv" },
+        file_count: 12800,
+        size_mb: 28400.0,
+        syncthing: { synced: true, label: "P2P Mesh", type: "mesh", peers: ["laptop", "debian1", "Note14new"] },
+        backup: { protected: true, program: "pg-backup.sh, docker-backup.sh", schedule: "Täglich + Boot" }
+      };
+      nodes.push(centralHub);
+
+      // Host Positions (Radial Circle around Backbone)
+      const hostAngles = {
+        "comp_laptop": -0.75 * Math.PI,
+        "comp_gdrive": -0.22 * Math.PI,
+        "comp_debian1": 0.15 * Math.PI,
+        "comp_mobile": 0.52 * Math.PI,
+        "comp_hermes": 0.92 * Math.PI
+      };
+      const hostRadius = 175;
+
+      hostsTree.forEach((host, hIdx) => {
+        const hAngle = hostAngles[host.id] !== undefined ? hostAngles[host.id] : (-0.8 * Math.PI + (hIdx * 0.4 * Math.PI));
+        const hx = cx + Math.cos(hAngle) * hostRadius;
+        const hy = cy + Math.sin(hAngle) * hostRadius;
+
+        const hostNode = Object.assign({}, host, {
+          x: hx,
+          y: hy,
+          radius: 24,
+          angle: hAngle,
+          visible: true,
+          collapsedCount: host.children ? host.children.length : 0,
+          isExpanded: expandedIds.has(host.id)
+        });
+        nodes.push(hostNode);
+
+        // Link Hub -> Host
+        links.push({
+          sourceId: centralHub.id,
+          targetId: hostNode.id,
+          p0: { x: centralHub.x, y: centralHub.y },
+          p1: { x: hostNode.x, y: hostNode.y },
+          color: hostNode.status.color,
+          type: "backbone"
+        });
+
+        // Child Drives
+        if (host.children && host.children.length > 0) {
+          const isHostExpanded = expandedIds.has(host.id);
+          const driveCount = host.children.length;
+          const driveSpan = Math.min(Math.PI * 0.75, 0.28 * driveCount);
+          const driveDist = 135;
+
+          host.children.forEach((drive, dIdx) => {
+            const driveAngle = driveCount === 1 ? hAngle : (hAngle - driveSpan / 2 + (dIdx * driveSpan) / (driveCount - 1));
+            const dx = hx + Math.cos(driveAngle) * driveDist;
+            const dy = hy + Math.sin(driveAngle) * driveDist;
+
+            const isDriveExpanded = isHostExpanded && expandedIds.has(drive.id);
+            const driveNode = Object.assign({}, drive, {
+              x: dx,
+              y: dy,
+              radius: 18,
+              angle: driveAngle,
+              visible: isHostExpanded,
+              collapsedCount: drive.children ? drive.children.length : 0,
+              isExpanded: isDriveExpanded
+            });
+            nodes.push(driveNode);
+
+            if (isHostExpanded) {
+              links.push({
+                sourceId: hostNode.id,
+                targetId: driveNode.id,
+                p0: { x: hostNode.x, y: hostNode.y },
+                p1: { x: driveNode.x, y: driveNode.y },
+                color: driveNode.status.color,
+                type: "tree"
+              });
+            }
+
+            // Folders / Subfolders
+            if (drive.children && drive.children.length > 0) {
+              const folderCount = drive.children.length;
+              const folderSpan = Math.min(Math.PI * 0.5, 0.22 * folderCount);
+              const folderDist = 110;
+
+              drive.children.forEach((folder, fIdx) => {
+                const folderAngle = folderCount === 1 ? driveAngle : (driveAngle - folderSpan / 2 + (fIdx * folderSpan) / (folderCount - 1));
+                const fx = dx + Math.cos(folderAngle) * folderDist;
+                const fy = dy + Math.sin(folderAngle) * folderDist;
+
+                const isFolderExpanded = isDriveExpanded && expandedIds.has(folder.id);
+                const folderNode = Object.assign({}, folder, {
+                  x: fx,
+                  y: fy,
+                  radius: 14,
+                  angle: folderAngle,
+                  visible: isDriveExpanded,
+                  collapsedCount: folder.children ? folder.children.length : 0,
+                  isExpanded: isFolderExpanded
+                });
+                nodes.push(folderNode);
+
+                if (isDriveExpanded) {
+                  links.push({
+                    sourceId: driveNode.id,
+                    targetId: folderNode.id,
+                    p0: { x: driveNode.x, y: driveNode.y },
+                    p1: { x: driveNode.x, y: driveNode.y },
+                    color: folderNode.status.color,
+                    type: "tree"
+                  });
+                }
+
+                // Subfolder leaves
+                if (folder.children && folder.children.length > 0) {
+                  const subCount = folder.children.length;
+                  const subSpan = Math.min(Math.PI * 0.4, 0.18 * subCount);
+                  const subDist = 85;
+
+                  folder.children.forEach((sub, sIdx) => {
+                    const subAngle = subCount === 1 ? folderAngle : (folderAngle - subSpan / 2 + (sIdx * subSpan) / (subCount - 1));
+                    const sx = fx + Math.cos(subAngle) * subDist;
+                    const sy = fy + Math.sin(subAngle) * subDist;
+
+                    const subNode = Object.assign({}, sub, {
+                      x: sx,
+                      y: sy,
+                      radius: 11,
+                      angle: subAngle,
+                      visible: isFolderExpanded,
+                      collapsedCount: 0,
+                      isExpanded: false
+                    });
+                    nodes.push(subNode);
+
+                    if (isFolderExpanded) {
+                      links.push({
+                        sourceId: folderNode.id,
+                        targetId: subNode.id,
+                        p0: { x: folderNode.x, y: folderNode.y },
+                        p1: { x: subNode.x, y: subNode.y },
+                        color: subNode.status.color,
+                        type: "tree"
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Cross-Cutting P2P Syncthing & Backup Links
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+      function addCrossLink(sId, tId, color, type, label) {
+        const s = nodeMap.get(sId);
+        const t = nodeMap.get(tId);
+        if (s && t && s.visible && t.visible) {
+          crossLinks.push({
+            sourceId: sId,
+            targetId: tId,
+            p0: { x: s.x, y: s.y },
+            p1: { x: t.x, y: t.y },
+            color: color,
+            type: type,
+            label: label
+          });
+        }
+      }
+
+      // Syncthing Links (cyan)
+      addCrossLink("drive_laptop_xchg", "drive_debian1_xchg", "#06b6d4", "syncthing", "xchg P2P");
+      addCrossLink("drive_laptop_workdata", "comp_debian1", "#06b6d4", "syncthing", "work-data P2P");
+      addCrossLink("node_handy_share", "drive_mobile_share", "#06b6d4", "syncthing", "Handy-Share P2P");
+      addCrossLink("node_handy_dcim", "drive_mobile_dcim", "#06b6d4", "syncthing", "DCIM Foto P2P");
+
+      // Backup Links (purple/amber)
+      addCrossLink("node_debian1_shared_pg", "node_xchg_pg_backups", "#a855f7", "backup", "pg-backup.sh");
+      addCrossLink("drive_debian1_docker", "node_xchg_docker_backups", "#d97706", "backup", "docker-backup.sh");
+      addCrossLink("node_work_bookaccount", "drive_gdrive_accounting", "#a855f7", "backup", "rclone gdrive");
+      addCrossLink("drive_laptop_privat", "drive_gdrive_backups", "#a855f7", "backup", "rclone gdrive");
+      addCrossLink("node_xchg_knowledge", "drive_hermes_graphify", "#10b981", "backup", "graphify sync");
+
+      return { nodes, links, crossLinks };
+    }, [hostsTree, expandedIds]);
+
+    // Auto-fit to Screen Algorithm
+    const autoFitScreen = useCallback(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const width = canvas.clientWidth || 1000;
+      const height = canvas.clientHeight || 650;
+      const visibleNodes = layout.nodes.filter(n => n.visible);
+      if (visibleNodes.length === 0) return;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      visibleNodes.forEach(n => {
+        const pad = (n.radius || 20) + 40;
+        minX = Math.min(minX, n.x - pad);
+        maxX = Math.max(maxX, n.x + pad);
+        minY = Math.min(minY, n.y - pad);
+        maxY = Math.max(maxY, n.y + pad);
+      });
+
+      const boxW = Math.max(maxX - minX, 150);
+      const boxH = Math.max(maxY - minY, 150);
+      const scaleX = (width - 60) / boxW;
+      const scaleY = (height - 60) / boxH;
+      const newScale = Math.max(0.35, Math.min(scaleX, scaleY, 1.25));
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const newPanX = (width / 2) - (centerX * newScale);
+      const newPanY = (height / 2) - (centerY * newScale);
+
+      setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+    }, [layout]);
+
+    // Trigger autoFitScreen on initial render or resize
+    useEffect(() => {
+      const t = setTimeout(() => {
+        autoFitScreen();
+      }, 45);
+      return () => clearTimeout(t);
+    }, [autoFitScreen]);
+
+    // Canvas Render Loop
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      let animationFrameId;
+      const width = canvas.clientWidth || 1000;
+      const height = canvas.clientHeight || 650;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+
+      const startTime = Date.now();
+
+      function render() {
+        const now = Date.now();
+        const elapsed = isPaused ? 0 : (now - startTime) / 1000;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        // Clear Background with Deep Cosmic Obsidian Theme
+        ctx.fillStyle = "#080c14";
+        ctx.fillRect(0, 0, width, height);
+
+        // Faint Star Grid Dots
+        ctx.fillStyle = "rgba(51, 65, 85, 0.22)";
+        for (let gx = 30; gx < width; gx += 45) {
+          for (let gy = 30; gy < height; gy += 45) {
+            ctx.fillRect(gx, gy, 1.2, 1.2);
+          }
+        }
+
+        // Apply Viewport Pan & Zoom
+        ctx.save();
+        ctx.translate(transformRef.current.panX, transformRef.current.panY);
+        ctx.scale(transformRef.current.scale, transformRef.current.scale);
+
+        // 1. Draw Tree Hierarchy Links
+        layout.links.forEach(link => {
+          ctx.beginPath();
+          ctx.moveTo(link.p0.x, link.p0.y);
+
+          // Subtle curved path
+          const midX = (link.p0.x + link.p1.x) / 2;
+          const midY = (link.p0.y + link.p1.y) / 2;
+          ctx.quadraticCurveTo(midX, midY, link.p1.x, link.p1.y);
+
+          let alpha = 0.45;
+          if (activeLayer === "syncthing") alpha = 0.15;
+          if (activeLayer === "backup") alpha = 0.15;
+
+          ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+        });
+
+        // 2. Draw Cross-Cutting Syncthing P2P Mesh Links (Cyan with Flowing Packets)
+        if (activeLayer === "all" || activeLayer === "syncthing") {
+          layout.crossLinks.filter(cl => cl.type === "syncthing").forEach(cl => {
+            const dx = cl.p1.x - cl.p0.x;
+            const dy = cl.p1.y - cl.p0.y;
+            const cx1 = cl.p0.x + dx * 0.5 - dy * 0.22;
+            const cy1 = cl.p0.y + dy * 0.5 + dx * 0.22;
+
+            ctx.beginPath();
+            ctx.moveTo(cl.p0.x, cl.p0.y);
+            ctx.quadraticCurveTo(cx1, cy1, cl.p1.x, cl.p1.y);
+
+            ctx.strokeStyle = "rgba(6, 182, 212, 0.75)";
+            ctx.lineWidth = 2.4;
+            ctx.setLineDash([5, 4]);
+            ctx.shadowColor = "#06b6d4";
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.shadowBlur = 0;
+
+            // Flowing Cyan Syncthing Data Particles
+            if (!isPaused) {
+              const particleT = (elapsed * 0.35) % 1.0;
+              const inv = 1 - particleT;
+              const px = inv * inv * cl.p0.x + 2 * inv * particleT * cx1 + particleT * particleT * cl.p1.x;
+              const py = inv * inv * cl.p0.y + 2 * inv * particleT * cy1 + particleT * particleT * cl.p1.y;
+
+              ctx.beginPath();
+              ctx.arc(px, py, 3.8, 0, Math.PI * 2);
+              ctx.fillStyle = "#67e8f9";
+              ctx.shadowColor = "#06b6d4";
+              ctx.shadowBlur = 12;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          });
+        }
+
+        // 3. Draw Cross-Cutting Backup Flow Links (Purple/Amber with Flowing Snapshots)
+        if (activeLayer === "all" || activeLayer === "backup") {
+          layout.crossLinks.filter(cl => cl.type === "backup").forEach(cl => {
+            const dx = cl.p1.x - cl.p0.x;
+            const dy = cl.p1.y - cl.p0.y;
+            const cx1 = cl.p0.x + dx * 0.5 + dy * 0.2;
+            const cy1 = cl.p0.y + dy * 0.5 - dx * 0.2;
+
+            ctx.beginPath();
+            ctx.moveTo(cl.p0.x, cl.p0.y);
+            ctx.quadraticCurveTo(cx1, cy1, cl.p1.x, cl.p1.y);
+
+            ctx.strokeStyle = cl.color === "#a855f7" ? "rgba(168, 85, 247, 0.8)" : "rgba(217, 119, 6, 0.8)";
+            ctx.lineWidth = 2.2;
+            ctx.shadowColor = cl.color;
+            ctx.shadowBlur = 9;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Flowing Backup Snapshot Particles
+            if (!isPaused) {
+              const particleT = (elapsed * 0.28) % 1.0;
+              const inv = 1 - particleT;
+              const px = inv * inv * cl.p0.x + 2 * inv * particleT * cx1 + particleT * particleT * cl.p1.x;
+              const py = inv * inv * cl.p0.y + 2 * inv * particleT * cy1 + particleT * particleT * cl.p1.y;
+
+              ctx.beginPath();
+              ctx.arc(px, py, 4.0, 0, Math.PI * 2);
+              ctx.fillStyle = cl.color;
+              ctx.shadowColor = cl.color;
+              ctx.shadowBlur = 14;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          });
+        }
+
+        // 4. Draw Nodes
+        layout.nodes.filter(n => n.visible).forEach(node => {
+          const isSelected = selectedNode && selectedNode.id === node.id;
+          const isHovered = hoveredNode && hoveredNode.id === node.id;
+
+          // Filter Opacity
+          let nodeAlpha = 1.0;
+          if (activeLayer === "syncthing" && (!node.syncthing || !node.syncthing.synced)) {
+            nodeAlpha = 0.22;
+          } else if (activeLayer === "backup" && (!node.backup || !node.backup.protected)) {
+            nodeAlpha = 0.22;
+          }
+
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            const matches = (node.name && node.name.toLowerCase().includes(q)) ||
+                            (node.path && node.path.toLowerCase().includes(q)) ||
+                            (node.computer_id && node.computer_id.toLowerCase().includes(q));
+            if (!matches) nodeAlpha = 0.15;
+          }
+
+          ctx.save();
+          ctx.globalAlpha = nodeAlpha;
+
+          const r = (isHovered || isSelected) ? node.radius + 3 : node.radius;
+
+          // Pulsating Halo Ring
+          if (!isPaused && (node.node_type === "computer" || (node.syncthing && node.syncthing.synced))) {
+            const pulse = Math.sin(elapsed * 2.8 + node.x * 0.01) * 3;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r + 4 + pulse, 0, Math.PI * 2);
+            ctx.fillStyle = `${node.status.color}25`;
+            ctx.fill();
+          }
+
+          // Node Body Circle
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = isSelected ? "#1e293b" : "#0f172a";
+          ctx.shadowColor = node.status.color;
+          ctx.shadowBlur = (isHovered || isSelected) ? 22 : 10;
+          ctx.fill();
+
+          // Border
+          ctx.strokeStyle = isSelected ? "#ffffff" : node.status.color;
+          ctx.lineWidth = (isHovered || isSelected) ? 3.0 : 2.0;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Node Icon
+          ctx.font = `${Math.round(r * 0.88)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(node.icon || "📁", node.x, node.y);
+
+          // Status Traffic Light Pip (Top Right)
+          ctx.beginPath();
+          ctx.arc(node.x + r * 0.72, node.y - r * 0.72, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = node.status.color;
+          ctx.shadowColor = node.status.color;
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = "#080c14";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Collapsed Folder Badge [+N]
+          if (!node.isExpanded && node.collapsedCount > 0) {
+            const badgeTxt = `+${node.collapsedCount}`;
+            ctx.font = "bold 9px monospace";
+            const bw = ctx.measureText(badgeTxt).width + 8;
+            const bh = 14;
+            const bx = node.x + r * 0.75;
+            const by = node.y + r * 0.45;
+
+            ctx.fillStyle = "rgba(59, 130, 246, 0.95)";
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 6);
+            ctx.fill();
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(badgeTxt, bx + bw / 2, by + bh / 2 + 0.5);
+          }
+
+          // Node Label
+          ctx.font = (isHovered || isSelected) ? "bold 11px system-ui" : "600 10.5px system-ui";
+          ctx.fillStyle = (isHovered || isSelected) ? "#ffffff" : "#cbd5e1";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          const maxLblLen = 22;
+          const displayLabel = node.name.length > maxLblLen ? node.name.slice(0, maxLblLen) + "…" : node.name;
+          ctx.fillText(displayLabel, node.x, node.y + r + 5);
+
+          // Sub-Label (Sync or Backup tag)
+          if (activeLayer === "syncthing" && node.syncthing && node.syncthing.synced) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#67e8f9";
+            ctx.fillText(`🔄 ${node.syncthing.label || "In Sync"}`, node.x, node.y + r + 18);
+          } else if (activeLayer === "backup" && node.backup && node.backup.protected) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = "#d8b4fe";
+            ctx.fillText(`🛡️ ${node.backup.program ? node.backup.program.split(",")[0] : "Gesichert"}`, node.x, node.y + r + 18);
+          } else if (node.file_count) {
+            ctx.font = "9px monospace";
+            ctx.fillStyle = node.status.color;
+            ctx.fillText(`${node.file_count} Dat.`, node.x, node.y + r + 18);
+          }
+
+          ctx.restore();
+        });
+
+        ctx.restore();
+
+        animationFrameId = requestAnimationFrame(render);
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+
+      return () => {
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      };
+    }, [layout, activeLayer, searchQuery, isPaused, selectedNode, hoveredNode]);
+
+    // Mouse Interaction Handlers
+    const handleMouseDown = (e) => {
+      isDraggingRef.current = true;
+      hasDraggedRef.current = false;
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseMove = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+
+      if (isDraggingRef.current) {
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          hasDraggedRef.current = true;
+        }
+        setTransform(prev => ({
+          scale: prev.scale,
+          panX: prev.panX + dx,
+          panY: prev.panY + dy
+        }));
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      } else {
+        // Hit-test nodes for hover
+        const mx = (e.clientX - rect.left - transformRef.current.panX) / transformRef.current.scale;
+        const my = (e.clientY - rect.top - transformRef.current.panY) / transformRef.current.scale;
+
+        let found = null;
+        for (const n of layout.nodes.filter(n => n.visible)) {
+          const dist = Math.hypot(n.x - mx, n.y - my);
+          if (dist <= n.radius + 6) {
+            found = n;
+            break;
+          }
+        }
+        setHoveredNode(found);
+      }
+    };
+
+    const handleMouseUp = (e) => {
+      isDraggingRef.current = false;
+      if (!hasDraggedRef.current) {
+        // Handle click on node
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - transformRef.current.panX) / transformRef.current.scale;
+        const my = (e.clientY - rect.top - transformRef.current.panY) / transformRef.current.scale;
+
+        for (const n of layout.nodes.filter(n => n.visible)) {
+          const dist = Math.hypot(n.x - mx, n.y - my);
+          if (dist <= n.radius + 6) {
+            setSelectedNode(n);
+            toggleExpand(n.id);
+            break;
+          }
+        }
+      }
+    };
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      const newScale = Math.max(0.25, Math.min(3.5, transformRef.current.scale * factor));
+      const newPanX = mouseX - (mouseX - transformRef.current.panX) * (newScale / transformRef.current.scale);
+const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / transformRef.current.scale);
+
+      setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+    };
+
+    // Helper to recursively render real filesystem tree nodes
+    function renderFsTreeNode(node, depth = 0) {
+      if (!node) return null;
+      const isExpanded = fsExpanded.has(node.id);
+      const isSelected = fsSelectedNode && fsSelectedNode.id === node.id;
+      const hasChildren = node.children && node.children.length > 0;
+
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch = !q ||
+        (node.name && node.name.toLowerCase().includes(q)) ||
+        (node.path && node.path.toLowerCase().includes(q));
+
+      let matchesFilter = true;
+      if (fsFilter === "indexed") {
+        matchesFilter = node.indexing && node.indexing.count > 0;
+      } else if (fsFilter === "unindexed") {
+        matchesFilter = !node.indexing || node.indexing.count === 0;
+      } else if (fsFilter === "reorg") {
+        matchesFilter = node.reorganization && (node.reorganization.is_source || node.reorganization.is_target);
+      } else if (fsFilter === "syncthing") {
+        matchesFilter = node.syncthing && node.syncthing.synced;
+      } else if (fsFilter === "backup") {
+        matchesFilter = node.backup && node.backup.protected;
+      }
+
+      function hasMatchingDescendant(n) {
+        if (!n.children || n.children.length === 0) return false;
+        return n.children.some(c => {
+          const cSearch = !q || (c.name && c.name.toLowerCase().includes(q)) || (c.path && c.path.toLowerCase().includes(q));
+          let cFilter = true;
+          if (fsFilter === "indexed") cFilter = c.indexing && c.indexing.count > 0;
+          else if (fsFilter === "unindexed") cFilter = !c.indexing || c.indexing.count === 0;
+          else if (fsFilter === "reorg") cFilter = c.reorganization && (c.reorganization.is_source || c.reorganization.is_target);
+          else if (fsFilter === "syncthing") cFilter = c.syncthing && c.syncthing.synced;
+          else if (fsFilter === "backup") cFilter = c.backup && c.backup.protected;
+          return (cSearch && cFilter) || hasMatchingDescendant(c);
+        });
+      }
+
+      if (!matchesSearch && !hasMatchingDescendant(node)) return null;
+      if (!matchesFilter && !hasMatchingDescendant(node)) return null;
+
+      let icon = "📁";
+      if (node.node_type === "mount") icon = "💽";
+      else if (node.reorganization && node.reorganization.is_source) icon = "📤";
+      else if (node.reorganization && node.reorganization.is_target) icon = "📥";
+      else if (node.backup && node.backup.protected) icon = "🛡️";
+
+      const nodeState = nodeStates[node.path] || nodeStates[node.id] || node.switch_state ||
+                        (node.indexing && node.indexing.state === "FULL" ? "approved" : "proposed");
+
+      const indentPx = depth * 18;
+      const elements = [
+        h("div", {
+          key: node.id,
+          className: `auto-org-fs-tree-row ${isSelected ? "selected" : ""} ${nodeState === "approved" ? "auto-org-row-approved" : nodeState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed"}`,
+          style: { paddingLeft: `${indentPx + 8}px` },
+          onClick: () => setFsSelectedNode(node),
+          onContextMenu: (e) => handleOpenContextMenu(e, node),
+          onMouseEnter: (e) => handleShowRollover(e.clientX, e.clientY, node, nodeState),
+          onMouseMove: (e) => handleShowRollover(e.clientX, e.clientY, node, nodeState),
+          onMouseLeave: handleHideRollover
+        },
+          hasChildren ?
+            h("span", {
+              className: "auto-org-fs-chevron",
+              onClick: (e) => {
+                e.stopPropagation();
+                toggleFsExpand(node.id);
+              }
+            }, isExpanded ? "▼" : "▶") :
+            h("span", { style: { width: "16px", display: "inline-block" } }),
+
+          h("span", { style: { fontSize: "1rem" } }, icon),
+
+          h("span", {
+            className: "auto-org-fs-node-name",
+            title: node.path
+          }, node.name),
+
+          h("span", {
+            className: `auto-org-rollover-badge-state ${nodeState}`,
+            style: { marginLeft: "0.4rem", fontSize: "0.68rem", cursor: "pointer" },
+            title: "Rechtsklick: Status umschalten (Freigeben / Vorschlag / Ausschließen)",
+            onClick: (e) => {
+              e.stopPropagation();
+              handleOpenContextMenu(e, node);
+            }
+          }, nodeState === "approved" ? "🟢 Freigegeben" : nodeState === "excluded" ? "⚪ Ausgeschlossen" : "🟡 Vorschlag"),
+
+          node.disk ?
+            h("div", { className: "auto-org-fs-mount-bar", title: `${node.disk.used_gb} GB von ${node.disk.total_gb} GB (${node.disk.percent_used}%) belegt` },
+              h("div", { className: "auto-org-fs-progress-track" },
+                h("div", {
+                  className: "auto-org-fs-progress-fill",
+                  style: {
+                    width: `${node.disk.percent_used}%`,
+                    background: node.disk.percent_used > 85 ? "#ef4444" : node.disk.percent_used > 65 ? "#eab308" : "#10b981"
+                  }
+                })
+              ),
+              h("span", null, `${node.disk.used_gb}/${node.disk.total_gb} GB (${node.disk.percent_used}%)`)
+            ) : null,
+
+          node.indexing ?
+            h("span", {
+              className: node.indexing.state === "FULL" ? "auto-org-badge-index-green" :
+                         node.indexing.state === "PARTIAL" ? "auto-org-badge-index-yellow" :
+                         "auto-org-badge-index-gray",
+              title: `PostgreSQL file_nodes: ${node.indexing.count} Dateien (${node.indexing.size_mb} MB)`
+            }, `${node.indexing.symbol} ${node.indexing.label}`) : null,
+
+          node.reorganization && node.reorganization.is_source ?
+            h("span", {
+              className: "auto-org-badge-reorg-src",
+              title: `Reorganisation: ${node.reorganization.pending_moves} geplante Moves`
+            }, `📤 ${node.reorganization.pending_moves || 0} Moves`) : null,
+
+          node.reorganization && node.reorganization.is_target ?
+            h("span", {
+              className: "auto-org-badge-reorg-tgt",
+              title: "Zielverzeichnis für automatische Sortierungsregeln"
+            }, "📥 Zielordner") : null,
+
+          node.syncthing && node.syncthing.synced ?
+            h("span", {
+              className: "auto-org-badge-syncthing",
+              title: `Syncthing Ordner: ${node.syncthing.label || node.syncthing.folder_id} • Peers: ${(node.syncthing.peers || []).join(", ")}`
+            }, `🔄 ${node.syncthing.label || node.syncthing.folder_id}`) : null,
+
+          node.backup && node.backup.protected ?
+            h("span", {
+              className: "auto-org-badge-backup",
+              title: `Backup: ${node.backup.program} (${node.backup.schedule || "Aktiv"})`
+            }, `🛡️ ${node.backup.program}`) : null,
+
+          node.permissions ?
+            h("span", {
+              className: "auto-org-badge-perm",
+              title: `Berechtigungen: ${node.permissions.mode_str} (${node.permissions.mode_octal}) • Besitzer: ${node.permissions.owner}:${node.permissions.group}`
+            }, `${node.permissions.mode_str} ${node.permissions.owner}`) : null
+        )
+      ];
+
+      if (hasChildren && (isExpanded || q)) {
+        node.children.forEach(ch => {
+          const childEl = renderFsTreeNode(ch, depth + 1);
+          if (childEl) {
+            if (Array.isArray(childEl)) elements.push(...childEl);
+            else elements.push(childEl);
+          }
+        });
+      }
+
+      return elements;
+    }
+
+    return h("div", {
+      className: "auto-org-multi-tree-modal",
+      onClick: (e) => { if (e.target === e.currentTarget) onClose(); }
+    },
+      h("div", {
+        className: `auto-org-multi-tree-window ${isFullscreen ? "fullscreen" : ""}`,
+        ref: containerRef
+      },
+        // Top Header with Title and Mode Switcher
+        h("div", { className: "auto-org-multi-tree-header" },
+          h("div", { className: "auto-org-multi-tree-title" },
+            h("h3", null,
+              h("span", null, viewMode === "folders2graph" ? "🕸️" : viewMode === "filesystem" ? "🌲" : "🌐"),
+              viewMode === "folders2graph" ? "Obsidian folders2graph Struktur-Graph (Faltung & Sync)" :
+              viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" :
+              "Multi-Computer File Tree & Backup/Sync Radar"
+            ),
+            viewMode === "filesystem" || viewMode === "folders2graph" ?
+              h("div", { className: "auto-org-host-chips" },
+                h("span", { className: "auto-org-host-chip online" }, `💽 Gesamtspeicher: ${fsTree && fsTree.host ? fsTree.host.total_storage_gb : 3076.5} GB`),
+                h("span", { className: "auto-org-host-chip online" }, `📊 Belegt: ${fsTree && fsTree.host ? fsTree.host.used_storage_gb : 1575.4} GB`),
+                h("span", { className: "auto-org-host-chip online" }, `💾 Frei: ${fsTree && fsTree.host ? fsTree.host.free_storage_gb : 1350.5} GB`),
+                h("span", { className: "auto-org-host-chip mobile" }, `💻 Host: ${fsTree && fsTree.host ? fsTree.host.hostname : "laptop"}`)
+              ) :
+              h("div", { className: "auto-org-host-chips" },
+                h("span", { className: "auto-org-host-chip online" }, "💻 laptop: 🟢 Online"),
+                h("span", { className: "auto-org-host-chip online" }, "🖥️ debian1: 🟢 Online (192.168.178.111)"),
+                h("span", { className: "auto-org-host-chip online" }, "🤖 hermes: 🟢 Aktiv"),
+                h("span", { className: "auto-org-host-chip cloud" }, "☁️ gdrive: 🟣 Cloud-Vault"),
+                h("span", { className: "auto-org-host-chip mobile" }, "📱 Note14new: 🟢 P2P Sync (192.168.178.127)")
+              )
+          ),
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+            // View Mode Switcher
+            h("div", { className: "auto-org-view-switcher" },
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "folders2graph" ? "active" : ""}`,
+                onClick: () => setViewMode("folders2graph"),
+                title: "Obsidian folders2graph Struktur-Graph (Ordner, Dateien, Faltung & Syncthing-Fluss)"
+              }, "🕸️ folders2graph Obsidian-Graph"),
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "filesystem" ? "active" : ""}`,
+                onClick: () => setViewMode("filesystem"),
+                title: "Vollständiger realer Verzeichnisbaum aller Mount-Punkte, Partitionen und Ordner"
+              }, "🌲 Realer Dateibaum"),
+              h("button", {
+                type: "button",
+                className: `auto-org-view-switcher-btn ${viewMode === "radar" ? "active" : ""}`,
+                onClick: () => setViewMode("radar"),
+                title: "Obsidian-Graph Netzwerk-Radar über alle 5 Rechner und Syncthing-Ringe"
+              }, "🌐 Multi-Computer Radar")
+            ),
+            h("button", {
+              type: "button",
+              className: "auto-org-pill-btn",
+              onClick: () => setIsFullscreen(!isFullscreen),
+              title: isFullscreen ? "Fenster verkleinern" : "Vollbildmodus"
+            }, isFullscreen ? "🗖 Normal" : "⛶ Vollbild"),
+            h("button", {
+              type: "button",
+              className: "auto-org-modal-close",
+              onClick: onClose,
+              title: "Schließen"
+            }, "✕")
+          )
+        ),
+
+        // Controls & Filter Toolbar
+        h("div", { className: "auto-org-multi-tree-toolbar" },
+          viewMode === "folders2graph" ?
+            h(React.Fragment, null,
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "folders2graph:"),
+                h("span", { style: { color: "#38bdf8", fontSize: "0.75rem", fontWeight: 600 } }, "Gewichtete Knoten • Faltung • Rechtsklick-Status")
+              ),
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: triggerRescan,
+                  disabled: isRescanning,
+                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems"
+                }, isRescanning ? "⏳ Scannt..." : "🔄 Neu scannen")
+              )
+            ) :
+          viewMode === "filesystem" ?
+            h(React.Fragment, null,
+              // Filesystem Filters
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Filter:"),
+                [
+                  { id: "all", label: "🔘 Alle Ordner" },
+                  { id: "indexed", label: "🟢 Nur Indexierte" },
+                  { id: "unindexed", label: "⚪ Nicht im Index" },
+                  { id: "reorg", label: "📤 Reorganisation" },
+                  { id: "syncthing", label: "🔄 Syncthing" },
+                  { id: "backup", label: "🛡️ Backups" }
+                ].map(flt =>
+                  h("button", {
+                    key: flt.id,
+                    type: "button",
+                    className: `auto-org-pill-btn ${fsFilter === flt.id ? "active" : ""}`,
+                    onClick: () => setFsFilter(flt.id)
+                  }, flt.label)
+                )
+              ),
+
+              // Filesystem Folding Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Faltung:"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAllFs, title: "Alle Äste ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAllFs, title: "Nur Mount-Punkte" }, "[-] Mounts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(2), title: "Bis Ebene 2 ausklappen" }, "[2] Ebene 2"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(3), title: "Bis Ebene 3 ausklappen" }, "[3] Ebene 3")
+              ),
+
+              // Rescan Button
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: triggerRescan,
+                  disabled: isRescanning,
+                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems"
+                }, isRescanning ? "⏳ Scannt..." : "🔄 Neu scannen")
+              )
+            ) :
+            h(React.Fragment, null,
+              // Radar Layer Selector
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Radar-Layer:"),
+                [
+                  { id: "all", label: "🔘 Alle Layer" },
+                  { id: "syncthing", label: "🔄 Syncthing Sync-Radar" },
+                  { id: "backup", label: "🛡️ Backup-Programme" },
+                  { id: "traffic_light", label: "🚦 Index-Ampeln" }
+                ].map(layer =>
+                  h("button", {
+                    key: layer.id,
+                    type: "button",
+                    className: `auto-org-pill-btn ${activeLayer === layer.id ? "active" : ""}`,
+                    onClick: () => setActiveLayer(layer.id)
+                  }, layer.label)
+                )
+              ),
+
+              // Tree Folding Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("span", { className: "auto-org-toolbar-label" }, "Baum-Faltung:"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen" }, "[-] Nur Hosts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen" }, "[2] Laufwerke"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen" }, "[3] Ordner")
+              ),
+
+              // Viewport & Auto-Fit Controls
+              h("div", { className: "auto-org-toolbar-group" },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn fit",
+                  onClick: autoFitScreen,
+                  title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
+                }, "🎯 Auto-Fit Screen"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern" }, "+"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern" }, "-"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht" }, "↺ Reset"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn",
+                  onClick: () => setIsPaused(!isPaused),
+                  title: isPaused ? "Animation starten" : "Animation pausieren"
+                }, isPaused ? "▶️ Play" : "⏸️ Pause")
+              )
+            ),
+
+          // Search Filter (Shared across all modes)
+          h("div", { className: "auto-org-toolbar-group", style: { marginLeft: "auto" } },
+            h("input", {
+              type: "text",
+              className: "auto-org-input",
+              style: { padding: "0.22rem 0.55rem", fontSize: "0.75rem", width: "190px" },
+              placeholder: "🔍 Pfad / Name filtern...",
+              value: searchQuery,
+              onChange: (e) => setSearchQuery(e.target.value)
+            })
+          )
+        ),
+
+        // Main Body: Content (Folders2Graph OR Filesystem View OR Radar Canvas) + Inspector Drawer
+        h("div", { className: "auto-org-multi-tree-body" },
+          viewMode === "folders2graph" ?
+            h(Folders2GraphView, {
+              fsTree: fsTree,
+              nodeStates: nodeStates,
+              onSwitchNodeState: handleSwitchNodeState,
+              onOpenContextMenu: handleOpenContextMenu,
+              onShowRollover: handleShowRollover,
+              onHideRollover: handleHideRollover,
+              searchQuery: searchQuery,
+              isPaused: isPaused
+            }) :
+          viewMode === "filesystem" ?
+            // Real Filesystem Tree View Container
+            h("div", { className: "auto-org-fs-view-container" },
+              // Summary Strip
+              h("div", { className: "auto-org-fs-tree-summary" },
+                h("div", { className: "auto-org-fs-stats-strip" },
+                  h("span", { className: "auto-org-fs-stat-badge" }, `💽 ${fsTree && fsTree.summary ? fsTree.summary.total_mounts : 7} Mount-Punkte`),
+                  h("span", { className: "auto-org-fs-stat-badge" }, `📁 ${fsTree && fsTree.summary ? fsTree.summary.total_directories_scanned : 847} Ordner`),
+                  h("span", { className: "auto-org-fs-stat-badge" }, `📄 ${fsTree && fsTree.summary ? fsTree.summary.total_files_discovered.toLocaleString() : "25.210"} Dateien`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#34d399", borderColor: "rgba(16,185,129,0.3)" } }, `🟢 ${fsTree && fsTree.summary ? fsTree.summary.total_files_indexed_in_db.toLocaleString() : "2.515"} im Index`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#fbbf24", borderColor: "rgba(245,158,11,0.3)" } }, `📤 ${fsTree && fsTree.summary ? fsTree.summary.total_reorg_moves_pending.toLocaleString() : "14.580"} Moves geplant`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#38bdf8", borderColor: "rgba(6,182,212,0.3)" } }, `🔄 ${fsTree && fsTree.summary ? fsTree.summary.synced_folders_count : 590} Syncthing-Pfade`),
+                  h("span", { className: "auto-org-fs-stat-badge", style: { color: "#c084fc", borderColor: "rgba(168,85,247,0.3)" } }, `🛡️ ${fsTree && fsTree.summary ? fsTree.summary.backup_protected_count : 27} Backups`)
+                ),
+                rescanMsg && h("span", { style: { color: "#34d399", fontSize: "0.75rem", fontWeight: 600 } }, rescanMsg)
+              ),
+
+              // Scrollable Tree Rows
+              h("div", { className: "auto-org-fs-tree-scroll" },
+                fsLoading ?
+                  h("div", { style: { padding: "3rem", textAlign: "center", color: "#94a3b8" } },
+                    h("div", { style: { fontSize: "1.5rem", marginBottom: "0.5rem" } }, "⏳"),
+                    "Lade realen Dateisystembaum & analysiere PostgreSQL-Index..."
+                  ) :
+                  fsTree && fsTree.mounts && fsTree.mounts.length > 0 ?
+                    fsTree.mounts.map(m => renderFsTreeNode(m, 0)) :
+                    h("div", { style: { padding: "2rem", color: "#94a3b8", textAlign: "center" } }, "Keine Mount-Punkte gefunden.")
+              )
+            ) :
+            // Canvas Viewport for Radar Mode
+            h("div", { className: "auto-org-canvas-viewport" },
+              h("canvas", {
+                ref: canvasRef,
+                className: "auto-org-tree-canvas",
+                onMouseDown: handleMouseDown,
+                onMouseMove: handleMouseMove,
+                onMouseUp: handleMouseUp,
+                onWheel: handleWheel,
+                onContextMenu: (e) => {
+                  const hit = hoveredNode;
+                  if (hit) handleOpenContextMenu(e, hit);
+                }
+              })
+            ),
+
+
+          // Detail Inspector Drawer (Right Side)
+          viewMode === "filesystem" ?
+            // Filesystem Selected Node Inspector
+            (fsSelectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
+              h("div", { className: "auto-org-inspector-header" },
+                h("div", null,
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                    h("span", { style: { fontSize: "1.25rem" } }, fsSelectedNode.node_type === "mount" ? "💽" : fsSelectedNode.reorganization && fsSelectedNode.reorganization.is_source ? "📤" : "📁"),
+                    h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, fsSelectedNode.name)
+                  ),
+                  h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                    `Typ: ${fsSelectedNode.node_type === "mount" ? "Partition / Mount-Point" : "Verzeichnis"}`
+                  )
+                ),
+                h("span", {
+                  className: `auto-org-ampel-badge ${fsSelectedNode.indexing && fsSelectedNode.indexing.state === "FULL" ? "green" : fsSelectedNode.indexing && fsSelectedNode.indexing.state === "PARTIAL" ? "yellow" : "gray"}`,
+                  style: { fontSize: "0.72rem" }
+                }, fsSelectedNode.indexing ? `${fsSelectedNode.indexing.symbol} ${fsSelectedNode.indexing.state}` : "⚪ UNINDEXED")
+              ),
+
+              // Section 1: Exact Host Path & Partition
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort & Partition"),
+                h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" } },
+                  h("div", { style: { fontFamily: "monospace", fontSize: "0.76rem", color: "#93c5fd", wordBreak: "break-all" } },
+                    fsSelectedNode.path
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-pill-btn",
+                    style: { padding: "0.15rem 0.45rem", fontSize: "0.68rem" },
+                    onClick: () => {
+                      navigator.clipboard.writeText(fsSelectedNode.path);
+                      alert("Pfad in Zwischenablage kopiert: " + fsSelectedNode.path);
+                    },
+                    title: "Pfad kopieren"
+                  }, "📋 Kopieren")
+                ),
+                fsSelectedNode.mount_point && h("div", { className: "auto-org-meta-row", style: { marginTop: "0.4rem" } },
+                  h("span", { className: "auto-org-meta-label" }, "Mount-Point:"),
+                  h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, fsSelectedNode.mount_point)
+                ),
+                fsSelectedNode.device && h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Gerät / Dateisystem:"),
+                  h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.device} (${fsSelectedNode.fstype || "ext4"})`)
+                ),
+                fsSelectedNode.disk && h(React.Fragment, null,
+                  h("div", { style: { margin: "0.4rem 0 0.2rem 0" } },
+                    h("div", { className: "auto-org-fs-progress-track", style: { width: "100%", height: "8px" } },
+                      h("div", {
+                        className: "auto-org-fs-progress-fill",
+                        style: {
+                          width: `${fsSelectedNode.disk.percent_used}%`,
+                          background: fsSelectedNode.disk.percent_used > 85 ? "#ef4444" : fsSelectedNode.disk.percent_used > 65 ? "#eab308" : "#10b981"
+                        }
+                      })
+                    )
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Belegung:"),
+                    h("span", { className: "auto-org-meta-val" }, `${fsSelectedNode.disk.used_gb} GB belegt von ${fsSelectedNode.disk.total_gb} GB (${fsSelectedNode.disk.percent_used}%)`)
+                  ),
+                  h("div", { className: "auto-org-meta-row" },
+                    h("span", { className: "auto-org-meta-label" }, "Freier Speicher:"),
+                    h("span", { className: "auto-org-meta-val", style: { color: "#34d399" } }, `${fsSelectedNode.disk.free_gb} GB verfügbar`)
+                  )
+                )
+              ),
+
+              // Section 2: PostgreSQL Indexing Status
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🗄️ PostgreSQL Index-Status"),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Index-Abdeckung:"),
+                  h("span", {
+                    className: fsSelectedNode.indexing && fsSelectedNode.indexing.state === "FULL" ? "auto-org-badge auto-org-badge-green" :
+                               fsSelectedNode.indexing && fsSelectedNode.indexing.state === "PARTIAL" ? "auto-org-badge auto-org-badge-yellow" :
+                               "auto-org-badge auto-org-badge-gray"
+                  }, fsSelectedNode.indexing ? `${fsSelectedNode.indexing.symbol} ${fsSelectedNode.indexing.label}` : "⚪ Nicht indexiert")
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateien in file_nodes:"),
+                  h("span", { className: "auto-org-meta-val", style: { color: "#38bdf8" } },
+                    `${fsSelectedNode.indexing ? fsSelectedNode.indexing.count : 0} indexierte Dateien`
+                  )
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Indexiertes Volumen:"),
+                  h("span", { className: "auto-org-meta-val" },
+                    `${fsSelectedNode.indexing ? fsSelectedNode.indexing.size_mb : 0} MB`
+                  )
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateien im Dateisystem:"),
+                  h("span", { className: "auto-org-meta-val" },
+                    `${fsSelectedNode.approx_total_files || fsSelectedNode.direct_files_count || 0} Dateien (${fsSelectedNode.approx_size_mb || 0} MB)`
+                  )
+                )
+              ),
+
+              // Section 3: Reorganization & Movements
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📤 Reorganisation & Movements"),
+                fsSelectedNode.reorganization && (fsSelectedNode.reorganization.is_source || fsSelectedNode.reorganization.is_target) ?
+                  h(React.Fragment, null,
+                    fsSelectedNode.reorganization.is_source && h("div", null,
+                      h("div", { style: { fontSize: "0.74rem", fontWeight: 700, color: "#fbbf24", marginBottom: "0.3rem" } },
+                        `📤 Verschiebe-Quelle (${fsSelectedNode.reorganization.pending_moves || 0} Moves geplant):`
+                      ),
+                      (fsSelectedNode.reorganization.source_rules || []).map((r, rIdx) =>
+                        h("div", { key: rIdx, style: { fontSize: "0.72rem", padding: "0.3rem", background: "rgba(30, 41, 59, 0.5)", borderRadius: "0.25rem", marginBottom: "0.25rem" } },
+                          h("div", { style: { fontWeight: 600, color: "#f1f5f9" } }, r.name),
+                          h("div", { style: { color: "#94a3b8", fontSize: "0.68rem" } }, `Muster: ${r.pattern} • Ziel: ${r.target_template}`)
+                        )
+                      )
+                    ),
+                    fsSelectedNode.reorganization.is_target && h("div", { style: { marginTop: "0.4rem" } },
+                      h("div", { style: { fontSize: "0.74rem", fontWeight: 700, color: "#38bdf8", marginBottom: "0.3rem" } },
+                        "📥 Zielverzeichnis für Regeln:"
+                      ),
+                      (fsSelectedNode.reorganization.target_rules || []).map((r, rIdx) =>
+                        h("div", { key: rIdx, style: { fontSize: "0.72rem", padding: "0.3rem", background: "rgba(30, 41, 59, 0.5)", borderRadius: "0.25rem", marginBottom: "0.25rem" } },
+                          h("div", { style: { fontWeight: 600, color: "#f1f5f9" } }, r.name),
+                          h("div", { style: { color: "#94a3b8", fontSize: "0.68rem" } }, `Zielvorlage: ${r.target_template}`)
+                        )
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Keine automatischen Sortierregeln für diesen Ordner hinterlegt.")
+              ),
+
+              // Section 4: Syncthing Sync
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
+                fsSelectedNode.syncthing && fsSelectedNode.syncthing.synced ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Status:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
+                    ),
+                    fsSelectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, fsSelectedNode.syncthing.folder_id)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.syncthing.type || "sendreceive")
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
+                      h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
+                        (fsSelectedNode.syncthing.peers && fsSelectedNode.syncthing.peers.length > 0) ? fsSelectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
+              ),
+
+              // Section 5: Backups
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup & Sicherung"),
+                fsSelectedNode.backup && fsSelectedNode.backup.protected ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Programm:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-blue" }, fsSelectedNode.backup.program || "Automatisches Backup")
+                    ),
+                    fsSelectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.backup.schedule)
+                    ),
+                    fsSelectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, fsSelectedNode.backup.target)
+                    ),
+                    fsSelectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Retention:"),
+                      h("span", { className: "auto-org-meta-val" }, fsSelectedNode.backup.retention)
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für dieses Verzeichnis definiert")
+              ),
+
+              // Section 6: Permissions
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔒 POSIX Berechtigungen & Host-Rechte"),
+                fsSelectedNode.permissions ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Besitzer & Gruppe:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.permissions.owner}:${fsSelectedNode.permissions.group}`)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Rechtemaske:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, `${fsSelectedNode.permissions.mode_str} (${fsSelectedNode.permissions.mode_octal})`)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Agent Leserechte:"),
+                      h("span", { className: `auto-org-badge ${fsSelectedNode.permissions.readable ? "auto-org-badge-green" : "auto-org-badge-red"}` },
+                        fsSelectedNode.permissions.readable ? "✓ Voll lesbar" : "🔒 Zugriff beschränkt"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.74rem", color: "#94a3b8" } }, "Berechtigungen konnten nicht ermittelt werden.")
+              )
+            )) :
+            // Radar Selected Node Inspector
+            (selectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
+              h("div", { className: "auto-org-inspector-header" },
+                h("div", null,
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                    h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
+                    h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+                  ),
+                  h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                    `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
+                  )
+                ),
+                h("span", {
+                  className: `auto-org-ampel-badge ${selectedNode.status.state === "INDEXED" || selectedNode.status.state === "PROTECTED" ? "green" : selectedNode.status.state === "PENDING" ? "yellow" : "red"}`,
+                  style: { fontSize: "0.72rem" }
+                }, `${selectedNode.status.symbol} ${selectedNode.status.state}`)
+              ),
+
+              // Exact Host Path
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
+                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
+                  formatUserPath(selectedNode.path)
+                ),
+                h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, selectedNode.status.label)
+              ),
+
+              // Syncthing Radar Details
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🔄 Syncthing Synchronisation"),
+                selectedNode.syncthing && selectedNode.syncthing.synced ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Status:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ In Sync")
+                    ),
+                    selectedNode.syncthing.folder_id && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Folder-ID:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace" } }, selectedNode.syncthing.folder_id)
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Sync-Typ:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.syncthing.type || "sendreceive (beidseitig)")
+                    ),
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Verbundene Peers:"),
+                      h("span", { className: "auto-org-meta-val", style: { color: "#67e8f9" } },
+                        (selectedNode.syncthing.peers && selectedNode.syncthing.peers.length > 0) ? selectedNode.syncthing.peers.join(", ") : "Mesh-Ring"
+                      )
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Nicht im Syncthing Mesh (Lokaler Speicher)")
+              ),
+
+              // Backup Details
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "🛡️ Backup-Programme & Schutz"),
+                selectedNode.backup && selectedNode.backup.protected ?
+                  h(React.Fragment, null,
+                    h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Programm:"),
+                      h("span", { className: "auto-org-badge auto-org-badge-blue" }, selectedNode.backup.program || "Automatisches Backup")
+                    ),
+                    selectedNode.backup.schedule && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Zeitplan:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.backup.schedule)
+                    ),
+                    selectedNode.backup.target && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Ziel-Depot:"),
+                      h("span", { className: "auto-org-meta-val", style: { fontFamily: "monospace", fontSize: "0.7rem" } }, selectedNode.backup.target)
+                    ),
+                    selectedNode.backup.retention && h("div", { className: "auto-org-meta-row" },
+                      h("span", { className: "auto-org-meta-label" }, "Retention:"),
+                      h("span", { className: "auto-org-meta-val" }, selectedNode.backup.retention)
+                    )
+                  ) :
+                  h("div", { style: { fontSize: "0.75rem", color: "#f87171" } }, "⚠️ Noch kein direktes Backup-Skript für diesen Ast definiert")
+              ),
+
+              // Volume & File Statistics
+              h("div", { className: "auto-org-inspector-section" },
+                h("div", { className: "auto-org-inspector-section-title" }, "📊 Speicher-Statistiken"),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Dateianzahl:"),
+                  h("span", { className: "auto-org-meta-val" }, selectedNode.file_count ? `${selectedNode.file_count.toLocaleString()} Dateien` : "-")
+                ),
+                h("div", { className: "auto-org-meta-row" },
+                  h("span", { className: "auto-org-meta-label" }, "Gesamtgröße:"),
+                  h("span", { className: "auto-org-meta-val" }, selectedNode.size_mb ? `${selectedNode.size_mb.toLocaleString()} MB` : "-")
+                )
+              ),
+
+              // Quick Actions
+              h("div", { style: { display: "flex", gap: "0.4rem", marginTop: "auto" } },
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { flex: 1, fontSize: "0.75rem" },
+                  onClick: () => toggleExpand(selectedNode.id)
+                }, expandedIds.has(selectedNode.id) ? "Ast Einklappen" : "Ast Ausklappen"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-primary",
+                  style: { flex: 1, fontSize: "0.75rem" },
+                  onClick: () => centerNode(selectedNode)
+                }, "🎯 Zentrieren")
+              )
+            ))
+        ),
+
+        // Bottom Legend Footer
+        h("div", { className: "auto-org-multi-tree-footer" },
+          viewMode === "filesystem" ?
+            h("div", { className: "auto-org-legend-items" },
+              h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot green" }),
+                h("span", null, "🟢 Vollständig indexiert (PostgreSQL)")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "🟡 Teilweise indexiert")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { style: { width: "8px", height: "8px", borderRadius: "50%", background: "#64748b", display: "inline-block" } }),
+                h("span", null, "⚪ Nicht im Index")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "📤 Reorganisations-Quelle (Moves geplant)")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot cyan" }),
+                h("span", null, "📥 Reorganisations-Ziel")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot cyan" }),
+                h("span", null, "🔄 Syncthing Mesh")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot purple" }),
+                h("span", null, "🛡️ Backup-Schutz")
+              )
+            ) :
+            h("div", { className: "auto-org-legend-items" },
+              h("span", { style: { fontWeight: 600, color: "#cbd5e1", marginRight: "0.3rem" } }, "Legende:"),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot green" }),
+                h("span", null, "🟢 Indexiert & Bereinigt")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot yellow" }),
+                h("span", null, "🟡 Vorschlag / Ausstehend")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot red" }),
+                h("span", null, "🔴 Dumpzone / Unsortiert")
+              ),
+              h("div", { className: "auto-org-legend-item" },
+                h("span", { className: "auto-org-legend-dot purple" }),
+                h("span", null, "🟣 Backup Gesichert (pg/docker/rclone)")
+              ),
+            ),
+          h("div", null,
+            viewMode === "filesystem" ?
+              "💡 Tipp: Klicken Sie auf einen Ordner für die Tiefenprüfung oder 'Neu scannen' zur Live-Aktualisierung." :
+              "💡 Tipp: Klicken Sie auf einen Knoten zum Auf-/Zuklappen oder 'Auto-Fit Screen' zum Einpassen auf 1 Bildschirm."
+          )
         )
       )
     );
@@ -1155,17 +3919,808 @@
     );
   }
 
+  // File extension badge helper
+  function getFileExtBadge(filename) {
+    const ext = ((filename || "").split('.').pop() || '').toLowerCase();
+    let cls = 'code';
+    if (['pdf'].includes(ext)) cls = 'pdf';
+    else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) cls = 'sheet';
+    else if (['zip', 'tar', 'gz', 'bz2', '7z', 'deb'].includes(ext)) cls = 'archive';
+    else if (['png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov', 'svg'].includes(ext)) cls = 'media';
+    return h('span', { className: `auto-org-ext-badge ${cls}` }, ext ? `.${ext}` : 'datei');
+  }
+
+  // Segmented Switch Button: Overlaying "Freigeben" (Green) and "Ausschließen" (Red)
+  function OverlaySwitchButton({ status = "proposed", onApprove, onExclude, onReset, size = "md", disabled = false }) {
+    // status: "approved" | "excluded" | "proposed"
+    return h("div", { className: `auto-org-overlay-switch ${size === "sm" ? "sm" : ""}` },
+      // Left: Freigeben (Green)
+      h("button", {
+        type: "button",
+        className: `auto-org-switch-segment ${status === "approved" ? "active-approve" : ""}`,
+        title: status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)",
+        disabled: disabled,
+        onClick: (e) => {
+          e.stopPropagation();
+          if (status === "approved" && onReset) onReset();
+          else if (onApprove) onApprove();
+        }
+      },
+        h("span", null, status === "approved" ? "✓ Freigegeben" : "🟢 Freigeben")
+      ),
+      // Middle: Vorschlag indicator (when proposed / neutral)
+      status === "proposed" && h("span", {
+        className: "auto-org-switch-segment status-proposed",
+        title: "Ausstehender Vorschlag — Treffen Sie Ihre Entscheidung (Freigeben oder Ausschließen)"
+      }, "🟡 Vorschlag"),
+      // Right: Ausschließen (Red)
+      h("button", {
+        type: "button",
+        className: `auto-org-switch-segment ${status === "excluded" ? "active-exclude" : ""}`,
+        title: status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)",
+        disabled: disabled,
+        onClick: (e) => {
+          e.stopPropagation();
+          if (status === "excluded" && onReset) onReset();
+          else if (onExclude) onExclude();
+        }
+      },
+        h("span", null, status === "excluded" ? "✕ Ausgeschlossen" : "🔴 Ausschließen")
+      )
+    );
+  }
+
+  // Visual File Path Tree Component (Authentic hierarchical tree with branch connectors, context menu, and rollover)
+  function VisualFilePathTree({ sourcePath, targetPath, files = null, defaultExpanded = true, showSwitch = false, switchStatus = "proposed", onApprove = null, onExclude = null, title = null }) {
+    const [expanded, setExpanded] = useState(defaultExpanded);
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+    const [localStatus, setLocalStatus] = useState(switchStatus);
+    const [itemStates, setItemStates] = useState({});
+
+    useEffect(() => {
+      setLocalStatus(switchStatus);
+    }, [switchStatus]);
+
+    function handleSwitch(newState, itemPath) {
+      if (itemPath) {
+        setItemStates(prev => Object.assign({}, prev, { [itemPath]: newState }));
+      } else {
+        setLocalStatus(newState);
+      }
+      if (newState === "approved" && onApprove) onApprove();
+      else if (newState === "excluded" && onExclude) onExclude();
+
+      const p = itemPath || sourcePath || targetPath;
+      if (p) {
+        apiCall("/filesystem-tree/node-switch", {
+          method: "POST",
+          body: JSON.stringify({ path: p, state: newState })
+        }).catch(err => console.warn("Failed to persist node state:", err));
+      }
+    }
+
+    // Mode A: Multi-file list tree (grouping files by directory with connector lines)
+    if (files && files.length > 0) {
+      const srcDir = (sourcePath || (files[0].source_path ? files[0].source_path.substring(0, files[0].source_path.lastIndexOf('/')) : '/home/mb/Downloads'));
+      const tgtDir = (targetPath || (files[0].destination_path ? files[0].destination_path.substring(0, files[0].destination_path.lastIndexOf('/')) : '/media/work-data/'));
+      const rootState = itemStates[srcDir] || localStatus;
+
+      return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
+        h("div", { className: "auto-org-tree-header" },
+          h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
+            h("span", null, expanded ? "▼" : "▶"),
+            h("span", { style: { fontSize: "1.1rem" } }, "🌳"),
+            h("span", null, title || `Visueller Dateibaum (${files.length} Dateien)`)
+          ),
+          showSwitch && h(OverlaySwitchButton, {
+            status: rootState,
+            onApprove: () => handleSwitch("approved", srcDir),
+            onExclude: () => handleSwitch("excluded", srcDir),
+            onReset: () => handleSwitch("proposed", srcDir),
+            size: "sm"
+          })
+        ),
+        expanded && h("div", null,
+          // Source directory root
+          h("div", {
+            className: `auto-org-tree-root-item ${rootState === "approved" ? "auto-org-row-approved" : (rootState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+            style: { cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcDir,
+                  path: srcDir,
+                  name: srcDir.split('/').pop() || srcDir,
+                  node_type: "dir",
+                  destination_path: tgtDir,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: files.length }
+                },
+                currentState: rootState,
+                onSelect: (st) => handleSwitch(st, srcDir)
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcDir,
+                  path: srcDir,
+                  name: srcDir.split('/').pop() || srcDir,
+                  node_type: "dir",
+                  destination_path: tgtDir,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: files.length }
+                },
+                state: rootState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
+          },
+            h("span", { className: "auto-org-tree-node-icon" }, "📥"),
+            h("span", { className: "auto-org-tree-node-name", style: { color: "#93c5fd" } }, formatUserPath(srcDir)),
+            h("span", {
+              className: `auto-org-badge ${rootState === "approved" ? "auto-org-badge-green" : (rootState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+              style: { marginLeft: "auto", fontSize: "0.68rem" }
+            }, rootState === "approved" ? "🟢 Freigegeben" : (rootState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Vorgeschlagen"))
+          ),
+          // File branches
+          h("div", { className: "auto-org-tree-children" },
+            files.map((f, idx) => {
+              const isLast = idx === files.length - 1;
+              const connector = isLast ? "└── " : "├── ";
+              const fname = f.file_name || (f.source_path ? f.source_path.split('/').pop() : `file_${idx}`);
+              const fPath = f.source_path || (srcDir + "/" + fname);
+              const tgt = formatUserPath(f.destination_path || f.suggested_target || tgtDir);
+              const fState = itemStates[fPath] || rootState;
+
+              return h("div", {
+                key: idx,
+                className: `auto-org-tree-branch-line ${fState === "approved" ? "auto-org-row-approved" : (fState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+                style: { cursor: "pointer" },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: f.size_kb ? f.size_kb / 1024 : undefined
+                    },
+                    currentState: fState,
+                    onSelect: (st) => handleSwitch(st, fPath)
+                  });
+                },
+                onMouseEnter: (e) => {
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: f.size_kb ? f.size_kb / 1024 : undefined
+                    },
+                    state: fState
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
+              },
+                h("span", { className: "auto-org-tree-branch-connector" }, connector),
+                h("span", { className: "auto-org-tree-node-icon" }, "📄"),
+                getFileExtBadge(fname),
+                h("span", { className: "auto-org-tree-node-name" }, fname),
+                f.size_kb && h("span", { style: { color: "#64748b", fontSize: "0.7rem" } }, `${f.size_kb} KB`),
+                h("span", { className: "auto-org-tree-move-arrow" }, "──▶"),
+                h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.72rem", fontFamily: "monospace" } }, tgt),
+                h("span", {
+                  className: `auto-org-badge ${fState === "approved" ? "auto-org-badge-green" : (fState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                  style: { marginLeft: "auto", fontSize: "0.65rem", padding: "0.15rem 0.4rem" }
+                }, fState === "approved" ? "🟢 Freigabe" : (fState === "excluded" ? "⚪ Excluded" : "🟡 Vorschlag"))
+              );
+            })
+          ),
+          // Target directory destination branch
+          tgtDir && h("div", { style: { marginTop: "0.5rem" } },
+            h("div", {
+              className: "auto-org-tree-root-item",
+              style: { color: "#4ade80", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: tgtDir,
+                    path: tgtDir,
+                    name: tgtDir.split('/').filter(Boolean).pop() || tgtDir,
+                    node_type: "dir",
+                    destination_path: tgtDir,
+                    has_proposed_sync: true,
+                    reorganization: { is_target: true }
+                  },
+                  currentState: rootState,
+                  onSelect: (st) => handleSwitch(st, tgtDir)
+                });
+              },
+              onMouseEnter: (e) => {
+                setRollover({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: tgtDir,
+                    path: tgtDir,
+                    name: tgtDir.split('/').filter(Boolean).pop() || tgtDir,
+                    node_type: "dir",
+                    destination_path: tgtDir,
+                    has_proposed_sync: true,
+                    reorganization: { is_target: true }
+                  },
+                  state: rootState
+                });
+              },
+              onMouseMove: (e) => {
+                if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+              },
+              onMouseLeave: () => setRollover(null)
+            },
+              h("span", { className: "auto-org-tree-node-icon" }, "🎯"),
+              h("span", { className: "auto-org-tree-node-name", style: { color: "#86efac" } }, `Ziel-Hierarchie: ${formatUserPath(tgtDir)}`),
+              h("span", {
+                className: `auto-org-badge ${rootState === "approved" ? "auto-org-badge-green" : (rootState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                style: { marginLeft: "auto", fontSize: "0.68rem" }
+              }, rootState === "approved" ? "🟢 Ziel freigegeben" : (rootState === "excluded" ? "⚪ Excluded" : "🟡 Ziel-Vorschlag"))
+            )
+          )
+        ),
+        contextMenu && h(FloatingContextMenu, {
+          x: contextMenu.x,
+          y: contextMenu.y,
+          node: contextMenu.node,
+          currentState: contextMenu.currentState,
+          onClose: () => setContextMenu(null),
+          onSelectState: (st) => {
+            if (contextMenu.onSelect) contextMenu.onSelect(st);
+            else handleSwitch(st, contextMenu.node.path);
+          }
+        }),
+        rollover && h(SyncRolloverTooltip, {
+          x: rollover.x,
+          y: rollover.y,
+          node: rollover.node,
+          nodeState: rollover.state
+        })
+      );
+    }
+
+    // Mode B: Single path or source -> target path tree
+    const srcClean = formatUserPath(sourcePath || "");
+    const tgtClean = formatUserPath(targetPath || "");
+    const tgtParts = tgtClean.split('/').filter(Boolean);
+    const singleState = localStatus;
+
+    return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
+      h("div", { className: "auto-org-tree-header" },
+        h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
+          h("span", null, expanded ? "▼" : "▶"),
+          h("span", null, "🌳"),
+          h("span", null, title || "Visuelle Pfad-Hierarchie")
+        ),
+        showSwitch && h(OverlaySwitchButton, {
+          status: singleState,
+          onApprove: () => handleSwitch("approved"),
+          onExclude: () => handleSwitch("excluded"),
+          onReset: () => handleSwitch("proposed"),
+          size: "sm"
+        })
+      ),
+      expanded && h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem" } },
+        // Source Tree
+        srcClean && h("div", null,
+          h("div", {
+            className: `auto-org-tree-root-item ${singleState === "approved" ? "auto-org-row-approved" : (singleState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed")}`,
+            style: { cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" },
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcClean,
+                  path: srcClean,
+                  name: srcClean.split('/').pop() || srcClean,
+                  node_type: "dir",
+                  destination_path: tgtClean,
+                  has_proposed_sync: true
+                },
+                currentState: singleState,
+                onSelect: (st) => handleSwitch(st, srcClean)
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: srcClean,
+                  path: srcClean,
+                  name: srcClean.split('/').pop() || srcClean,
+                  node_type: "dir",
+                  destination_path: tgtClean,
+                  has_proposed_sync: true
+                },
+                state: singleState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
+          },
+            h("span", null, "📁 Herkunft:"),
+            h("span", { style: { color: "#f87171" } }, srcClean),
+            h("span", {
+              className: `auto-org-badge ${singleState === "approved" ? "auto-org-badge-green" : (singleState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+              style: { marginLeft: "auto", fontSize: "0.68rem" }
+            }, singleState === "approved" ? "🟢 Freigegeben" : (singleState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Vorgeschlagen"))
+          )
+        ),
+        // Animated Connection
+        tgtClean && h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", color: "#38bdf8", paddingLeft: "1rem" } },
+          h("span", { style: { fontWeight: 800 } }, "│"),
+          h("span", { className: "auto-org-tree-move-arrow" }, "▼ Reorganisieren nach:")
+        ),
+        // Target Tree (Hierarchical branches)
+        tgtClean && h("div", null,
+          tgtParts.map((part, pidx) => {
+            const isDrive = pidx === 0 || part.startsWith("media") || part.includes("data") || part.includes("work");
+            const isLeaf = pidx === tgtParts.length - 1;
+            const indent = pidx * 1.2;
+
+            return h("div", {
+              key: pidx,
+              className: singleState === "approved" ? "auto-org-row-approved" : (singleState === "excluded" ? "auto-org-row-excluded" : "auto-org-row-proposed"),
+              style: {
+                paddingLeft: `${indent}rem`,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                color: isLeaf ? "#4ade80" : (isDrive ? "#38bdf8" : "#93c5fd"),
+                fontWeight: isDrive || isLeaf ? 700 : 500,
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                paddingTop: "0.2rem",
+                paddingBottom: "0.2rem",
+                borderRadius: "0.25rem"
+              },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    path: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    name: part,
+                    node_type: isDrive ? "drive" : (isLeaf ? "file" : "dir"),
+                    destination_path: tgtClean,
+                    has_proposed_sync: true
+                  },
+                  currentState: singleState,
+                  onSelect: (st) => handleSwitch(st, "/" + tgtParts.slice(0, pidx + 1).join('/'))
+                });
+              },
+              onMouseEnter: (e) => {
+                setRollover({
+                  x: e.clientX,
+                  y: e.clientY,
+                  node: {
+                    id: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    path: "/" + tgtParts.slice(0, pidx + 1).join('/'),
+                    name: part,
+                    node_type: isDrive ? "drive" : (isLeaf ? "file" : "dir"),
+                    destination_path: tgtClean,
+                    has_proposed_sync: true
+                  },
+                  state: singleState
+                });
+              },
+              onMouseMove: (e) => {
+                if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+              },
+              onMouseLeave: () => setRollover(null)
+            },
+              h("span", { style: { color: "#64748b", fontFamily: "monospace" } }, pidx > 0 ? "├── " : ""),
+              h("span", null, pidx === 0 ? "💽 /" + part : (isLeaf ? "🎯 " + part : "📁 " + part))
+            );
+          })
+        )
+      ),
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+          else handleSwitch(st, contextMenu.node.path);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
+      })
+    );
+  }
+
+  // Visual Dry Run Path Tree (Complete hierarchical filesystem tree for Step 4 with context menu and rollover)
+  function VisualDryRunPathTree({ actions = [], groups = [], approvedGroupIds, excludedGroupIds, onSwitchGroup }) {
+    const [filterText, setFilterText] = useState("");
+    const [expandedFolders, setExpandedFolders] = useState({});
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+    const [nodeStates, setNodeStates] = useState({});
+
+    useEffect(() => {
+      apiCall("/filesystem-tree/node-states")
+        .then(data => {
+          if (data && (data.node_states || data.states)) setNodeStates(data.node_states || data.states);
+        })
+        .catch(() => {});
+    }, []);
+
+    function getNodeState(path, act) {
+      if (path && nodeStates[path]) return nodeStates[path];
+      if (act && act.group_id) {
+        if (approvedGroupIds && approvedGroupIds.has(act.group_id)) return "approved";
+        if (excludedGroupIds && excludedGroupIds.has(act.group_id)) return "excluded";
+      }
+      return "proposed";
+    }
+
+    function handleSwitchNode(path, newState, act) {
+      setNodeStates(prev => Object.assign({}, prev, { [path]: newState }));
+      if (act && act.group_id && onSwitchGroup) {
+        onSwitchGroup(act.group_id, newState);
+      }
+      apiCall("/filesystem-tree/node-switch", {
+        method: "POST",
+        body: JSON.stringify({ path: path, state: newState })
+      }).catch(err => console.warn("Failed to persist node state:", err));
+    }
+
+    // Filter actions
+    const filteredActions = filterText.trim() ?
+      actions.filter(a => (a.file_name || "").toLowerCase().includes(filterText.toLowerCase()) ||
+                          (a.source_path || "").toLowerCase().includes(filterText.toLowerCase()) ||
+                          (a.destination_path || "").toLowerCase().includes(filterText.toLowerCase())) :
+      actions;
+
+    // Group actions by source directory
+    const treeByDir = {};
+    filteredActions.forEach(act => {
+      const src = act.source_path || "";
+      const dir = src.substring(0, src.lastIndexOf('/')) || "/";
+      if (!treeByDir[dir]) treeByDir[dir] = [];
+      treeByDir[dir].push(act);
+    });
+
+    const dirs = Object.keys(treeByDir).sort();
+
+    return h("div", { className: "auto-org-visual-tree-container", style: { padding: "1.25rem", borderRadius: "0.75rem", position: "relative" } },
+      // Top Controls
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("span", { style: { fontSize: "1.3rem" } }, "🌳"),
+          h("div", null,
+            h("strong", { style: { color: "#ffffff", fontSize: "1.05rem" } }, "Visueller Reorganisations-Pfadbaum"),
+            h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+              `${actions.length} Dateien in ${dirs.length} Quell-Verzeichnissen geordnet nach Zielstruktur (Rechtsklick: Status umschalten)`
+            )
+          )
+        ),
+        h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          h("input", {
+            type: "text",
+            className: "auto-org-input",
+            placeholder: "🔍 Dateipfad / Name filtern...",
+            style: { width: "220px", fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+            value: filterText,
+            onChange: (e) => setFilterText(e.target.value)
+          })
+        )
+      ),
+
+      // Tree Nodes by Directory
+      dirs.length === 0 ?
+      h("div", { style: { textAlign: "center", color: "#94a3b8", padding: "2rem" } }, "Keine Dateien im Pfadbaum gefunden.") :
+      dirs.map((dir, didx) => {
+        const dirFiles = treeByDir[dir];
+        const isDirExpanded = expandedFolders[dir] !== false; // expanded by default
+        const dirState = nodeStates[dir] || (
+          dirFiles.every(a => getNodeState(a.source_path, a) === "approved") ? "approved" :
+          (dirFiles.every(a => getNodeState(a.source_path, a) === "excluded") ? "excluded" : "proposed")
+        );
+
+        return h("div", {
+          key: didx,
+          className: `auto-org-row-${dirState}`,
+          style: {
+            marginBottom: "1rem",
+            background: "rgba(30, 41, 59, 0.4)",
+            borderRadius: "0.5rem",
+            padding: "0.5rem 0.75rem",
+            border: "1px solid #334155",
+            transition: "all 0.15s ease"
+          }
+        },
+          // Directory Header
+          h("div", {
+            style: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "0.2rem 0" },
+            onClick: () => setExpandedFolders(prev => Object.assign({}, prev, { [dir]: !isDirExpanded })),
+            onContextMenu: (e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: dir,
+                  path: dir,
+                  name: dir.split('/').pop() || dir,
+                  node_type: "dir",
+                  destination_path: dirFiles[0] ? dirFiles[0].destination_path : undefined,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: dirFiles.length }
+                },
+                currentState: dirState,
+                onSelect: (st) => {
+                  handleSwitchNode(dir, st);
+                  dirFiles.forEach(a => {
+                    if (a.source_path) handleSwitchNode(a.source_path, st, a);
+                  });
+                }
+              });
+            },
+            onMouseEnter: (e) => {
+              setRollover({
+                x: e.clientX,
+                y: e.clientY,
+                node: {
+                  id: dir,
+                  path: dir,
+                  name: dir.split('/').pop() || dir,
+                  node_type: "dir",
+                  destination_path: dirFiles[0] ? dirFiles[0].destination_path : undefined,
+                  has_proposed_sync: true,
+                  reorganization: { is_source: true, pending_moves: dirFiles.length }
+                },
+                state: dirState
+              });
+            },
+            onMouseMove: (e) => {
+              if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+            },
+            onMouseLeave: () => setRollover(null)
+          },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+              h("span", { style: { color: "#60a5fa", fontWeight: 800, fontSize: "0.85rem" } }, isDirExpanded ? "▼" : "▶"),
+              h("span", { style: { fontSize: "1.1rem" } }, "📁"),
+              h("strong", { style: { color: "#93c5fd", fontSize: "0.9rem", fontFamily: "monospace" } }, formatUserPath(dir)),
+              h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, `${dirFiles.length} Dateien`)
+            ),
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: `auto-org-badge ${dirState === "approved" ? "auto-org-badge-green" : (dirState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                style: { cursor: "pointer", border: "none", fontSize: "0.7rem", padding: "0.2rem 0.5rem" },
+                title: "Klicken oder Rechtsklick zum Umschalten aller Dateien in diesem Ordner",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  const next = dirState === "approved" ? "excluded" : (dirState === "excluded" ? "proposed" : "approved");
+                  handleSwitchNode(dir, next);
+                  dirFiles.forEach(a => {
+                    if (a.source_path) handleSwitchNode(a.source_path, next, a);
+                  });
+                }
+              }, dirState === "approved" ? "🟢 Ordner freigegeben" : (dirState === "excluded" ? "⚪ Nicht einbezogen" : "🟡 Ordner Vorschlag"))
+            )
+          ),
+
+          // File Branches inside Directory
+          isDirExpanded && h("div", { className: "auto-org-tree-children", style: { marginTop: "0.4rem" } },
+            dirFiles.map((act, fidx) => {
+              const isLast = fidx === dirFiles.length - 1;
+              const fname = act.file_name || (act.source_path ? act.source_path.split('/').pop() : `file_${fidx}`);
+              const fPath = act.source_path || (dir + "/" + fname);
+              const tgt = formatUserPath(act.destination_path);
+              const fState = getNodeState(fPath, act);
+
+              return h("div", {
+                key: fidx,
+                className: `auto-org-tree-branch-line auto-org-row-${fState}`,
+                style: {
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                  cursor: "pointer",
+                  borderRadius: "0.25rem",
+                  padding: "0.25rem 0.4rem"
+                },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: act.size_kb ? act.size_kb / 1024 : undefined,
+                      reorganization: {
+                        is_source: true,
+                        target_rules: act.rule_name ? [act.rule_name] : []
+                      }
+                    },
+                    currentState: fState,
+                    onSelect: (st) => handleSwitchNode(fPath, st, act)
+                  });
+                },
+                onMouseEnter: (e) => {
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: fPath,
+                      name: fname,
+                      path: fPath,
+                      node_type: "file",
+                      destination_path: tgt,
+                      has_proposed_sync: true,
+                      size_mb: act.size_kb ? act.size_kb / 1024 : undefined,
+                      reorganization: {
+                        is_source: true,
+                        target_rules: act.rule_name ? [act.rule_name] : []
+                      }
+                    },
+                    state: fState
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
+              },
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", flex: 1, minWidth: "300px" } },
+                  h("span", { className: "auto-org-tree-branch-connector" }, isLast ? "└── " : "├── "),
+                  h("span", { className: "auto-org-tree-node-icon" }, "📄"),
+                  getFileExtBadge(fname),
+                  h("span", { className: "auto-org-tree-node-name" }, fname),
+                  act.size_kb && h("span", { style: { color: "#64748b", fontSize: "0.7rem" } }, `${act.size_kb} KB`),
+                  h("span", { className: "auto-org-tree-move-arrow" }, "──▶"),
+                  h("span", { className: "auto-org-tree-move-target", style: { fontSize: "0.75rem", fontFamily: "monospace" } }, tgt)
+                ),
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
+                  act.rule_name && h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, act.rule_name),
+                  h("span", { className: `auto-org-badge ${act.safe_to_execute ? "auto-org-badge-green" : "auto-org-badge-red"}`, style: { fontSize: "0.68rem" } },
+                    act.safe_to_execute ? "✓ Bereit" : "⚠️ Prüfen"
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: `auto-org-badge ${fState === "approved" ? "auto-org-badge-green" : (fState === "excluded" ? "auto-org-badge-gray" : "auto-org-badge-yellow")}`,
+                    style: { cursor: "pointer", border: "none", fontSize: "0.68rem", padding: "0.15rem 0.45rem" },
+                    title: "Klicken oder Rechtsklick: Status umschalten",
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      const next = fState === "approved" ? "excluded" : (fState === "excluded" ? "proposed" : "approved");
+                      handleSwitchNode(fPath, next, act);
+                    }
+                  }, fState === "approved" ? "🟢 Freigabe" : (fState === "excluded" ? "⚪ Excluded" : "🟡 Vorschlag"))
+                )
+              );
+            })
+          )
+        );
+      }),
+
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+          else handleSwitchNode(contextMenu.node.path || contextMenu.node.id, st);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
+      })
+    );
+  }
+
   // Multi-Level Tree Explorer Component for Step 2
-  function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule }) {
-    return h("div", { className: "auto-org-tree-explorer" },
+  function MultiLevelTreeExplorer({ categories, isApproved, onToggleApproveCategory, onFocusGraph, expandedBranches, onToggleExpandBranch, onApplyToRule, approvedCategoryIds, excludedCategoryIds, onSwitchCategory }) {
+    const [contextMenu, setContextMenu] = useState(null);
+    const [rollover, setRollover] = useState(null);
+
+    return h("div", { className: "auto-org-tree-explorer", style: { position: "relative" } },
       categories.map((cat) => {
         const isExpanded = expandedBranches.has(cat.id);
         const confPct = Math.round((cat.confidence || 0.95) * 100);
         const subBranches = cat.sub_branches || [];
+        const catStatus = approvedCategoryIds && approvedCategoryIds.has(cat.id) ? "approved" :
+          (excludedCategoryIds && excludedCategoryIds.has(cat.id) ? "excluded" : (isApproved ? "approved" : "proposed"));
 
         return h("div", {
           key: cat.id,
-          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""}`
+          className: `auto-org-tree-root-item ${isExpanded ? "expanded" : ""} ${catStatus === "approved" ? "auto-org-card-approved" : (catStatus === "excluded" ? "auto-org-card-excluded" : "")}`,
+          onContextMenu: (e) => {
+            e.preventDefault();
+            setContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              node: {
+                id: cat.id,
+                path: cat.display_name || cat.name,
+                name: cat.name,
+                node_type: "dir",
+                proposed_target: cat.target_path || (subBranches[0] ? subBranches[0].target_path : undefined),
+                has_proposed_sync: true
+              },
+              currentState: catStatus,
+              onSelect: (st) => onSwitchCategory ? onSwitchCategory(cat.id, st) : (st === "approved" && onToggleApproveCategory ? onToggleApproveCategory(cat.id) : null)
+            });
+          },
+          onMouseEnter: (e) => {
+            setRollover({
+              x: e.clientX,
+              y: e.clientY,
+              node: {
+                id: cat.id,
+                path: cat.display_name || cat.name,
+                name: cat.name,
+                node_type: "dir",
+                proposed_target: cat.target_path || (subBranches[0] ? subBranches[0].target_path : undefined),
+                has_proposed_sync: true
+              },
+              state: catStatus
+            });
+          },
+          onMouseMove: (e) => {
+            if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+          },
+          onMouseLeave: () => setRollover(null)
         },
           // Root Header Row
           h("div", {
@@ -1187,12 +4742,13 @@
                 h("span", { className: "auto-org-neural-dot" }),
                 h("span", null, `⚡ ${confPct}%`)
               ),
-              h("span", {
-                className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
-              },
-                h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                isApproved ? "🟢 Freigegeben" : "🟡 Prüfung"
-              )
+              h(OverlaySwitchButton, {
+                status: catStatus,
+                onApprove: () => onSwitchCategory ? onSwitchCategory(cat.id, "approved") : (onToggleApproveCategory && onToggleApproveCategory(cat.id)),
+                onExclude: () => onSwitchCategory ? onSwitchCategory(cat.id, "excluded") : null,
+                onReset: () => onSwitchCategory ? onSwitchCategory(cat.id, "proposed") : null,
+                size: "sm"
+              })
             )
           ),
 
@@ -1213,7 +4769,49 @@
           isExpanded && subBranches.length > 0 && h("div", { className: "auto-org-tree-sub-list" },
             subBranches.map((sub) => {
               const subConf = Math.round((sub.confidence || 0.95) * 100);
-              return h("div", { key: sub.id, className: "auto-org-tree-sub-item" },
+              return h("div", {
+                key: sub.id,
+                className: "auto-org-tree-sub-item",
+                style: { cursor: "pointer" },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: sub.id,
+                      path: sub.target_path,
+                      name: sub.name,
+                      node_type: "dir",
+                      proposed_target: sub.target_path,
+                      has_proposed_sync: true
+                    },
+                    currentState: catStatus,
+                    onSelect: (st) => onSwitchCategory ? onSwitchCategory(cat.id, st) : null
+                  });
+                },
+                onMouseEnter: (e) => {
+                  e.stopPropagation();
+                  setRollover({
+                    x: e.clientX,
+                    y: e.clientY,
+                    node: {
+                      id: sub.id,
+                      path: sub.target_path,
+                      name: sub.name,
+                      node_type: "dir",
+                      proposed_target: sub.target_path,
+                      has_proposed_sync: true
+                    },
+                    state: catStatus
+                  });
+                },
+                onMouseMove: (e) => {
+                  if (rollover) setRollover(prev => prev ? Object.assign({}, prev, { x: e.clientX, y: e.clientY }) : null);
+                },
+                onMouseLeave: () => setRollover(null)
+              },
                 // Left Column: Branch Title, Icon & Path
                 h("div", { style: { flex: 1, minWidth: "260px" } },
                   h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" } },
@@ -1262,6 +4860,22 @@
             })
           )
         );
+      }),
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => {
+          if (contextMenu.onSelect) contextMenu.onSelect(st);
+        }
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.state
       })
     );
   }
@@ -1342,21 +4956,30 @@
     const [testing, setTesting] = useState(false);
 
     // Step 4 Abstract Semantic Groups & Execution Approval State
-    const [step4ViewMode, setStep4ViewMode] = useState("groups"); // "groups" | "graph" | "table"
+    const [step4ViewMode, setStep4ViewMode] = useState("groups"); // "groups" | "tree" | "graph" | "table"
     const [approvedGroupIds, setApprovedGroupIds] = useState(new Set());
+    const [excludedGroupIds, setExcludedGroupIds] = useState(new Set());
     const [expandedGroups, setExpandedGroups] = useState({});
 
     // Step 1 Drive Approval, Dismiss, and Tree-Position Hover State
-    const [approvedDriveIds, setApprovedDriveIds] = useState(new Set(["d_privat", "d_work", "d_downloads", "d_gdrive"]));
+    const [approvedDriveIds, setApprovedDriveIds] = useState(new Set());
     const [excludedDriveIds, setExcludedDriveIds] = useState(new Set());
     const [hoveredDriveId, setHoveredDriveId] = useState(null);
     const [showExcludedDrives, setShowExcludedDrives] = useState(false);
     const [anomalyViewMode, setAnomalyViewMode] = useState("groups"); // "groups" | "table"
     const [approvedAnomalyGroupIds, setApprovedAnomalyGroupIds] = useState(new Set());
+    const [excludedAnomalyGroupIds, setExcludedAnomalyGroupIds] = useState(new Set());
     const [expandedAnomalyGroups, setExpandedAnomalyGroups] = useState({});
 
-    // Step 2 Multi-Level Tree Branch Expansion State
+    // Step 2 Multi-Level Tree Branch Expansion and Category Approval State
     const [expandedBranches, setExpandedBranches] = useState(new Set(["cat_privat", "cat_geschaeftlich"]));
+    const [approvedCategoryIds, setApprovedCategoryIds] = useState(new Set());
+    const [excludedCategoryIds, setExcludedCategoryIds] = useState(new Set());
+    const [isEmergentApproved, setIsEmergentApproved] = useState(false);
+
+    // Step 3 Rules Approval and Exclusion State
+    const [approvedRuleIds, setApprovedRuleIds] = useState(new Set());
+    const [excludedRuleIds, setExcludedRuleIds] = useState(new Set());
 
     const loadData = useCallback(async () => {
       setLoading(true);
@@ -1386,13 +5009,29 @@
         if (pscan) {
           setProactiveScan(pscan);
           if (pscan.drives && pscan.drives.length > 0) {
-            setApprovedDriveIds(prev => prev.size > 0 ? prev : new Set(pscan.drives.map(d => d.id)));
+            setApprovedDriveIds(prev => {
+              const driveIds = pscan.drives.map(d => d.id);
+              const hasAnyRealId = Array.from(prev).some(id => driveIds.includes(id));
+              if (!hasAnyRealId) {
+                return new Set(driveIds);
+              }
+              return prev;
+            });
           }
         }
-        if (etax) setEmergentTaxonomy(etax);
+        if (etax) {
+          setEmergentTaxonomy(etax);
+          setIsEmergentApproved(Boolean(etax.is_approved));
+          if (etax.approved_category_ids) setApprovedCategoryIds(new Set(etax.approved_category_ids));
+          if (etax.excluded_category_ids) setExcludedCategoryIds(new Set(etax.excluded_category_ids));
+        }
         if (reconc) setReconciliation(reconc);
         if (srules && srules.suggested_rules) {
           setSuggestedRules(srules);
+          const activeIds = srules.suggested_rules.filter(r => r.is_already_active).map(r => r.id);
+          const exclIds = srules.suggested_rules.filter(r => r.is_excluded).map(r => r.id);
+          if (activeIds.length > 0) setApprovedRuleIds(prev => new Set([...prev, ...activeIds]));
+          if (exclIds.length > 0) setExcludedRuleIds(prev => new Set([...prev, ...exclIds]));
           const unadopted = srules.suggested_rules.filter(r => !r.is_already_active).map(r => r.id);
           setSelectedSuggestedRuleIds(new Set(unadopted.length > 0 ? unadopted : srules.suggested_rules.map(r => r.id)));
         }
@@ -1410,11 +5049,11 @@
     // Strict Gating Enforcement: steps 3, 4, 5 require Step 1 Done AND Step 2 Approved
     useEffect(() => {
       const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
-      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved));
+      const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || isEmergentApproved || (taxonomy && taxonomy.system_approved));
       if (step > 2 && !isStep2Approved) {
         setStep(2);
       }
-    }, [step, proactiveScan, stats, emergentTaxonomy, taxonomy]);
+    }, [step, proactiveScan, stats, emergentTaxonomy, isEmergentApproved, taxonomy]);
 
     const handleAdoptSuggestedRules = async (ruleIds = null) => {
       setAdoptingRules(true);
@@ -1567,14 +5206,116 @@
       }
     };
 
+    const handleSwitchRule = async (ruleId, targetState) => {
+      // Optimistic UI update immediately turns button to green/red!
+      setApprovedRuleIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(ruleId);
+        else next.delete(ruleId);
+        return next;
+      });
+      setExcludedRuleIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(ruleId);
+        else next.delete(ruleId);
+        return next;
+      });
+
+      try {
+        if (targetState === "approved") {
+          await apiCall("/rules/adopt-suggested", {
+            method: "POST",
+            body: JSON.stringify({ rule_ids: [ruleId] })
+          }).catch(() => null);
+        }
+        await apiCall("/rules/suggested/switch", {
+          method: "POST",
+          body: JSON.stringify({ rule_id: ruleId, state: targetState })
+        }).catch(() => null);
+      } catch (err) {
+        console.warn("Rule switch sync:", err);
+      }
+    };
+
+    const handleSwitchCategory = async (catId, targetState) => {
+      setApprovedCategoryIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(catId);
+        else next.delete(catId);
+        return next;
+      });
+      setExcludedCategoryIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(catId);
+        else next.delete(catId);
+        return next;
+      });
+
+      try {
+        await apiCall("/taxonomy/emergent/category-switch", {
+          method: "POST",
+          body: JSON.stringify({ category_id: catId, state: targetState })
+        }).catch(() => null);
+      } catch (err) {
+        console.warn("Category switch sync:", err);
+      }
+    };
+
+    const handleSwitchDrive = (id, targetState) => {
+      setApprovedDriveIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      setExcludedDriveIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    };
+
+    const handleSwitchAnomalyGroup = (grpId, targetState) => {
+      setApprovedAnomalyGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(grpId);
+        else next.delete(grpId);
+        return next;
+      });
+      setExcludedAnomalyGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(grpId);
+        else next.delete(grpId);
+        return next;
+      });
+    };
+
+    const handleSwitchGroup = (groupId, targetState) => {
+      setApprovedGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "approved") next.add(groupId);
+        else next.delete(groupId);
+        return next;
+      });
+      setExcludedGroupIds(prev => {
+        const next = new Set(prev);
+        if (targetState === "excluded") next.add(groupId);
+        else next.delete(groupId);
+        return next;
+      });
+    };
+
     const handleApproveEmergentTaxonomy = async () => {
       setLoading(true);
+      const nextApproved = !isEmergentApproved;
+      setIsEmergentApproved(nextApproved); // immediate optimistic update!
       try {
         const res = await apiCall("/taxonomy/emergent/approve", {
           method: "POST",
-          body: JSON.stringify({ approved: true })
+          body: JSON.stringify({ approved: nextApproved })
         });
-        setNotice(res.message || "Natürliches Organisationssystem erfolgreich freigegeben!");
+        setNotice(res.message || (nextApproved ? "Natürliches Organisationssystem erfolgreich freigegeben!" : "Freigabe des Kategoriensystems zurückgesetzt."));
         await loadData();
       } catch (err) {
         setNotice(`Fehler bei der Freigabe: ${err.message}`);
@@ -2067,6 +5808,14 @@
         // Top Toolbar Config Buttons
         h("div", { className: "auto-org-top-toolbar" },
           h("button", {
+            className: `auto-org-config-btn auto-org-radar-btn ${activeModal === "system_tree" ? "active" : ""}`,
+            onClick: () => setActiveModal(activeModal === "system_tree" ? null : "system_tree"),
+            title: "Dediziertes Multi-Computer Dateibaum-, Backup- & Syncthing-Radar-Fenster öffnen"
+          },
+            h("span", null, "🌐 Multi-Computer Tree & Radar"),
+            h("span", { className: "auto-org-badge auto-org-badge-green" }, "5 Hosts")
+          ),
+          h("button", {
             className: `auto-org-config-btn ${activeModal === "mounts" ? "active" : ""}`,
             onClick: () => setActiveModal(activeModal === "mounts" ? null : "mounts"),
             title: "Docker-Mounts, Freispeicher & Pfad-Prüfer"
@@ -2335,9 +6084,9 @@
                 onMouseEnter: () => setHoveredDriveId(d.id),
                 onMouseLeave: () => setHoveredDriveId(null)
               },
-                // Card Header: Checkbox, Name, Ampel, Dismiss
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                // Card Header: Checkbox, Name, and Segmented Switch
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" } },
+                  h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0 } },
                     h("input", {
                       type: "checkbox",
                       className: "auto-org-checkbox",
@@ -2347,29 +6096,21 @@
                     h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
                     h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive")
                   ),
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                    h("span", {
-                      className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
-                    },
-                      h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                      isApproved ? "🟢 Freigegeben" : "🟡 Vorschlag"
-                    ),
-                    h("button", {
-                      type: "button",
-                      className: "auto-org-dismiss-btn",
-                      title: "Diesen Ordner nicht in die Indizierung aufnehmen (Ausschließen)",
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        handleDismissDrive(d.id);
-                      }
-                    }, "✕ Ausschließen")
-                  )
+                  h(OverlaySwitchButton, {
+                    status: isApproved ? "approved" : (excludedDriveIds.has(d.id) ? "excluded" : "proposed"),
+                    onApprove: () => handleSwitchDrive(d.id, "approved"),
+                    onExclude: () => handleSwitchDrive(d.id, "excluded"),
+                    onReset: () => handleSwitchDrive(d.id, "proposed"),
+                    size: "sm"
+                  })
                 ),
 
-                // Host Path in Monospace
-                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
-                  formatUserPath(d.host_path)
-                ),
+                // Visual Tree representation of the Drive Path
+                h(VisualFilePathTree, {
+                  sourcePath: d.host_path,
+                  title: `${d.name} (${formatUserPath(d.host_path)})`,
+                  defaultExpanded: true
+                }),
 
                 // Stats line
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
@@ -2557,7 +6298,7 @@
                   },
                     // Header Row: Checkbox, Group Title, Ampel Badge
                     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
-                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                      h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                         h("input", {
                           type: "checkbox",
                           className: "auto-org-checkbox",
@@ -2567,14 +6308,13 @@
                         h("h4", { style: { fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 } }, grp.title),
                         h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.files.length} Dateien`)
                       ),
-                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem" } },
-                        h("span", {
-                          className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
-                        },
-                          h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                          isApproved ? "🟢 Freigegeben zur Sortierung" : "🟡 Vorschlag (Ausstehend)"
-                        )
-                      )
+                      h(OverlaySwitchButton, {
+                        status: isApproved ? "approved" : (excludedAnomalyGroupIds.has(grp.id) ? "excluded" : "proposed"),
+                        onApprove: () => handleSwitchAnomalyGroup(grp.id, "approved"),
+                        onExclude: () => handleSwitchAnomalyGroup(grp.id, "excluded"),
+                        onReset: () => handleSwitchAnomalyGroup(grp.id, "proposed"),
+                        size: "sm"
+                      })
                     ),
 
                     // Animated "Von wo nach wo" Flow Route
@@ -2589,42 +6329,19 @@
                       }
                     }),
 
-                    // Visual Tree Slice Pipeline
-                    h(VisualBranchPipeline, {
+                    // Visual Tree of Anomaly File Relocations
+                    h(VisualFilePathTree, {
+                      files: grp.files.map(sf => ({
+                        file_name: sf.file_name,
+                        source_path: sf.physical_path,
+                        destination_path: sf.suggested_target,
+                        size_kb: sf.size_kb
+                      })),
                       sourcePath: grp.source_path,
                       targetPath: grp.target_path,
-                      treeSlice: grp.tree_slice,
-                      confidence: grp.confidence,
-                      onFocusGraph: () => {
-                        setStep(2);
-                        setStep2ViewMode("graph");
-                      }
+                      title: `${grp.title} — Visueller Pfad-Baum (${grp.files.length} Dateien)`,
+                      defaultExpanded: true
                     }),
-
-                    // Collapsible Sample Files Drawer (Kleingedruckt)
-                    h("div", null,
-                      h("button", {
-                        type: "button",
-                        className: "auto-org-tag-btn",
-                        style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
-                        onClick: () => toggleExpandAnomalyGroup(grp.id)
-                      }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.files.length} Beispieldateien anzeigen (kleingedruckt)`),
-
-                      isExpanded && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
-                        grp.files.map((sf, idx) =>
-                          h("div", {
-                            key: idx,
-                            style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" }
-                          },
-                            h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
-                            h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
-                            h("span", { style: { color: "#94a3b8", fontSize: "0.7rem", fontFamily: "monospace" } },
-                              `${formatUserPath(sf.physical_path)} → ${formatUserPath(sf.suggested_target)}`
-                            )
-                          )
-                        )
-                      )
-                    ),
 
                     // Group Footer Actions
                     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem", marginTop: "0.25rem" } },
@@ -2810,7 +6527,7 @@
       ];
 
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" } },
-        // Step 2 View Switcher (Tree vs Obsidian Graph)
+        // Step 2 View Switcher (Tree vs Obsidian Graph vs Multi-Computer Radar)
         h("div", { className: "auto-org-view-tabs" },
           h("button", {
             type: "button",
@@ -2821,7 +6538,14 @@
             type: "button",
             className: `auto-org-view-tab ${step2ViewMode === "graph" ? "active" : ""}`,
             onClick: () => setStep2ViewMode("graph")
-          }, "🕸️ Animierter Obsidian-Graph (Dateifluss & Netzwerk)")
+          }, "🕸️ Animierter Obsidian-Graph (Dateifluss & Netzwerk)"),
+          h("button", {
+            type: "button",
+            className: "auto-org-view-tab auto-org-radar-btn",
+            style: { marginLeft: "auto" },
+            onClick: () => setActiveModal("system_tree"),
+            title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
+          }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
         ),
 
         // Obsidian Graph View if active
@@ -2842,12 +6566,18 @@
                 h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
                   "Natürlich entstandenes Organisationssystem (Emergente Taxonomie)"
                 ),
-                h("span", {
-                  className: `auto-org-ampel-badge ${isEmergentApproved ? "green" : "yellow"}`
-                },
-                  h("span", { className: `auto-org-ampel-dot ${isEmergentApproved ? "green" : "yellow"}` }),
-                  isEmergentApproved ? "Freigegeben vom User & Aktiv" : "Vorschlag (Ausstehend)"
-                )
+                h(OverlaySwitchButton, {
+                  status: isEmergentApproved ? "approved" : "proposed",
+                  onApprove: () => {
+                    if (!isEmergentApproved) handleApproveEmergentTaxonomy();
+                  },
+                  onExclude: () => {
+                    if (isEmergentApproved) handleApproveEmergentTaxonomy();
+                  },
+                  onReset: () => {
+                    if (isEmergentApproved) handleApproveEmergentTaxonomy();
+                  }
+                })
               ),
               h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
                 "Die Kategorien wurden durch semantische Vektor-Cluster, OCR-Volltextanalyse und Dateipfad-Muster direkt aus Ihrem realen Datenbestand ermittelt — keine starren Vorgaben, sondern induzierte Struktur:"
@@ -2860,7 +6590,7 @@
                 style: { padding: "0.6rem 1.3rem", fontWeight: 700 },
                 onClick: handleApproveEmergentTaxonomy,
                 disabled: loading
-              }, isEmergentApproved ? "✓ Kategoriensystem ist freigegeben" : "🟢 Natürlich entstandenes System freigeben")
+              }, isEmergentApproved ? "✓ Kategoriensystem freigegeben (Klicken zum Umschalten)" : "🟢 Natürlich entstandenes System freigeben")
             )
           ),
 
@@ -2868,6 +6598,9 @@
           h(MultiLevelTreeExplorer, {
             categories: emergentCategories,
             isApproved: isEmergentApproved,
+            approvedCategoryIds: approvedCategoryIds,
+            excludedCategoryIds: excludedCategoryIds,
+            onSwitchCategory: handleSwitchCategory,
             onToggleApproveCategory: handleApproveEmergentTaxonomy,
             onFocusGraph: (branchId) => {
               setStep2ViewMode("graph");
@@ -3102,7 +6835,16 @@
                   h("div", { className: "auto-org-tree-node-title" },
                     h("span", { className: "auto-org-tree-node-icon" }, node.icon || "📁"),
                     h("span", null, node.name),
-                    h("span", { className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}` },
+                    h("button", {
+                      type: "button",
+                      className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`,
+                      style: { cursor: "pointer", border: "none" },
+                      title: isApproved ? "Klicken zum Pausieren" : "Klicken zum Freigeben",
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        handleToggleNodeApproval(node.id, isApproved);
+                      }
+                    },
                       isApproved ? "✓ Freigegeben" : "⏳ Vorschlag / Entwurf"
                     ),
                     node.mount_valid ?
@@ -3609,20 +7351,23 @@
         h("div", { className: "auto-org-suggested-grid" },
           sRules.map((sr) => {
             const confPct = Math.round((sr.confidence || 0.95) * 100);
-            const isActive = sr.is_already_active;
+            const isApproved = approvedRuleIds.has(sr.id) || (sr.is_already_active && !excludedRuleIds.has(sr.id));
+            const isExcluded = excludedRuleIds.has(sr.id);
+            const ruleStatus = isApproved ? "approved" : (isExcluded ? "excluded" : "proposed");
+            const isActive = isApproved;
             const isChecked = selectedSuggestedRuleIds.has(sr.id);
 
             return h("div", {
               key: sr.id,
-              className: "auto-org-suggested-card",
+              className: `auto-org-suggested-card ${ruleStatus === "approved" ? "auto-org-card-approved" : (ruleStatus === "excluded" ? "auto-org-card-excluded" : "")}`,
               style: {
-                borderColor: isActive ? "#22c55e" : (isChecked ? "#3b82f6" : "#eab308"),
+                borderColor: isActive ? "#22c55e" : (isExcluded ? "#ef4444" : (isChecked ? "#3b82f6" : "#eab308")),
                 boxShadow: isActive ? "0 0 10px rgba(34, 197, 94, 0.15)" : "none"
               }
             },
-              // Header Row with Checkbox & Ampel Badge
-              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
-                h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+              // Header Row with Checkbox & Segmented Switch
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" } },
+                h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                   h("input", {
                     type: "checkbox",
                     className: "auto-org-checkbox",
@@ -3636,12 +7381,13 @@
                   )
                 ),
                 h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" } },
-                  h("span", {
-                    className: `auto-org-ampel-badge ${isActive ? "green" : "yellow"}`
-                  },
-                    h("span", { className: `auto-org-ampel-dot ${isActive ? "green" : "yellow"}` }),
-                    isActive ? "🟢 Freigegeben vom User" : "🟡 Vorschlag (Ausstehend)"
-                  ),
+                  h(OverlaySwitchButton, {
+                    status: ruleStatus,
+                    onApprove: () => handleSwitchRule(sr.id, "approved"),
+                    onExclude: () => handleSwitchRule(sr.id, "excluded"),
+                    onReset: () => handleSwitchRule(sr.id, "proposed"),
+                    size: "sm"
+                  }),
                   h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${sr.matched_files_count || 0} Dateien • ${confPct}% Konfidenz`)
                 )
               ),
@@ -3666,17 +7412,18 @@
                 }
               }),
 
-              // Visual Branch Pipeline inside Card
-              h(VisualBranchPipeline, {
+              // Visual File Path Tree inside Rule Card
+              h(VisualFilePathTree, {
                 sourcePath: "/home/mb/Downloads",
                 targetPath: formatUserPath(sr.target_template),
-                treeSlice: sr.tree_slice,
-                confidence: sr.confidence,
-                branchId: sr.branch_id,
-                onFocusGraph: () => {
-                  setStep(2);
-                  setStep2ViewMode("graph");
-                }
+                files: (sr.sample_files || []).map((sf, sidx) => ({
+                  file_name: sf,
+                  source_path: `/home/mb/Downloads/${sf}`,
+                  destination_path: `${formatUserPath(sr.target_template).replace('{year}', '2026')}${sf}`,
+                  size_kb: 45 + sidx * 20
+                })),
+                title: `Visueller Pfad-Baum: ${sr.name}`,
+                defaultExpanded: true
               }),
 
               // AI Reasoning Drawer (Context & Tokens)
@@ -3705,10 +7452,9 @@
                 h("button", {
                   type: "button",
                   className: `auto-org-btn ${isActive ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
-                  style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600 },
-                  disabled: adoptingRules || isActive,
-                  onClick: () => handleAdoptSuggestedRules([sr.id])
-                }, isActive ? "✓ Aktiv" : "🟢 Regel freigeben")
+                  style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem", fontWeight: 600, background: isActive ? "transparent" : "#16a34a", borderColor: isActive ? "#334155" : "#22c55e" },
+                  onClick: () => handleSwitchRule(sr.id, isActive ? "proposed" : "approved")
+                }, isActive ? "✓ Aktiv / Freigegeben" : "🟢 Regel freigeben")
               )
             );
           })
@@ -3872,13 +7618,18 @@
               }, "Jetzt Dry-Run starten")
             ) :
             h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
-              // View Switcher Tabs (Groups vs Obsidian Graph vs Table)
+              // View Switcher Tabs (Groups vs Obsidian Graph vs Table vs Multi-Computer Radar)
               h("div", { className: "auto-org-view-tabs" },
                 h("button", {
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "groups" ? "active" : ""}`,
                   onClick: () => setStep4ViewMode("groups")
                 }, `📑 Abstrakte Ausführungsgruppen (${totalGroups})`),
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "tree" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("tree")
+                }, `🌳 Visueller Pfad-Baum (${dryRun.actions.length} Dateien)`),
                 h("button", {
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "graph" ? "active" : ""}`,
@@ -3888,17 +7639,33 @@
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "table" ? "active" : ""}`,
                   onClick: () => setStep4ViewMode("table")
-                }, `📋 Technische Diff-Tabelle (${dryRun.actions.length} Dateien)`)
+                }, `📋 Technische Diff-Tabelle (${dryRun.actions.length} Dateien)`),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-view-tab auto-org-radar-btn",
+                  style: { marginLeft: "auto" },
+                  onClick: () => setActiveModal("system_tree"),
+                  title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
+                }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
               ),
 
-              // TAB 1: Obsidian Transfer Graph
+              // TAB 1: Visual Reorganization Path Tree
+              step4ViewMode === "tree" && h(VisualDryRunPathTree, {
+                actions: dryRun.actions || [],
+                groups: dryRun.semantic_groups || [],
+                approvedGroupIds: approvedGroupIds,
+                excludedGroupIds: excludedGroupIds,
+                onSwitchGroup: handleSwitchGroup
+              }),
+
+              // TAB 2: Obsidian Transfer Graph
               step4ViewMode === "graph" && h(ObsidianFlowGraph, {
                 isPaused: obsidianPaused,
                 speedMultiplier: obsidianSpeed,
                 onTogglePause: () => setObsidianPaused(p => !p)
               }),
 
-              // TAB 2: Abstract Semantic Groups (DEFAULT)
+              // TAB 3: Abstract Semantic Groups (DEFAULT)
               step4ViewMode === "groups" && h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
                 // User Approval & Bulk Selection Toolbar
                 h("div", { className: "auto-org-approval-bar" },
@@ -3931,15 +7698,17 @@
                 h("div", { className: "auto-org-group-grid" },
                   groups.map((grp) => {
                     const isApproved = approvedGroupIds.has(grp.group_id);
+                    const isExcluded = excludedGroupIds.has(grp.group_id);
+                    const groupStatus = isApproved ? "approved" : (isExcluded ? "excluded" : "proposed");
                     const isExpanded = !!expandedGroups[grp.group_id];
 
                     return h("div", {
                       key: grp.group_id,
-                      className: `auto-org-group-card ${isApproved ? "approved" : "pending"}`
+                      className: `auto-org-group-card ${groupStatus === "approved" ? "auto-org-card-approved" : (groupStatus === "excluded" ? "auto-org-card-excluded" : "pending")}`
                     },
-                      // Card Header Row: Checkbox, Title, Badges, Ampelsystem
+                      // Card Header Row: Checkbox, Title, Badges, Segmented Switch
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
-                        h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+                        h("label", { style: { display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", margin: 0 } },
                           h("input", {
                             type: "checkbox",
                             className: "auto-org-checkbox",
@@ -3953,12 +7722,12 @@
                           )
                         ),
                         h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                          h("span", {
-                            className: `auto-org-ampel-badge ${isApproved ? "green" : "yellow"}`
-                          },
-                            h("span", { className: `auto-org-ampel-dot ${isApproved ? "green" : "yellow"}` }),
-                            isApproved ? "🟢 Freigegeben zur Ausführung" : "🟡 Vorschlag / Zurückgestellt"
-                          ),
+                          h(OverlaySwitchButton, {
+                            status: groupStatus,
+                            onApprove: () => handleSwitchGroup(grp.group_id, "approved"),
+                            onExclude: () => handleSwitchGroup(grp.group_id, "excluded"),
+                            onReset: () => handleSwitchGroup(grp.group_id, "proposed")
+                          }),
                           h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${grp.file_count} Dateien`),
                           h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, `${grp.total_size_kb} KB`)
                         )
@@ -3979,50 +7748,25 @@
                         onFocusGraph: () => setStep4ViewMode("graph")
                       }),
 
-                      // Visual Branch Pipeline inside Card
-                      h(VisualBranchPipeline, {
+                      // Visual File Path Tree inside Group Card
+                      h(VisualFilePathTree, {
+                        files: grp.sample_files || [],
                         sourcePath: grp.source_label,
                         targetPath: grp.target_label,
-                        treeSlice: grp.tree_slice,
-                        confidence: 0.98,
-                        onFocusGraph: () => setStep4ViewMode("graph")
+                        defaultExpanded: true,
+                        title: `${grp.title} — Visueller Pfad-Baum (${grp.file_count} Dateien)`
                       }),
-
-                      // Kleingedruckter Datei-Auszug (Collapsible Monospace Drawer)
-                      h("div", null,
-                        h("button", {
-                          type: "button",
-                          className: "auto-org-tag-btn",
-                          style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
-                          onClick: () => toggleExpandGroup(grp.group_id)
-                        }, isExpanded ? "▲ Dateinamen ausblenden" : `▼ ${grp.sample_files ? grp.sample_files.length : 0} Beispieldateien anzeigen (kleingedruckt)`),
-
-                        isExpanded && grp.sample_files && h("div", { className: "auto-org-kleingedruckt", style: { marginTop: "0.4rem" } },
-                          h("div", { style: { fontSize: "0.7rem", color: "#60a5fa", marginBottom: "0.3rem", fontWeight: 600 } },
-                            "Dateiauszug (Detailansicht):"
-                          ),
-                          grp.sample_files.map((sf, sidx) =>
-                            h("div", { key: sidx, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", borderBottom: "1px solid rgba(51, 65, 85, 0.4)" } },
-                              h("span", { style: { color: "#cbd5e1", fontWeight: 600 } }, sf.file_name),
-                              h("span", { style: { color: "#64748b" } }, `${sf.size_kb} KB`),
-                              h("span", { style: { color: "#94a3b8", fontSize: "0.7rem" } },
-                                `${formatUserPath(sf.source_path)} → ${formatUserPath(sf.destination_path)}`
-                              )
-                            )
-                          )
-                        )
-                      ),
 
                       // Footer Action
                       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #334155", paddingTop: "0.6rem" } },
                         h("span", { style: { fontSize: "0.75rem", color: isApproved ? "#4ade80" : "#facc15", fontWeight: 600 } },
-                          isApproved ? "✓ Freigabe durch Benutzer erteilt" : "Ausführung für diese Gruppe zurückgestellt"
+                          isApproved ? "✓ Freigabe durch Benutzer erteilt" : (isExcluded ? "Ausgeschlossen (wird nicht ausgeführt)" : "Ausführung für diese Gruppe zurückgestellt")
                         ),
                         h("button", {
                           type: "button",
                           className: `auto-org-btn ${isApproved ? "auto-org-btn-outline" : "auto-org-btn-primary"}`,
                           style: { fontSize: "0.75rem", padding: "0.35rem 0.85rem" },
-                          onClick: () => toggleGroupApproval(grp.group_id)
+                          onClick: () => handleSwitchGroup(grp.group_id, isApproved ? "proposed" : "approved")
                         }, isApproved ? "Pausieren / Zurückstellen" : "🟢 Gruppe freigeben")
                       )
                     );
@@ -4373,6 +8117,12 @@
     // ==========================================
     const renderConfigModal = () => {
       if (!activeModal) return null;
+
+      if (activeModal === "system_tree") {
+        return h(MultiComputerTreeWindow, {
+          onClose: () => setActiveModal(null)
+        });
+      }
 
       let title = "";
       let content = null;

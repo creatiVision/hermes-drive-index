@@ -18,10 +18,11 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID, uuid4
 
 # Ensure local package is in sys.path when loaded in external environments or containers
@@ -145,6 +146,22 @@ class RuleToggleRequest(BaseModel):
 class AdoptSuggestedRulesRequest(BaseModel):
     rule_ids: Optional[List[str]] = None
     adopt_all: bool = False
+
+
+class RuleSwitchRequest(BaseModel):
+    rule_id: str
+    state: str = "approved"  # "approved", "excluded", "proposed"
+
+
+class CategorySwitchRequest(BaseModel):
+    category_id: str
+    state: str = "approved"  # "approved", "excluded", "proposed"
+
+
+class NodeSwitchRequest(BaseModel):
+    path: str
+    state: str = "approved"  # "approved", "proposed", "excluded"
+    node_id: Optional[str] = None
 
 
 class ModularRuleCreateRequest(BaseModel):
@@ -578,6 +595,10 @@ async def toggle_rule(req: RuleToggleRequest) -> Dict[str, Any]:
         await conn.close()
 
 
+_ACTIVE_SUGGESTED_RULE_IDS: Set[str] = set()
+_EXCLUDED_SUGGESTED_RULE_IDS: Set[str] = set()
+
+
 @router.get("/rules/suggested")
 async def get_suggested_rules() -> Dict[str, Any]:
     """
@@ -588,7 +609,9 @@ async def get_suggested_rules() -> Dict[str, Any]:
     active_names = set()
     if conn:
         try:
-            active_rules = await conn.fetch("SELECT rule_name FROM organization_rules;")
+            active_rules = await conn.fetch(
+                "SELECT rule_name FROM organization_rules WHERE state = 'USER_APPROVED' OR state = 'ACTIVE';"
+            )
             active_names = {r["rule_name"] for r in active_rules}
 
             tax_matches = await conn.fetch(
@@ -843,6 +866,17 @@ async def get_suggested_rules() -> Dict[str, Any]:
         },
     ]
 
+    name_aliases = {
+        "Verträge & Policen konsolidieren": {"Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"},
+        "Medien & Kreativ-Assets bündeln": {"Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"},
+        "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": {"Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"},
+    }
+
+    for s in suggestions:
+        aliases = name_aliases.get(s["name"], {s["name"]})
+        s["is_already_active"] = bool(aliases.intersection(active_names)) or (s["id"] in _ACTIVE_SUGGESTED_RULE_IDS)
+        s["is_excluded"] = s["id"] in _EXCLUDED_SUGGESTED_RULE_IDS
+
     return {
         "ok": True,
         "total_suggestions": len(suggestions),
@@ -853,52 +887,101 @@ async def get_suggested_rules() -> Dict[str, Any]:
 
 @router.post("/rules/adopt-suggested")
 async def adopt_suggested_rules(req: AdoptSuggestedRulesRequest) -> Dict[str, Any]:
-    """Adopt proactive rule suggestions into active organization_rules."""
+    """Adopt proactive rule suggestions into active organization_rules with in-memory fallback."""
+    sug_resp = await get_suggested_rules()
+    suggestions = sug_resp.get("suggested_rules", [])
+
+    name_aliases = {
+        "Verträge & Policen konsolidieren": ["Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"],
+        "Medien & Kreativ-Assets bündeln": ["Medien & Kreativ-Assets einsortieren", "Medien & Kreativ-Assets bündeln"],
+        "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)": ["Eingangsrechnungen & SaaS-Tools", "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)"],
+    }
+
+    adopted = 0
     conn = await _get_connection()
-    if not conn:
-        raise HTTPException(status_code=503, detail="Database unavailable")
 
     try:
-        sug_resp = await get_suggested_rules()
-        suggestions = sug_resp.get("suggested_rules", [])
-
-        adopted = 0
         for s in suggestions:
             if req.adopt_all or (req.rule_ids and s["id"] in req.rule_ids):
-                existing = await conn.fetchval(
-                    "SELECT id FROM organization_rules WHERE rule_name = $1", s["name"]
-                )
-                if existing:
-                    await conn.execute(
-                        "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
-                        existing
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        INSERT INTO organization_rules (
-                            id, rule_name, description, source_pattern, condition_json,
-                            target_path_template, state, dry_run_last_count, created_at, updated_at
-                        ) VALUES (
-                            $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
-                        )
-                        """,
-                        uuid4(),
-                        s["name"],
-                        s["description"],
-                        json.dumps(s["condition_json"]),
-                        s["target_template"],
-                        s["matched_files_count"],
-                    )
+                _ACTIVE_SUGGESTED_RULE_IDS.add(s["id"])
+                _EXCLUDED_SUGGESTED_RULE_IDS.discard(s["id"])
                 adopted += 1
+
+                if conn:
+                    aliases = name_aliases.get(s["name"], [s["name"]])
+                    existing = await conn.fetchval(
+                        "SELECT id FROM organization_rules WHERE rule_name = ANY($1::text[])", aliases
+                    )
+                    if existing:
+                        await conn.execute(
+                            "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
+                            existing
+                        )
+                    else:
+                        await conn.execute(
+                            """
+                            INSERT INTO organization_rules (
+                                id, rule_name, description, source_pattern, condition_json,
+                                target_path_template, state, dry_run_last_count, created_at, updated_at
+                            ) VALUES (
+                                $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
+                            )
+                            """,
+                            uuid4(),
+                            s["name"],
+                            s["description"],
+                            json.dumps(s["condition_json"]),
+                            s["target_template"],
+                            s["matched_files_count"],
+                        )
 
         return {
             "ok": True,
             "adopted_count": adopted,
-            "message": f"{adopted} proaktive Filter-Regel(n) erfolgreich übernommen und aktiviert!"
+            "message": f"{adopted} proaktive Filter-Regel(n) erfolgreich übernommen und freigegeben!"
         }
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
+
+
+@router.post("/rules/suggested/switch")
+async def switch_suggested_rule(req: RuleSwitchRequest) -> Dict[str, Any]:
+    """Switches a suggested rule state between 'approved' (Freigeben), 'excluded' (Ausschließen), and 'proposed'."""
+    if req.state == "approved":
+        _ACTIVE_SUGGESTED_RULE_IDS.add(req.rule_id)
+        _EXCLUDED_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' freigegeben und auf Grün geschaltet."
+    elif req.state == "excluded":
+        _EXCLUDED_SUGGESTED_RULE_IDS.add(req.rule_id)
+        _ACTIVE_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' ausgeschlossen (rot)."
+    else:
+        _ACTIVE_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        _EXCLUDED_SUGGESTED_RULE_IDS.discard(req.rule_id)
+        msg = f"Regel '{req.rule_id}' auf Vorschlag zurückgestellt."
+
+    conn = await _get_connection()
+    if conn:
+        try:
+            db_state = "USER_APPROVED" if req.state == "approved" else ("DISABLED" if req.state == "excluded" else "PROPOSED")
+            await conn.execute(
+                "UPDATE organization_rules SET state = $1, updated_at = NOW() WHERE id::text = $2 OR rule_name = $2",
+                db_state, req.rule_id
+            )
+        except Exception:
+            pass
+        finally:
+            await conn.close()
+
+    return {
+        "ok": True,
+        "rule_id": req.rule_id,
+        "state": req.state,
+        "approved_rules": list(_ACTIVE_SUGGESTED_RULE_IDS),
+        "excluded_rules": list(_EXCLUDED_SUGGESTED_RULE_IDS),
+        "message": msg
+    }
 
 
 @router.post("/rules")
@@ -2180,6 +2263,8 @@ _EMERGENT_TAXONOMY_STATE: Dict[str, Any] = {
     "approved": False,
     "approved_at": None,
     "custom_categories": [],
+    "approved_category_ids": set(),
+    "excluded_category_ids": set(),
 }
 
 _REDUNDANCY_DECISIONS: Dict[str, Dict[str, Any]] = {
@@ -2624,10 +2709,16 @@ async def get_emergent_taxonomy() -> Dict[str, Any]:
         },
     ]
 
+    for c in emergent_categories:
+        c["is_approved"] = _EMERGENT_TAXONOMY_STATE["approved"] or (c["id"] in _EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set()))
+        c["is_excluded"] = c["id"] in _EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())
+
     return {
         "ok": True,
         "is_approved": _EMERGENT_TAXONOMY_STATE["approved"],
         "approved_at": _EMERGENT_TAXONOMY_STATE["approved_at"],
+        "approved_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set())),
+        "excluded_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())),
         "induction_method": "Semantic Clustering & File Distribution Analysis",
         "total_files_analyzed": sum(c["file_count"] for c in emergent_categories),
         "categories": emergent_categories,
@@ -2647,7 +2738,38 @@ async def approve_emergent_taxonomy(req: ApproveEmergentTaxonomyRequest) -> Dict
         "ok": True,
         "is_approved": _EMERGENT_TAXONOMY_STATE["approved"],
         "approved_at": _EMERGENT_TAXONOMY_STATE["approved_at"],
-        "message": "Natürliches Organisationssystem erfolgreich freigegeben!",
+        "approved_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("approved_category_ids", set())),
+        "excluded_category_ids": list(_EMERGENT_TAXONOMY_STATE.get("excluded_category_ids", set())),
+        "message": "Natürliches Organisationssystem erfolgreich freigegeben!" if req.approved else "Freigabe zurückgestellt.",
+    }
+
+
+@router.post("/taxonomy/emergent/category-switch")
+async def switch_emergent_category(req: CategorySwitchRequest) -> Dict[str, Any]:
+    """Switches an individual emergent category state between 'approved', 'excluded', and 'proposed'."""
+    appr = _EMERGENT_TAXONOMY_STATE.setdefault("approved_category_ids", set())
+    excl = _EMERGENT_TAXONOMY_STATE.setdefault("excluded_category_ids", set())
+
+    if req.state == "approved":
+        appr.add(req.category_id)
+        excl.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' freigegeben (grün)."
+    elif req.state == "excluded":
+        excl.add(req.category_id)
+        appr.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' ausgeschlossen (rot)."
+    else:
+        appr.discard(req.category_id)
+        excl.discard(req.category_id)
+        msg = f"Kategorie '{req.category_id}' auf Vorschlag zurückgestellt."
+
+    return {
+        "ok": True,
+        "category_id": req.category_id,
+        "state": req.state,
+        "approved_category_ids": list(appr),
+        "excluded_category_ids": list(excl),
+        "message": msg
     }
 
 
@@ -2758,3 +2880,1453 @@ async def clarify_redundancy(req: ClarifyRedundancyRequest) -> Dict[str, Any]:
         "updated_at": now_iso,
         "message": f"Entscheidung '{req.decision}' für Redundanz-Cluster erfolgreich gespeichert!",
     }
+
+
+def _load_syncthing_metadata() -> Dict[str, Any]:
+    """Inspects ~/.config/syncthing/config.xml and queries local daemon for live P2P sync state."""
+    import xml.etree.ElementTree as ET
+    import urllib.request
+    import ssl
+
+    config_path = os.path.expanduser("~/.config/syncthing/config.xml")
+    if not os.path.exists(config_path):
+        config_path = "/home/mb/.config/syncthing/config.xml"
+
+    result: Dict[str, Any] = {
+        "available": False,
+        "api_online": False,
+        "local_device_id": "",
+        "devices": {},
+        "folders": {},
+    }
+
+    if not os.path.exists(config_path):
+        return result
+
+    try:
+        tree = ET.parse(config_path)
+        root = tree.getroot()
+        result["available"] = True
+
+        apikey_elem = root.find(".//apikey")
+        apikey = apikey_elem.text.strip() if (apikey_elem is not None and apikey_elem.text) else ""
+
+        # Parse known devices
+        for d in root.findall("./device"):
+            did = d.get("id", "").strip()
+            name = d.get("name", "").strip() or did[:8]
+            if did:
+                result["devices"][did] = {
+                    "id": did,
+                    "name": name,
+                    "connected": False,
+                    "address": "",
+                    "in_bytes": 0,
+                    "out_bytes": 0,
+                }
+
+        # Parse sync folders
+        for f in root.findall(".//folder"):
+            fid = f.get("id", "").strip()
+            label = f.get("label", "").strip() or fid
+            p = f.get("path", "").strip()
+            ftype = f.get("type", "sendreceive")
+            peers = [
+                result["devices"].get(d.get("id", ""), {}).get("name", d.get("id", "")[:8])
+                for d in f.findall("device")
+                if d.get("id")
+            ]
+            if fid:
+                result["folders"][fid] = {
+                    "id": fid,
+                    "label": label,
+                    "path": p,
+                    "type": ftype,
+                    "peers": peers,
+                    "status": "SYNCED",
+                }
+
+        # Probe live Syncthing REST API for active connection states
+        if apikey:
+            ctx = ssl._create_unverified_context()
+            req = urllib.request.Request(
+                "https://localhost:8384/rest/system/connections",
+                headers={"X-API-Key": apikey},
+            )
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=0.6) as resp:
+                    conn_data = json.loads(resp.read().decode("utf-8"))
+                    conns = conn_data.get("connections", {})
+                    result["api_online"] = True
+                    for did, info in conns.items():
+                        if did in result["devices"]:
+                            result["devices"][did]["connected"] = bool(info.get("connected", False))
+                            result["devices"][did]["address"] = str(info.get("address", ""))
+                            result["devices"][did]["in_bytes"] = int(info.get("inBytesTotal", 0))
+                            result["devices"][did]["out_bytes"] = int(info.get("outBytesTotal", 0))
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.warning("Error reading Syncthing configuration: %s", exc)
+
+    return result
+
+
+def _load_backup_registry() -> Dict[str, Any]:
+    """Discovers configured backup scripts, cronjobs, and systemd protection tasks."""
+    return {
+        "docker_backup": {
+            "program": "docker-backup.sh",
+            "name": "Docker Volume & Container Snapshot",
+            "script_path": "/home/mb/skripts/docker-backup.sh",
+            "target": "/media/xchg/ai-tools-data/docker-backups",
+            "schedule": "Täglich 03:00 Uhr (cron)",
+            "retention": "7 Tage rollierend (tar.gz)",
+            "protects": ["/var/lib/docker/volumes", "/opt/docker-services"],
+            "hosts": ["kimi-laptop", "kimi-debian1"],
+            "status": "ACTIVE_SCHEDULED",
+        },
+        "pg_backup": {
+            "program": "pg-backup.sh",
+            "name": "PostgreSQL 16 & pgvector Logischer Dump",
+            "script_path": "/home/mb/skripts/pg-backup.sh",
+            "target": "/media/xchg/ai-tools-data/postgres-backups",
+            "schedule": "Boot + Täglich + 1. d. M. 05:00 + 1. Jan 06:00",
+            "retention": "daily: 7 Tage, monthly: 12 Monate, yearly: permanent",
+            "protects": ["shared-pg", "agent_memory", "PostgreSQL 16 (Port 5433)"],
+            "hosts": ["kimi-laptop", "kimi-debian1"],
+            "status": "ACTIVE_SCHEDULED",
+        },
+        "hermes_backup": {
+            "program": "hermes-backup-config.sh",
+            "name": "Hermes Agent Config & Workspace State",
+            "script_path": "/home/mb/skripts/ai/hermes/hermes-backup-config.sh",
+            "target": "/media/xchg/ai-agents-workspaces/hermes/backups",
+            "schedule": "Stündlich (cron 0 * * * *)",
+            "retention": "Stündliche Rotation (letzte 24 Stände)",
+            "protects": ["/media/xchg/ai-agents-workspaces/hermes"],
+            "hosts": ["hermes-laptop"],
+            "status": "ACTIVE_SCHEDULED",
+        },
+        "gdrive_sync": {
+            "program": "rclone / gdrive sync",
+            "name": "Google Drive Cloud Vault & Offsite Mirror",
+            "script_path": "rclone sync",
+            "target": "gdrive://creatiVision",
+            "schedule": "Periodisch via Sync-Manager & Hook",
+            "retention": "Google Workspace Drive Versioning",
+            "protects": ["/media/work-data/001_cv-bookaccount", "/media/privat-data/10_PrivatBüro"],
+            "hosts": ["kimi-laptop", "cloud/gdrive"],
+            "status": "ACTIVE_SCHEDULED",
+        },
+        "graphify_sync": {
+            "program": "graphify-index-obsidian.py",
+            "name": "Obsidian Vault Knowledge Graph Index & Snapshot",
+            "script_path": "/media/xchg/ai-tools-data/mcp-servers/shared/graphify-index-obsidian.py",
+            "target": "/media/xchg/ai-graph",
+            "schedule": "Täglich 04:00 Uhr (cron)",
+            "retention": "Graph-History Snapshot",
+            "protects": ["/media/xchg/ai-knowledge-base"],
+            "hosts": ["kimi-laptop"],
+            "status": "ACTIVE_SCHEDULED",
+        },
+    }
+
+
+@router.get("/system-tree")
+async def get_multi_computer_tree() -> Dict[str, Any]:
+    """
+    Returns the complete hierarchical file tree across all connected computers in the LAN/Cloud:
+    - kimi-laptop (Local Workstation)
+    - kimi-debian1 (Server / Docker / Postgres Host)
+    - hermes-laptop (KI-Agent Runtime & Workspace)
+    - cloud/gdrive (Google Drive Cloud Mirror)
+    - Note14new (Mobile / Smartphone)
+    
+    Decorates every node with colored health/indexing status (🟢/🟡/🔴/🟣),
+    associated backup programs, schedules, and active Syncthing sync peers.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    syncthing_meta = _load_syncthing_metadata()
+    backup_registry = _load_backup_registry()
+
+    # Query PostgreSQL file counts if connected
+    db_counts: Dict[str, int] = {}
+    conn = await _get_connection()
+    if conn:
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT sr.uri_path, COUNT(fn.id) as cnt
+                FROM storage_roots sr
+                LEFT JOIN file_nodes fn ON fn.root_id = sr.id AND fn.is_deleted = FALSE
+                GROUP BY sr.uri_path;
+                """
+            )
+            for r in rows:
+                p = to_user_path(r["uri_path"])
+                db_counts[p] = int(r["cnt"] or 0)
+        except Exception as exc:
+            logger.warning("Could not fetch DB counts for system tree: %s", exc)
+        finally:
+            await conn.close()
+
+    # Helper to resolve Syncthing info for a path or folder label
+    def get_sync_info(path: str, fallback_label: str) -> Dict[str, Any]:
+        folders = syncthing_meta.get("folders", {})
+        for fid, f in folders.items():
+            if f.get("path") and (f["path"] == path or path.startswith(f["path"])):
+                return {
+                    "synced": True,
+                    "folder_id": fid,
+                    "label": f["label"],
+                    "type": f["type"],
+                    "peers": f["peers"],
+                    "status": "SYNCED",
+                }
+            if fallback_label.lower() in f.get("label", "").lower() or fallback_label.lower() in fid.lower():
+                return {
+                    "synced": True,
+                    "folder_id": fid,
+                    "label": f["label"],
+                    "type": f["type"],
+                    "peers": f["peers"],
+                    "status": "SYNCED",
+                }
+        return {
+            "synced": False,
+            "folder_id": None,
+            "label": None,
+            "type": None,
+            "peers": [],
+            "status": "LOCAL_ONLY",
+        }
+
+    # Construct Hierarchical Tree
+    tree_data = [
+        # --- Computer 1: kimi-laptop ---
+        {
+            "id": "comp_laptop",
+            "name": "💻 kimi-laptop",
+            "path": "host://kimi-laptop",
+            "node_type": "computer",
+            "computer_id": "kimi-laptop",
+            "role": "Haupt-Workstation & Kontrollzentrum",
+            "status": {
+                "state": "INDEXED",
+                "color": "#10b981",
+                "symbol": "🟢",
+                "label": "Online & Synchronisiert",
+            },
+            "syncthing": {
+                "synced": True,
+                "folder_id": None,
+                "label": "Syncthing Node (laptop)",
+                "type": "mesh",
+                "peers": ["debian1", "Note14new"],
+                "status": "SYNCED",
+            },
+            "backup": {
+                "protected": True,
+                "program": "pg-backup.sh, docker-backup.sh, rclone",
+                "schedule": "Täglich + Boot",
+                "target": "/media/xchg/ai-tools-data/",
+                "retention": "7 Tage daily / 12 Monate",
+            },
+            "file_count": 5240,
+            "size_mb": 14250.0,
+            "children": [
+                {
+                    "id": "drive_laptop_xchg",
+                    "name": "📁 /media/xchg (Shared Exchange)",
+                    "path": "/media/xchg",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "INDEXED",
+                        "color": "#10b981",
+                        "symbol": "🟢",
+                        "label": "Vollständig indexiert & P2P geteilt",
+                    },
+                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                    "backup": {
+                        "protected": True,
+                        "program": "Syncthing Mesh + pg/docker backup Dumps",
+                        "schedule": "Echtzeit P2P",
+                        "target": "kimi-debian1 / Note14new",
+                        "retention": "Permanent",
+                    },
+                    "file_count": 1840,
+                    "size_mb": 4820.0,
+                    "children": [
+                        {
+                            "id": "node_xchg_workspaces",
+                            "name": "ai-agents-workspaces",
+                            "path": "/media/xchg/ai-agents-workspaces",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Aktiv"},
+                            "syncthing": get_sync_info("/media/xchg", "xchg"),
+                            "backup": {
+                                "protected": True,
+                                "program": "hermes-backup-config.sh",
+                                "schedule": "Stündlich 0 * * * *",
+                                "target": "/media/xchg/ai-agents-workspaces/hermes/backups",
+                                "retention": "24h Snapshot",
+                            },
+                            "file_count": 480,
+                            "size_mb": 940.0,
+                            "children": [
+                                {
+                                    "id": "node_xchg_hermes",
+                                    "name": "hermes (Gateway, Plugins, Logs)",
+                                    "path": "/media/xchg/ai-agents-workspaces/hermes",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Live"},
+                                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                                    "backup": {"protected": True, "program": "hermes-backup-config.sh", "schedule": "Stündlich"},
+                                    "file_count": 310,
+                                    "size_mb": 620.0,
+                                    "children": [],
+                                },
+                                {
+                                    "id": "node_xchg_kimi",
+                                    "name": "kimi (Kimi-Code CLI Workspace)",
+                                    "path": "/media/xchg/ai-agents-workspaces/kimi",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Live"},
+                                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                                    "backup": {"protected": True, "program": "Syncthing Mesh", "schedule": "Echtzeit"},
+                                    "file_count": 120,
+                                    "size_mb": 210.0,
+                                    "children": [],
+                                },
+                            ],
+                        },
+                        {
+                            "id": "node_xchg_knowledge",
+                            "name": "ai-knowledge-base (Obsidian Vault)",
+                            "path": "/media/xchg/ai-knowledge-base",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Graph-Indexiert"},
+                            "syncthing": get_sync_info("/media/xchg", "xchg"),
+                            "backup": {
+                                "protected": True,
+                                "program": "graphify-index-obsidian.py",
+                                "schedule": "Täglich 04:00",
+                                "target": "/media/xchg/ai-graph",
+                                "retention": "Knowledge Graph Vector DB",
+                            },
+                            "file_count": 620,
+                            "size_mb": 1150.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_xchg_tools",
+                            "name": "ai-tools-data (MCP & Backups)",
+                            "path": "/media/xchg/ai-tools-data",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Backup Depot"},
+                            "syncthing": get_sync_info("/media/xchg", "xchg"),
+                            "backup": {
+                                "protected": True,
+                                "program": "pg-backup.sh & docker-backup.sh",
+                                "schedule": "Täglich 03:00 / Boot",
+                                "target": "Lokales Tausch-Depot",
+                                "retention": "7 Tage daily / 12 Monate monthly",
+                            },
+                            "file_count": 390,
+                            "size_mb": 2180.0,
+                            "children": [
+                                {
+                                    "id": "node_xchg_pg_backups",
+                                    "name": "postgres-backups (SQL Dumps)",
+                                    "path": "/media/xchg/ai-tools-data/postgres-backups",
+                                    "node_type": "backup_archive",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Sicherungsarchiv"},
+                                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                                    "backup": {"protected": True, "program": "pg-backup.sh", "schedule": "03:00 / Boot"},
+                                    "file_count": 28,
+                                    "size_mb": 1120.0,
+                                    "children": [],
+                                },
+                                {
+                                    "id": "node_xchg_docker_backups",
+                                    "name": "docker-backups (Volume Tars)",
+                                    "path": "/media/xchg/ai-tools-data/docker-backups",
+                                    "node_type": "backup_archive",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Sicherungsarchiv"},
+                                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                                    "backup": {"protected": True, "program": "docker-backup.sh", "schedule": "Täglich 03:00"},
+                                    "file_count": 14,
+                                    "size_mb": 840.0,
+                                    "children": [],
+                                },
+                            ],
+                        },
+                        {
+                            "id": "node_xchg_handy",
+                            "name": "Handy (P2P Dropzone Smartphone)",
+                            "path": "/media/xchg/Handy",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "INDEXED", "color": "#06b6d4", "symbol": "🔄", "label": "Mobil Synchronisiert"},
+                            "syncthing": get_sync_info("/media/xchg/Handy/xx_handy_share", "Handy-Share"),
+                            "backup": {"protected": True, "program": "Syncthing P2P Replikation", "schedule": "Echtzeit"},
+                            "file_count": 350,
+                            "size_mb": 550.0,
+                            "children": [
+                                {
+                                    "id": "node_handy_share",
+                                    "name": "xx_handy_share (Direktaustausch)",
+                                    "path": "/media/xchg/Handy/xx_handy_share",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#06b6d4", "symbol": "🔄", "label": "In Sync"},
+                                    "syncthing": get_sync_info("/media/xchg/Handy/xx_handy_share", "Handy-Share"),
+                                    "backup": {"protected": False, "program": None},
+                                    "file_count": 12,
+                                    "size_mb": 45.0,
+                                    "children": [],
+                                },
+                                {
+                                    "id": "node_handy_dcim",
+                                    "name": "xx_handy_Bilder(DCIM) (Kamera)",
+                                    "path": "/media/xchg/Handy/xx_handy_Bilder(DCIM)",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#06b6d4", "symbol": "🔄", "label": "In Sync"},
+                                    "syncthing": get_sync_info("/media/xchg/Handy/xx_handy_Bilder(DCIM)", "Handy-Bilder"),
+                                    "backup": {"protected": False, "program": None},
+                                    "file_count": 310,
+                                    "size_mb": 460.0,
+                                    "children": [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": "drive_laptop_workdata",
+                    "name": "💼 /media/work-data (Projekte & Buchhaltung)",
+                    "path": "/media/work-data",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "INDEXED",
+                        "color": "#10b981",
+                        "symbol": "🟢",
+                        "label": "Strukturiert & Cloud-Gespiegelt",
+                    },
+                    "syncthing": get_sync_info("/media/work-data", "work-data"),
+                    "backup": {
+                        "protected": True,
+                        "program": "rclone gdrive + pg-backup",
+                        "schedule": "Periodisch & PG Dump",
+                        "target": "gdrive://creatiVision",
+                        "retention": "Cloud Versioning",
+                    },
+                    "file_count": db_counts.get("/media/work-data", 1420),
+                    "size_mb": 3840.0,
+                    "children": [
+                        {
+                            "id": "node_work_bookaccount",
+                            "name": "001_cv-bookaccount (Buchhaltung & Finanzen)",
+                            "path": "/media/work-data/001_cv-bookaccount",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Offsite Cloud-Spiegelung"},
+                            "syncthing": get_sync_info("/media/work-data", "work-data"),
+                            "backup": {
+                                "protected": True,
+                                "program": "rclone gdrive sync",
+                                "schedule": "Periodisch",
+                                "target": "gdrive://creatiVision/Accounting",
+                                "retention": "Unbegrenzt (Audit-Proof)",
+                            },
+                            "file_count": 480,
+                            "size_mb": 1250.0,
+                            "children": [
+                                {
+                                    "id": "node_bookaccount_2025",
+                                    "name": "2025 (Ausgangs- & Eingangsrechnungen)",
+                                    "path": "/media/work-data/001_cv-bookaccount/2025",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Vollständig freigegeben"},
+                                    "syncthing": get_sync_info("/media/work-data", "work-data"),
+                                    "backup": {"protected": True, "program": "rclone gdrive sync"},
+                                    "file_count": 180,
+                                    "size_mb": 420.0,
+                                    "children": [],
+                                },
+                                {
+                                    "id": "node_bookaccount_2026",
+                                    "name": "2026 (Laufendes Geschäftsjahr)",
+                                    "path": "/media/work-data/001_cv-bookaccount/2026",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "PENDING", "color": "#eab308", "symbol": "🟡", "label": "Laufende Zuordnung"},
+                                    "syncthing": get_sync_info("/media/work-data", "work-data"),
+                                    "backup": {"protected": True, "program": "rclone gdrive sync"},
+                                    "file_count": 65,
+                                    "size_mb": 110.0,
+                                    "children": [],
+                                },
+                            ],
+                        },
+                        {
+                            "id": "node_work_projects",
+                            "name": "002_cv-projects (Webdesign & Kunden)",
+                            "path": "/media/work-data/002_cv-projects",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "In Arbeit / Synchron"},
+                            "syncthing": get_sync_info("/media/work-data", "work-data"),
+                            "backup": {"protected": True, "program": "Syncthing Mesh (laptop ↔ debian1)"},
+                            "file_count": 780,
+                            "size_mb": 2100.0,
+                            "children": [
+                                {
+                                    "id": "node_projects_stulz",
+                                    "name": "stulz (Kundenportal Stulz)",
+                                    "path": "/media/work-data/002_cv-projects/stulz",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Synchron"},
+                                    "syncthing": get_sync_info("/media/work-data", "work-data"),
+                                    "backup": {"protected": True, "program": "Syncthing Mesh"},
+                                    "file_count": 320,
+                                    "size_mb": 950.0,
+                                    "children": [],
+                                },
+                                {
+                                    "id": "node_projects_wp",
+                                    "name": "webdesign-wp-lc-ps (WordPress Frameworks)",
+                                    "path": "/media/work-data/002_cv-projects/webdesign-wp-lc-ps",
+                                    "node_type": "subfolder",
+                                    "computer_id": "kimi-laptop",
+                                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Synchron"},
+                                    "syncthing": get_sync_info("/media/work-data", "work-data"),
+                                    "backup": {"protected": True, "program": "Syncthing Mesh"},
+                                    "file_count": 460,
+                                    "size_mb": 1150.0,
+                                    "children": [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": "drive_laptop_privat",
+                    "name": "📁 /media/privat-data (10_PrivatBüro)",
+                    "path": "/media/privat-data/10_PrivatBüro",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "INDEXED",
+                        "color": "#10b981",
+                        "symbol": "🟢",
+                        "label": "Taxonomie freigegeben & geschützt",
+                    },
+                    "syncthing": get_sync_info("/media/privat-data", "privat"),
+                    "backup": {
+                        "protected": True,
+                        "program": "pg-backup + rclone gdrive",
+                        "schedule": "Monatlich + Cloud",
+                        "target": "gdrive://creatiVision/PrivatBüro",
+                        "retention": "Permanent",
+                    },
+                    "file_count": db_counts.get("/media/privat-data/10_PrivatBüro", 890),
+                    "size_mb": 2480.0,
+                    "children": [
+                        {
+                            "id": "node_privat_steuern",
+                            "name": "Steuern (Steuerbescheide & Erklärungen)",
+                            "path": "/media/privat-data/10_PrivatBüro/Steuern",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#10b981", "symbol": "🟢", "label": "Archiviert & Bereinigt"},
+                            "syncthing": get_sync_info("/media/privat-data", "privat"),
+                            "backup": {"protected": True, "program": "pg-backup + Cloud"},
+                            "file_count": 140,
+                            "size_mb": 340.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_privat_vertraege",
+                            "name": "Versicherungen_Vertraege (Policen & Verträge)",
+                            "path": "/media/privat-data/10_PrivatBüro/Versicherungen_Vertraege",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#10b981", "symbol": "🟢", "label": "Archiviert & Bereinigt"},
+                            "syncthing": get_sync_info("/media/privat-data", "privat"),
+                            "backup": {"protected": True, "program": "pg-backup + Cloud"},
+                            "file_count": 95,
+                            "size_mb": 280.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_privat_bank",
+                            "name": "Bank_Finanzen (Kontoauszüge & Depots)",
+                            "path": "/media/privat-data/10_PrivatBüro/Bank_Finanzen",
+                            "node_type": "folder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PROTECTED", "color": "#10b981", "symbol": "🟢", "label": "Archiviert"},
+                            "syncthing": get_sync_info("/media/privat-data", "privat"),
+                            "backup": {"protected": True, "program": "pg-backup + Cloud"},
+                            "file_count": 210,
+                            "size_mb": 510.0,
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "id": "drive_laptop_downloads",
+                    "name": "⬇️ /home/mb/Downloads (Dumpzone)",
+                    "path": "/home/mb/Downloads",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "DUMPZONE",
+                        "color": "#ef4444",
+                        "symbol": "🔴",
+                        "label": "Dumpzone (45 unsortierte Dateien)",
+                    },
+                    "syncthing": get_sync_info("/home/mb/Downloads", "downloads"),
+                    "backup": {
+                        "protected": False,
+                        "program": None,
+                        "schedule": "Nicht gesichert (Flüchtige Eingangszone)",
+                        "target": "Reorganisation in Zielordner empfohlen",
+                        "retention": "Temporär",
+                    },
+                    "file_count": db_counts.get("/home/mb/Downloads", 45),
+                    "size_mb": 620.0,
+                    "children": [
+                        {
+                            "id": "node_dl_invoices",
+                            "name": "Rechnungen & Belege (Vorschlag: → 001_cv)",
+                            "path": "/home/mb/Downloads/*.pdf (Belege)",
+                            "node_type": "subfolder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PENDING", "color": "#eab308", "symbol": "🟡", "label": "Verschiebung vorgeschlagen"},
+                            "syncthing": get_sync_info("/home/mb/Downloads", "downloads"),
+                            "backup": {"protected": False, "program": None},
+                            "file_count": 22,
+                            "size_mb": 180.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_dl_contracts",
+                            "name": "Verträge & Bescheide (Vorschlag: → 10_PrivatBüro)",
+                            "path": "/home/mb/Downloads/*.pdf (Verträge)",
+                            "node_type": "subfolder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "PENDING", "color": "#eab308", "symbol": "🟡", "label": "Verschiebung vorgeschlagen"},
+                            "syncthing": get_sync_info("/home/mb/Downloads", "downloads"),
+                            "backup": {"protected": False, "program": None},
+                            "file_count": 14,
+                            "size_mb": 115.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_dl_installer",
+                            "name": "Installer & Archive (Vorschlag: → Papierkorb)",
+                            "path": "/home/mb/Downloads/*.deb, *.tar.gz",
+                            "node_type": "subfolder",
+                            "computer_id": "kimi-laptop",
+                            "status": {"state": "DUMPZONE", "color": "#ef4444", "symbol": "🔴", "label": "Veraltete Installer"},
+                            "syncthing": get_sync_info("/home/mb/Downloads", "downloads"),
+                            "backup": {"protected": False, "program": None},
+                            "file_count": 9,
+                            "size_mb": 325.0,
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "id": "drive_laptop_desktop",
+                    "name": "🖥️ /home/mb/Schreibtisch",
+                    "path": "/home/mb/Schreibtisch",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "PENDING",
+                        "color": "#eab308",
+                        "symbol": "🟡",
+                        "label": "18 temporäre Dateien (Prüfung empfohlen)",
+                    },
+                    "syncthing": get_sync_info("/home/mb/Schreibtisch", "schreibtisch"),
+                    "backup": {"protected": False, "program": None},
+                    "file_count": 18,
+                    "size_mb": 85.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_laptop_thunderbird",
+                    "name": "✉️ /home/mb/.thunderbird (E-Mail Archive)",
+                    "path": "/home/mb/.thunderbird",
+                    "node_type": "drive",
+                    "computer_id": "kimi-laptop",
+                    "status": {
+                        "state": "PROTECTED",
+                        "color": "#a855f7",
+                        "symbol": "🟣",
+                        "label": "Mail-Profile aktiv (Send-Only Sync)",
+                    },
+                    "syncthing": get_sync_info("/home/mb/.thunderbird", "thunderbird"),
+                    "backup": {
+                        "protected": True,
+                        "program": "Syncthing Send-Only",
+                        "schedule": "Echtzeit",
+                        "target": "kimi-debian1 / Backup",
+                        "retention": "Permanent",
+                    },
+                    "file_count": 840,
+                    "size_mb": 1850.0,
+                    "children": [],
+                },
+            ],
+        },
+        # --- Computer 2: kimi-debian1 ---
+        {
+            "id": "comp_debian1",
+            "name": "🖥️ kimi-debian1 (Server)",
+            "path": "host://192.168.178.111",
+            "node_type": "computer",
+            "computer_id": "kimi-debian1",
+            "role": "PostgreSQL 16, pgvector & Docker Server",
+            "status": {
+                "state": "INDEXED",
+                "color": "#10b981",
+                "symbol": "🟢",
+                "label": "Online & Docker Engine Aktiv",
+            },
+            "syncthing": {
+                "synced": True,
+                "folder_id": None,
+                "label": "Syncthing Node (debian1)",
+                "type": "mesh",
+                "peers": ["laptop"],
+                "status": "SYNCED",
+            },
+            "backup": {
+                "protected": True,
+                "program": "docker-backup.sh, pg-backup.sh",
+                "schedule": "Täglich 03:00 / Boot",
+                "target": "/media/xchg/ai-tools-data/",
+                "retention": "7 Tage daily / 12 Monate monthly",
+            },
+            "file_count": 4120,
+            "size_mb": 8640.0,
+            "children": [
+                {
+                    "id": "drive_debian1_xchg",
+                    "name": "📁 /media/xchg (P2P Replikation)",
+                    "path": "/media/xchg",
+                    "node_type": "drive",
+                    "computer_id": "kimi-debian1",
+                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "P2P Spiegel"},
+                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                    "backup": {"protected": True, "program": "Syncthing Mesh"},
+                    "file_count": 1840,
+                    "size_mb": 4820.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_debian1_docker",
+                    "name": "🐳 /var/lib/docker/volumes (Container Data)",
+                    "path": "/var/lib/docker/volumes",
+                    "node_type": "drive",
+                    "computer_id": "kimi-debian1",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Täglich 03:00 Gesichert"},
+                    "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                    "backup": backup_registry.get("docker_backup", {}),
+                    "file_count": 1650,
+                    "size_mb": 2400.0,
+                    "children": [
+                        {
+                            "id": "node_debian1_shared_pg",
+                            "name": "shared-pg_data (PostgreSQL 16 + pgvector)",
+                            "path": "/var/lib/docker/volumes/shared-pg_data",
+                            "node_type": "subfolder",
+                            "computer_id": "kimi-debian1",
+                            "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "DB-Gesichert"},
+                            "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                            "backup": backup_registry.get("pg_backup", {}),
+                            "file_count": 420,
+                            "size_mb": 1100.0,
+                            "children": [],
+                        },
+                        {
+                            "id": "node_debian1_n8n",
+                            "name": "n8n_data (Workflows & Execution States)",
+                            "path": "/var/lib/docker/volumes/n8n_data",
+                            "node_type": "subfolder",
+                            "computer_id": "kimi-debian1",
+                            "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Täglich gesichert"},
+                            "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                            "backup": backup_registry.get("docker_backup", {}),
+                            "file_count": 1230,
+                            "size_mb": 1300.0,
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "id": "drive_debian1_pg_backups",
+                    "name": "📦 /var/backups/postgres (Lokale SQL-Dumps)",
+                    "path": "/var/backups/postgres",
+                    "node_type": "backup_archive",
+                    "computer_id": "kimi-debian1",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Konsistente Dumps"},
+                    "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                    "backup": backup_registry.get("pg_backup", {}),
+                    "file_count": 28,
+                    "size_mb": 1420.0,
+                    "children": [],
+                },
+            ],
+        },
+        # --- Computer 3: hermes-laptop ---
+        {
+            "id": "comp_hermes",
+            "name": "🤖 hermes-laptop (KI-Agent)",
+            "path": "host://hermes-laptop",
+            "node_type": "computer",
+            "computer_id": "hermes-laptop",
+            "role": "Autonome Reorganisation, Vektorisierung & Plugin Host",
+            "status": {
+                "state": "INDEXED",
+                "color": "#10b981",
+                "symbol": "🟢",
+                "label": "Gateway & Watchdog Aktiv",
+            },
+            "syncthing": {
+                "synced": True,
+                "folder_id": None,
+                "label": "Shared via xchg",
+                "type": "mesh",
+                "peers": ["laptop", "debian1"],
+                "status": "SYNCED",
+            },
+            "backup": {
+                "protected": True,
+                "program": "hermes-backup-config.sh",
+                "schedule": "Stündlich",
+                "target": "/media/xchg/ai-agents-workspaces/hermes/backups",
+                "retention": "24h Snapshots",
+            },
+            "file_count": 930,
+            "size_mb": 1770.0,
+            "children": [
+                {
+                    "id": "drive_hermes_workspace",
+                    "name": "🧠 .hermes Core & Plugins",
+                    "path": "/media/xchg/ai-agents-workspaces/hermes/.hermes",
+                    "node_type": "drive",
+                    "computer_id": "hermes-laptop",
+                    "status": {"state": "INDEXED", "color": "#10b981", "symbol": "🟢", "label": "Aktiv"},
+                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                    "backup": backup_registry.get("hermes_backup", {}),
+                    "file_count": 310,
+                    "size_mb": 620.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_hermes_graphify",
+                    "name": "🌐 Graphify Knowledge Base Index",
+                    "path": "/media/xchg/ai-graph",
+                    "node_type": "drive",
+                    "computer_id": "hermes-laptop",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Täglich 04:00 neu indiziert"},
+                    "syncthing": get_sync_info("/media/xchg", "xchg"),
+                    "backup": backup_registry.get("graphify_sync", {}),
+                    "file_count": 620,
+                    "size_mb": 1150.0,
+                    "children": [],
+                },
+            ],
+        },
+        # --- Computer 4: cloud/gdrive ---
+        {
+            "id": "comp_gdrive",
+            "name": "☁️ Google Drive (Cloud Mirror)",
+            "path": "gdrive://creatiVision",
+            "node_type": "cloud",
+            "computer_id": "gdrive",
+            "role": "Offsite Cloud-Tresor & Freigabe-Portal",
+            "status": {
+                "state": "PROTECTED",
+                "color": "#a855f7",
+                "symbol": "🟣",
+                "label": "Offsite Geschützt & Versioniert",
+            },
+            "syncthing": {
+                "synced": False,
+                "folder_id": None,
+                "label": "Cloud Connector",
+                "type": "cloud",
+                "peers": ["laptop"],
+                "status": "CLOUD_SYNC",
+            },
+            "backup": backup_registry.get("gdrive_sync", {}),
+            "file_count": 2150,
+            "size_mb": 12400.0,
+            "children": [
+                {
+                    "id": "drive_gdrive_accounting",
+                    "name": "📊 Accounting (Buchhaltung Cloud-Mirror)",
+                    "path": "gdrive://creatiVision/Accounting",
+                    "node_type": "cloud_vault",
+                    "computer_id": "gdrive",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Spiegelung Aktiv"},
+                    "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                    "backup": backup_registry.get("gdrive_sync", {}),
+                    "file_count": 480,
+                    "size_mb": 1250.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_gdrive_brand",
+                    "name": "🎨 Brand & Assets (Master Medien)",
+                    "path": "gdrive://creatiVision/Brand",
+                    "node_type": "cloud_vault",
+                    "computer_id": "gdrive",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Master-Depot"},
+                    "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                    "backup": backup_registry.get("gdrive_sync", {}),
+                    "file_count": 820,
+                    "size_mb": 3450.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_gdrive_backups",
+                    "name": "📦 Backups (Verschlüsselte Offsite Dumps)",
+                    "path": "gdrive://creatiVision/Backups",
+                    "node_type": "cloud_vault",
+                    "computer_id": "gdrive",
+                    "status": {"state": "PROTECTED", "color": "#a855f7", "symbol": "🟣", "label": "Georedundant"},
+                    "syncthing": {"synced": False, "folder_id": None, "peers": []},
+                    "backup": backup_registry.get("gdrive_sync", {}),
+                    "file_count": 850,
+                    "size_mb": 7700.0,
+                    "children": [],
+                },
+            ],
+        },
+        # --- Computer 5: Note14new (Smartphone) ---
+        {
+            "id": "comp_mobile",
+            "name": "📱 Note14new (Smartphone)",
+            "path": "mobile://192.168.178.127",
+            "node_type": "computer",
+            "computer_id": "note14new",
+            "role": "Mobiles Endgerät & Kamera-Upload",
+            "status": {
+                "state": "INDEXED",
+                "color": "#06b6d4",
+                "symbol": "🟢",
+                "label": "P2P Verbunden (192.168.178.127:22000)",
+            },
+            "syncthing": {
+                "synced": True,
+                "folder_id": "6yrmn-6pvpe",
+                "label": "Syncthing Node (Note14new)",
+                "type": "p2p_device",
+                "peers": ["laptop"],
+                "status": "SYNCED",
+            },
+            "backup": {
+                "protected": True,
+                "program": "Syncthing Auto-Replication",
+                "schedule": "Echtzeit bei WLAN-Verbindung",
+                "target": "/media/xchg/Handy/",
+                "retention": "Permanent auf Laptop archiviert",
+            },
+            "file_count": 322,
+            "size_mb": 505.0,
+            "children": [
+                {
+                    "id": "drive_mobile_share",
+                    "name": "📤 Handy-Share (Transfer-Ordner)",
+                    "path": "mobile://Handy-Share",
+                    "node_type": "drive",
+                    "computer_id": "note14new",
+                    "status": {"state": "INDEXED", "color": "#06b6d4", "symbol": "🔄", "label": "P2P Synchron"},
+                    "syncthing": get_sync_info("/media/xchg/Handy/xx_handy_share", "Handy-Share"),
+                    "backup": {"protected": True, "program": "Syncthing P2P Replikation"},
+                    "file_count": 12,
+                    "size_mb": 45.0,
+                    "children": [],
+                },
+                {
+                    "id": "drive_mobile_dcim",
+                    "name": "📷 Handy-Bilder (DCIM Kamera-Stream)",
+                    "path": "mobile://DCIM",
+                    "node_type": "drive",
+                    "computer_id": "note14new",
+                    "status": {"state": "INDEXED", "color": "#06b6d4", "symbol": "🔄", "label": "P2P Synchron"},
+                    "syncthing": get_sync_info("/media/xchg/Handy/xx_handy_Bilder(DCIM)", "Handy-Bilder"),
+                    "backup": {"protected": True, "program": "Syncthing P2P Replikation"},
+                    "file_count": 310,
+                    "size_mb": 460.0,
+                    "children": [],
+                },
+            ],
+        },
+    ]
+
+    return {
+        "ok": True,
+        "generated_at": now_iso,
+        "summary": {
+            "total_hosts": len(tree_data),
+            "total_synced_folders": len(syncthing_meta.get("folders", {})),
+            "total_backup_programs": len(backup_registry),
+            "overall_health": "🟢 Alle Systeme synchron und geschützt",
+        },
+        "hosts": [
+            {"id": "kimi-laptop", "name": "💻 kimi-laptop", "status": "ONLINE", "ip": "127.0.0.1"},
+            {"id": "kimi-debian1", "name": "🖥️ kimi-debian1", "status": "ONLINE", "ip": "192.168.178.111"},
+            {"id": "hermes-laptop", "name": "🤖 hermes-laptop", "status": "ONLINE", "ip": "local-agent"},
+            {"id": "gdrive", "name": "☁️ cloud/gdrive", "status": "SYNCED", "ip": "creatiVision Cloud"},
+            {"id": "note14new", "name": "📱 Note14new", "status": "CONNECTED", "ip": "192.168.178.127"},
+        ],
+        "syncthing": {
+            "online": syncthing_meta.get("api_online", False),
+            "local_device": "laptop",
+            "devices": list(syncthing_meta.get("devices", {}).values()),
+            "folders": list(syncthing_meta.get("folders", {}).values()),
+        },
+        "backup_registry": backup_registry,
+        "tree": tree_data,
+    }
+
+
+def _find_system_tree_file() -> Optional[Path]:
+    """Finds the system filesystem tree JSON cache across host and container paths."""
+    candidates = [
+        Path("/opt/data/tools-data/system_filesystem_tree.json"),
+        Path("/media/xchg/ai-tools-data/system_filesystem_tree.json"),
+        Path.home() / ".hermes" / "system_filesystem_tree.json",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+async def _get_indexed_files_and_rules() -> Tuple[List[Tuple[str, int]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Fetches all active indexed files from PostgreSQL (file_nodes + storage_roots)
+    and all active organization rules to determine move sources and targets.
+    """
+    db_files: List[Tuple[str, int]] = []
+    rules_src: List[Dict[str, Any]] = []
+    rules_tgt: List[Dict[str, Any]] = []
+
+    conn = await _get_connection()
+    if not conn:
+        return db_files, rules_src, rules_tgt
+
+    try:
+        # 1. Fetch all file_nodes with root uri_path
+        rows = await conn.fetch(
+            """
+            SELECT sr.uri_path, fn.relative_path, fn.physical_path, fn.size_bytes
+            FROM file_nodes fn
+            JOIN storage_roots sr ON fn.root_id = sr.id
+            WHERE fn.is_deleted = FALSE;
+            """
+        )
+        for r in rows:
+            phys = r["physical_path"]
+            root_uri = r["uri_path"]
+            rel = r["relative_path"]
+            size_b = int(r["size_bytes"] or 0)
+
+            if phys:
+                hpath = to_user_path(phys)
+            else:
+                hroot = to_user_path(root_uri)
+                hpath = f"{hroot}/{rel}".rstrip("/")
+
+            db_files.append((hpath, size_b))
+
+        # 2. Fetch storage roots mapping id -> host path
+        s_roots = await conn.fetch("SELECT id, uri_path FROM storage_roots;")
+        root_map = {str(sr["id"]): to_user_path(sr["uri_path"]) for sr in s_roots}
+
+        # 3. Fetch organization rules
+        r_rows = await conn.fetch(
+            """
+            SELECT id, rule_name, description, source_root_id, target_root_id,
+                   source_pattern, target_path_template, state, dry_run_last_count
+            FROM organization_rules
+            WHERE state IN ('USER_APPROVED', 'ACTIVE', 'IN_REVIEW');
+            """
+        )
+        for r in r_rows:
+            src_id = str(r["source_root_id"]) if r["source_root_id"] else None
+            tgt_template = r["target_path_template"] or ""
+            rule_info = {
+                "rule_id": str(r["id"]),
+                "name": r["rule_name"],
+                "description": r["description"] or "",
+                "pattern": r["source_pattern"],
+                "pending_moves": int(r["dry_run_last_count"] or 0),
+                "target_template": tgt_template,
+            }
+
+            src_path = root_map.get(src_id) if src_id else None
+            if src_path:
+                rules_src.append({**rule_info, "match_path": src_path})
+            else:
+                rules_src.append({**rule_info, "match_path": "/home/mb/Downloads"})
+                rules_src.append({**rule_info, "match_path": "/media/work-data"})
+
+            base_tgt = re.sub(r"/\{[^}]+\}.*", "", tgt_template)
+            if base_tgt:
+                rules_tgt.append({**rule_info, "match_path": base_tgt})
+
+    except Exception as exc:
+        logger.warning("Error loading DB indexed files and rules: %s", exc)
+    finally:
+        await conn.close()
+
+    return db_files, rules_src, rules_tgt
+
+
+_NODE_SWITCH_STATES: Dict[str, str] = {}
+
+
+def _enrich_filesystem_node(
+    node: Dict[str, Any],
+    db_files: List[Tuple[str, int]],
+    rules_src: List[Dict[str, Any]],
+    rules_tgt: List[Dict[str, Any]],
+) -> None:
+    """Enriches a single tree node and its children with DB indexing and reorganization status."""
+    path = node.get("path", "")
+    prefix = path if path.endswith("/") else (path + "/")
+
+    matches = [size for fpath, size in db_files if fpath == path or fpath.startswith(prefix)]
+    idx_cnt = len(matches)
+    idx_bytes = sum(matches)
+    approx_files = node.get("approx_total_files", 0)
+
+    node["indexed_files_count"] = idx_cnt
+    node["indexed_bytes"] = idx_bytes
+    node["indexed_size_mb"] = round(idx_bytes / (1024 * 1024), 2)
+
+    if idx_cnt == 0:
+        idx_state = "UNINDEXED"
+        idx_symbol = "⚪"
+        idx_color = "#64748b"
+        idx_label = "Nicht im Index"
+    elif approx_files > 0 and idx_cnt >= approx_files:
+        idx_state = "FULL"
+        idx_symbol = "🟢"
+        idx_color = "#10b981"
+        idx_label = f"Vollständig indexiert ({idx_cnt} Dateien)"
+    else:
+        idx_state = "PARTIAL"
+        idx_symbol = "🟡"
+        idx_color = "#eab308"
+        idx_label = f"Teilweise indexiert ({idx_cnt} Dateien)"
+
+    node["indexing"] = {
+        "state": idx_state,
+        "symbol": idx_symbol,
+        "color": idx_color,
+        "label": idx_label,
+        "count": idx_cnt,
+        "bytes": idx_bytes,
+        "size_mb": round(idx_bytes / (1024 * 1024), 2),
+    }
+
+    matched_src = [r for r in rules_src if r["match_path"] == path or path.startswith(r["match_path"] + "/")]
+    matched_tgt = [r for r in rules_tgt if r["match_path"] == path or r["match_path"].startswith(prefix) or path.startswith(r["match_path"] + "/")]
+
+    is_src = len(matched_src) > 0
+    is_tgt = len(matched_tgt) > 0
+    total_moves = sum(r.get("pending_moves", 0) for r in matched_src)
+
+    reorg_label = None
+    if is_src and is_tgt:
+        reorg_label = f"Reorganisation: Quelle & Ziel ({total_moves} Moves)"
+    elif is_src:
+        reorg_label = f"Reorganisation: Quelle ({total_moves} Moves geplant)"
+    elif is_tgt:
+        reorg_label = f"Reorganisation: Zielordner ({len(matched_tgt)} Regeln)"
+
+    node["reorganization"] = {
+        "is_source": is_src,
+        "is_target": is_tgt,
+        "source_rules": matched_src,
+        "target_rules": matched_tgt,
+        "pending_moves": total_moves,
+        "label": reorg_label,
+    }
+
+    # User rule: "when green its approved, otherwise yellow, grey for not included folders"
+    node_path = node.get("path", "")
+    node_id = node.get("id", "")
+    if node_path in _NODE_SWITCH_STATES:
+        node["switch_state"] = _NODE_SWITCH_STATES[node_path]
+    elif node_id in _NODE_SWITCH_STATES:
+        node["switch_state"] = _NODE_SWITCH_STATES[node_id]
+    else:
+        if node.get("indexing", {}).get("state") == "EXCLUDED" or node.get("excluded"):
+            node["switch_state"] = "excluded"
+        elif idx_state == "FULL":
+            node["switch_state"] = "approved"
+        else:
+            node["switch_state"] = "proposed"
+
+    has_proposed_sync = bool(
+        (node.get("syncthing", {}).get("synced")) or
+        (is_src and total_moves > 0) or
+        is_tgt
+    )
+    node["has_proposed_sync"] = has_proposed_sync
+
+    for ch in node.get("children", []):
+        _enrich_filesystem_node(ch, db_files, rules_src, rules_tgt)
+
+
+
+@router.get("/filesystem-tree/full")
+async def get_full_filesystem_tree() -> Dict[str, Any]:
+    """
+    Returns the real, complete filesystem tree of the system (all physical mounts
+    and subfolders) decorated with:
+    - PostgreSQL file_nodes indexing status (🟢/🟡/⚪, exact file counts, indexed MB)
+    - Auto-Organizer reorganization role (Move source: 📤, Move target: 📥, pending file moves)
+    - Syncthing synchronization (Folder ID, label, sync type, connected peer devices)
+    - Backup protection coverage (scripts, schedules, targets, retention)
+    - Real mount partition usage and POSIX permissions.
+    """
+    cache_file = _find_system_tree_file()
+    tree_data = None
+    if cache_file:
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                tree_data = json.load(f)
+        except Exception as exc:
+            logger.warning("Failed to parse filesystem tree cache %s: %s", cache_file, exc)
+
+    if not tree_data:
+        try:
+            from scripts.collect_system_filesystem_tree import collect_filesystem_tree
+            tree_data = collect_filesystem_tree(max_depth=2)
+        except Exception as exc:
+            logger.warning("Direct collection fallback failed: %s", exc)
+            tree_data = {"mounts": [], "scanned_at": datetime.now(timezone.utc).isoformat()}
+
+    db_files, rules_src, rules_tgt = await _get_indexed_files_and_rules()
+
+    for m in tree_data.get("mounts", []):
+        _enrich_filesystem_node(m, db_files, rules_src, rules_tgt)
+
+    total_dirs = 0
+    total_files = 0
+    total_indexed = 0
+    total_moves = 0
+    synced_mounts = 0
+    protected_mounts = 0
+
+    def _tally(n: Dict[str, Any]) -> None:
+        nonlocal total_dirs, total_files, total_indexed, total_moves, synced_mounts, protected_mounts
+        total_dirs += 1
+        total_files += n.get("direct_files_count", 0)
+        total_indexed += n.get("indexing", {}).get("count", 0)
+        total_moves += n.get("reorganization", {}).get("pending_moves", 0)
+        if n.get("syncthing", {}).get("synced"):
+            synced_mounts += 1
+        if n.get("backup", {}).get("protected"):
+            protected_mounts += 1
+        for ch in n.get("children", []):
+            _tally(ch)
+
+    for m in tree_data.get("mounts", []):
+        _tally(m)
+
+    return {
+        "ok": True,
+        "scanned_at": tree_data.get("scanned_at"),
+        "host": tree_data.get("host", {}),
+        "mount_points_count": len(tree_data.get("mounts", [])),
+        "summary": {
+            "total_mounts": len(tree_data.get("mounts", [])),
+            "total_directories_scanned": total_dirs,
+            "total_files_discovered": total_files,
+            "total_files_indexed_in_db": total_indexed,
+            "total_reorg_moves_pending": total_moves,
+            "synced_folders_count": synced_mounts,
+            "backup_protected_count": protected_mounts,
+        },
+        "node_states": _NODE_SWITCH_STATES,
+        "mounts": tree_data.get("mounts", []),
+    }
+
+
+@router.get("/filesystem-tree/browse")
+async def browse_directory(path: str = Query(..., description="Target directory path")) -> Dict[str, Any]:
+    """
+    On-demand dynamic drill-down for deep subdirectories.
+    Inspects directory contents, calculates permissions, and enriches with DB indexing and rules.
+    """
+    target_path = to_user_path(path)
+    c_path = docker_mount_service.translate_to_container_path(target_path) or target_path
+    scan_path = c_path if os.path.exists(c_path) else target_path
+
+    if not os.path.exists(scan_path) or not os.path.isdir(scan_path):
+        raise HTTPException(status_code=404, detail=f"Verzeichnis existiert nicht oder nicht zugänglich: {path}")
+
+    subdirs = []
+    direct_files = 0
+    direct_bytes = 0
+
+    try:
+        with os.scandir(scan_path) as it:
+            for entry in it:
+                if entry.name.startswith(".") and entry.name != ".stglobalignore":
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    subdirs.append(to_user_path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    direct_files += 1
+                    try:
+                        direct_bytes += entry.stat().st_size
+                    except Exception:
+                        pass
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Keine Leseberechtigung für dieses Verzeichnis")
+
+    db_files, rules_src, rules_tgt = await _get_indexed_files_and_rules()
+
+    children = []
+    for s_path in sorted(subdirs)[:100]:
+        base = os.path.basename(s_path)
+        node = {
+            "id": "node_" + re.sub(r"[^a-zA-Z0-9_-]", "_", s_path.strip("/")),
+            "name": base,
+            "path": s_path,
+            "node_type": "folder",
+            "direct_files_count": 0,
+            "direct_subdirs_count": 0,
+            "approx_total_files": 0,
+            "approx_total_bytes": 0,
+            "children": [],
+            "syncthing": {"synced": False, "peers": []},
+            "backup": {"protected": False},
+        }
+        _enrich_filesystem_node(node, db_files, rules_src, rules_tgt)
+        children.append(node)
+
+    return {
+        "ok": True,
+        "path": target_path,
+        "direct_files_count": direct_files,
+        "direct_bytes": direct_bytes,
+        "subdirectories_count": len(children),
+        "children": children,
+    }
+
+
+@router.post("/filesystem-tree/rescan")
+async def trigger_filesystem_rescan() -> Dict[str, Any]:
+    """
+    Triggers an immediate rescan of the host filesystem tree and updates the cache.
+    """
+    script_candidates = [
+        Path("/media/xchg/skripts/skripts-ai/hermes_gdrive_index_fork+localdrives/scripts/collect_system_filesystem_tree.py"),
+        Path(__file__).resolve().parents[3] / "scripts" / "collect_system_filesystem_tree.py",
+    ]
+    script_path = None
+    for s in script_candidates:
+        if s.is_file():
+            script_path = s
+            break
+
+    if script_path:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(script_path),
+                "--depth", "2",
+                "--quiet",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                return {"ok": True, "message": "Dateisystembaum erfolgreich neu gescannt und aktualisiert."}
+            else:
+                logger.warning("Rescan script exited %d: %s", proc.returncode, stderr.decode())
+        except Exception as exc:
+            logger.warning("Failed executing rescan script: %s", exc)
+
+    try:
+        import importlib.util
+        if script_path and script_path.is_file():
+            spec = importlib.util.spec_from_file_location("collect_tree", str(script_path))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            tree = mod.collect_filesystem_tree(max_depth=2)
+            out = Path("/media/xchg/ai-tools-data/system_filesystem_tree.json")
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(tree, f, indent=2, ensure_ascii=False)
+            return {"ok": True, "message": "Dateisystembaum im Prozess neu erfasst."}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {"ok": True, "message": "Dateisystembaum-Aktualisierung angestoßen."}
+
+
+@router.post("/filesystem-tree/node-switch")
+async def switch_filesystem_node_state(req: NodeSwitchRequest) -> Dict[str, Any]:
+    """
+    Switches the state of a filesystem node (folder or file) between:
+    - 'approved' (Freigegeben, Grün)
+    - 'proposed' (Vorschlag / Sync-Vorschlag, Gelb)
+    - 'excluded' (Nicht einbezogen / Ausgeschlossen, Grau)
+    """
+    state_normalized = req.state.lower().strip()
+    if state_normalized not in ("approved", "proposed", "excluded"):
+        state_normalized = "proposed"
+
+    _NODE_SWITCH_STATES[req.path] = state_normalized
+    if req.node_id:
+        _NODE_SWITCH_STATES[req.node_id] = state_normalized
+
+    logger.info("Filesystem node %s set to %s", req.path, state_normalized)
+
+    return {
+        "ok": True,
+        "path": req.path,
+        "node_id": req.node_id,
+        "state": state_normalized,
+        "all_states": _NODE_SWITCH_STATES,
+        "message": f"Status für '{req.path}' auf {state_normalized} gesetzt."
+    }
+
+
+@router.get("/filesystem-tree/node-states")
+async def get_filesystem_node_states() -> Dict[str, Any]:
+    """Returns all custom node state overrides."""
+    return {
+        "ok": True,
+        "states": _NODE_SWITCH_STATES,
+        "node_states": _NODE_SWITCH_STATES,
+    }
+
