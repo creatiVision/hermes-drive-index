@@ -13,11 +13,12 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import asyncpg
-from pgvector.asyncpg import register_vector
 
 from hermes_auto_organizer.config import DatabaseConfig
 
 logger = logging.getLogger("hermes_auto_organizer.db")
+
+_pgvector_available: bool | None = None
 
 
 class DatabaseConnectionPool:
@@ -33,7 +34,15 @@ class DatabaseConnectionPool:
             return
 
         async def init_connection(conn: asyncpg.Connection) -> None:
-            await register_vector(conn)
+            global _pgvector_available
+            if _pgvector_available is not False:
+                try:
+                    from pgvector.asyncpg import register_vector
+                    await register_vector(conn)
+                    _pgvector_available = True
+                except ImportError:
+                    _pgvector_available = False
+                    logger.warning("pgvector not installed — vector features disabled (pip install pgvector)")
 
         self._pool = await asyncpg.create_pool(
             host=self._config.host,

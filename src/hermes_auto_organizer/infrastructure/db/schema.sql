@@ -112,3 +112,30 @@ CREATE INDEX IF NOT EXISTS idx_file_embeddings_hnsw
 ON file_embeddings 
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
+
+-- 8. Plugin State (replaces in-memory _STORE dicts)
+CREATE TABLE IF NOT EXISTS plugin_state (
+    key VARCHAR(128) PRIMARY KEY,
+    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 9. Taxonomy Nodes (structured target hierarchy)
+CREATE TABLE IF NOT EXISTS taxonomy_nodes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parent_id UUID REFERENCES taxonomy_nodes(id) ON DELETE CASCADE,
+    node_name VARCHAR(256) NOT NULL,
+    node_path TEXT NOT NULL,
+    icon VARCHAR(64),
+    description TEXT,
+    keywords JSONB DEFAULT '[]'::jsonb,
+    confidence FLOAT DEFAULT 1.0,
+    state VARCHAR(32) DEFAULT 'proposed',
+    source VARCHAR(32) DEFAULT 'manual',
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_taxonomy_parent ON taxonomy_nodes (parent_id);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_state ON taxonomy_nodes (state);
