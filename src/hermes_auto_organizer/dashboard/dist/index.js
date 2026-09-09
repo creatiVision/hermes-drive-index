@@ -4903,6 +4903,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [pathCheckInput, setPathCheckInput] = useState("");
     const [pathCheckResult, setPathCheckResult] = useState(null);
     const [checkingPath, setCheckingPath] = useState(false);
+    // C1: Benutzerdefinierte Quellen (zusätzliche Top-Level-Ordner)
+    const [extraSources, setExtraSources] = useState([]);
+    const [newSourcePath, setNewSourcePath] = useState("");
+    const [sourceAddOpen, setSourceAddOpen] = useState(false);
+    // C2: Host-/LAN-Baum-Browser
+    const [lanTreeOpen, setLanTreeOpen] = useState(false);
+    const [lanTab, setLanTab] = useState("host"); // "host" | "lan"
+    const [browsePath, setBrowsePath] = useState("/");
+    const [browseChildren, setBrowseChildren] = useState([]);
+    const [browseFetching, setBrowseFetching] = useState(false);
     const [loading, setLoading] = useState(false);
     const [notice, setNotice] = useState(null);
 
@@ -4979,6 +4989,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
     // Step 3 Rules Approval and Exclusion State
     const [approvedRuleIds, setApprovedRuleIds] = useState(new Set());
+    // C3: KI-Regel-Chat State
+    const [ruleChatDrafts, setRuleChatDrafts] = useState(new Map());       // ruleId -> Eingabe
+    const [ruleChatThreads, setRuleChatThreads] = useState(new Map());     // ruleId -> Nachrichten []
+    const [ruleChatProcessing, setRuleChatProcessing] = useState(new Set()); // ruleIds im LLM-Aufruf
     const [excludedRuleIds, setExcludedRuleIds] = useState(new Set());
 
     const loadData = useCallback(async () => {
@@ -5234,6 +5248,43 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         }).catch(() => null);
       } catch (err) {
         console.warn("Rule switch sync:", err);
+      }
+    };
+
+    // C3: KI-Regel-Chat — Nachricht senden (Hermes-Standard-LLM via /ai/rule-chat)
+    const sendRuleChat = async (ruleId) => {
+      const draft = (ruleChatDrafts.get(ruleId) || "").trim();
+      if (!draft || ruleChatProcessing.has(ruleId)) return;
+
+      const thread = ruleChatThreads.get(ruleId) || [];
+      const history = thread
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({ role: m.role, content: m.content }));
+
+      // Optimistic: user message + Processing-Indikator
+      setRuleChatThreads(new Map(ruleChatThreads).set(ruleId, [...thread, { role: "user", content: draft }]));
+      setRuleChatDrafts(new Map(ruleChatDrafts).set(ruleId, ""));
+      setRuleChatProcessing(new Set(ruleChatProcessing).add(ruleId));
+
+      try {
+        const data = await apiCall("/ai/rule-chat", {
+          method: "POST",
+          body: JSON.stringify({ rule_id: ruleId, message: draft, history })
+        });
+        const base = new Map(ruleChatThreads);
+        const updated = base.get(ruleId) || [];
+        const withAssistant = [...updated, { role: "assistant", content: data.response || "…", thinking: data.thinking || "" }];
+        setRuleChatThreads(new Map(base).set(ruleId, withAssistant));
+      } catch (err) {
+        const base = new Map(ruleChatThreads);
+        const updated = base.get(ruleId) || [];
+        setRuleChatThreads(new Map(base).set(ruleId, [...updated, { role: "assistant", content: `⚠️ Chat-Fehler: ${err.message}`, thinking: "" }]));
+      } finally {
+        setRuleChatProcessing(prev => {
+          const next = new Set(prev);
+          next.delete(ruleId);
+          return next;
+        });
       }
     };
 
@@ -5735,6 +5786,46 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       setNotice(`Quellordner im Baukasten auf '${hpath}' gesetzt.`);
     };
 
+    // C1: Neue Top-Level-Quelle hinzufügen
+    const handleAddSource = () => {
+      const path = (newSourcePath || "").trim();
+      if (!path) {
+        setNotice("Bitte einen gültigen Quellpfad eingeben.");
+        return;
+      }
+      const exists = extraSources.some(s => s.path === path);
+      if (!exists) {
+        setExtraSources([...extraSources, {
+          name: path.split("/").filter(Boolean).pop() || path,
+          path,
+          icon: "📂",
+          desc: "Manuell hinzugefügte Quelle"
+        }]);
+      }
+      setSourceAddOpen(false);
+      setNewSourcePath("");
+      handleSetRuleSource(path);
+    };
+
+    // C2: Host-Dateisystem-Baum durchsuchen (lazy)
+    const fetchBrowse = async (path) => {
+      setBrowseFetching(true);
+      try {
+        const data = await apiCall(`/filesystem-tree/browse?path=${encodeURIComponent(path)}`);
+        setBrowsePath(data.path || path);
+        setBrowseChildren(data.children || []);
+      } catch (err) {
+        setBrowseChildren([]);
+        setNotice(`Durchsuchen fehlgeschlagen: ${err.message}`);
+      } finally {
+        setBrowseFetching(false);
+      }
+    };
+    const openLanTree = () => {
+      setLanTreeOpen(true);
+      fetchBrowse("/");
+    };
+
     const handleSetRuleTarget = (hpath) => {
       const template = hpath.endsWith("/") ? `${hpath}Archiv/{year}/` : `${hpath}/Archiv/{year}/`;
       setTargetTemplate(template);
@@ -6189,9 +6280,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               { name: "Schreibtisch", path: "/home/mb/Schreibtisch", icon: "🖥️", desc: "Temporäre Arbeitsdateien & Notizen" },
               { name: "PrivatBüro", path: "/media/privat-data/10_PrivatBüro", icon: "📁", desc: "Privatdokumente & Belege" },
               { name: "Work Data", path: "/media/work-data", icon: "💼", desc: "Projektunterlagen & Archive" },
+              ...extraSources,
             ].map((src, i) =>
               h("div", {
-                key: i,
+                key: `src_${i}_${src.path}`,
                 style: {
                   background: "rgba(15, 23, 42, 0.75)",
                   border: "1px solid #334155",
@@ -6214,6 +6306,36 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, src.desc)
               )
             )
+          ),
+          // Toolbar: Neue Quelle hinzufügen + Host/LAN als Baum
+          h("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" } },
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-outline",
+              onClick: () => setSourceAddOpen(!sourceAddOpen)
+            }, sourceAddOpen ? "✕ Schließen" : "➕ Weitere Quelle hinzufügen"),
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-outline",
+              onClick: openLanTree
+            }, "🧭 Ganzer Computer / LAN als Baum")
+          ),
+          // Inline-Formular für neue Quelle
+          sourceAddOpen && h("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+            h("input", {
+              type: "text",
+              className: "auto-org-input",
+              placeholder: "z. B. /home/mb/Dokumente oder /media/daten",
+              value: newSourcePath,
+              onChange: (e) => setNewSourcePath(e.target.value),
+              style: { flex: 1, minWidth: "260px" }
+            }),
+            h("button", {
+              type: "button",
+              className: "auto-org-btn auto-org-btn-primary",
+              onClick: handleAddSource,
+              disabled: !(newSourcePath || "").trim()
+            }, "➕ Quelle übernehmen")
           )
         ),
 
@@ -7434,6 +7556,51 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 clusterName: sr.category
               }),
 
+              // ---- C3: Thought-Process + KI-Chat je Regel ----
+              h("div", { className: "auto-org-evidence-box", style: { backgroundColor: "rgba(15,23,42,0.95)", borderLeft: "3px solid #a855f7", marginTop: "0.4rem" } },
+                h("div", { style: { fontWeight: 700, color: "#a855f7", fontSize: "0.78rem" } }, "🤔 Thought Process (Warum diese Regel?)"),
+                h("div", { style: { color: "#e2e8f0", fontSize: "0.78rem", lineHeight: "1.45", marginTop: "0.25rem" } },
+                  sr.ai_reasoning || sr.description || "Kontextueller Vorschlag aus Medien- & Pfadanalyse."
+                )
+              ),
+              h("div", { className: "auto-org-rule-chat" },
+                // Message Thread
+                h("div", { style: { maxHeight: "150px", overflowY: "auto", fontSize: "0.75rem", color: "#cbd5e1", marginBottom: "0.4rem" } },
+                  (ruleChatThreads.get(sr.id) || []).map((msg, mi) =>
+                    h("div", { key: mi, style: { display: "flex", gap: "0.35rem", padding: "0.2rem 0.3rem", borderLeft: msg.role === "user" ? "3px solid #3b82f6" : "3px solid #a855f7" } },
+                      h("span", { style: { fontWeight: 700, color: msg.role === "user" ? "#3b82f6" : "#a855f7" } }, msg.role === "user" ? "👤" : "🤖"),
+                      h("div", { style: { flex: 1 } },
+                        h("div", null, msg.content),
+                        msg.thinking && h("div", { style: { color: "#94a3b8", fontSize: "0.7rem", marginTop: "0.15rem" } }, `💭 ${msg.thinking}`)
+                      )
+                    )
+                  ),
+                  ruleChatProcessing.has(sr.id) && h("div", { style: { color: "#a855f7", fontSize: "0.75rem", padding: "0.2rem" } }, "🤖 Denkt nach…")
+                ),
+                // Input Row
+                h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                  h("input", {
+                    type: "text",
+                    className: "auto-org-input",
+                    placeholder: 'Chat: z. B. „Nimm nur PDFs >1 MB" in dieser Regel …',
+                    value: ruleChatDrafts.get(sr.id) || "",
+                    onChange: (e) => setRuleChatDrafts(new Map(ruleChatDrafts).set(sr.id, e.target.value)),
+                    onKeyDown: (e) => { if (e.key === "Enter") sendRuleChat(sr.id); },
+                    style: { flex: 1, minWidth: "160px" }
+                  }),
+                  h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-primary",
+                    style: { fontSize: "0.72rem", padding: "0.25rem 0.55rem" },
+                    disabled: ruleChatProcessing.has(sr.id) || !(ruleChatDrafts.get(sr.id) || "").trim(),
+                    onClick: () => sendRuleChat(sr.id)
+                  }, "➤ Senden")
+                ),
+                h("div", { style: { fontSize: "0.68rem", color: "#64748b", marginTop: "0.25rem" } },
+                  "KI via Hermes-Standard-Endpoint • Thought Process wird immer angezeigt, Chat modifiziert den Regel-Vorschlag."
+                )
+              ),
+
               // Sample Files Pills
               sr.sample_files && sr.sample_files.length > 0 && h("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.2rem" } },
                 sr.sample_files.slice(0, 3).map((sf, idx) =>
@@ -8122,6 +8289,85 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         return h(MultiComputerTreeWindow, {
           onClose: () => setActiveModal(null)
         });
+      }
+
+      // C2: Vollständiger Host-Dateisystem- & LAN-Baum zum Auswählen einer Quelle
+      if (lanTreeOpen) {
+        const systemsTree = (systemTree && systemTree.tree) || DEFAULT_SYSTEM_TREE;
+        const renderHostChildren = (children, depth = 0) => {
+          if (!children || children.length === 0) return null;
+          return h("div", { style: { paddingLeft: `${depth * 14}px` } },
+            children.map((ch) =>
+              h("div", { key: ch.id || ch.path || ch.name, style: { display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.15rem 0.25rem", fontSize: "0.78rem", color: "#cbd5e1" } },
+                h("span", null, ch.node_type === "drive" ? "💽" : (ch.children && ch.children.length ? "📁" : "📄")),
+                h("span", { style: { fontFamily: "monospace", wordBreak: "break-all" } }, ch.name || ch.path || ""),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-pill-btn",
+                  style: { marginLeft: "auto", fontSize: "0.68rem", padding: "0.1rem 0.4rem" },
+                  onClick: () => handleSetRuleSource(ch.path || ch.name)
+                }, "☑ Als Quelle")
+              ),
+              renderHostChildren(ch.children, depth + 1)
+            )
+          );
+        };
+
+        const title2 = "🧭 Quellordner aus Host-/LAN-Baum wählen";
+        const content2 = h(React.Fragment, null,
+          // Tabs
+          h("div", { className: "auto-org-view-tabs", style: { display: "flex", gap: "0.5rem", marginBottom: "0.75rem" } },
+            h("button", {
+              type: "button",
+              className: `auto-org-view-tab ${lanTab === "host" ? "active" : ""}`,
+              onClick: () => { setLanTab("host"); fetchBrowse("/"); }
+            }, "💻 Dieser Computer"),
+            h("button", {
+              type: "button",
+              className: `auto-org-view-tab ${lanTab === "lan" ? "active" : ""}`,
+              onClick: () => setLanTab("lan")
+            }, "🌐 LAN-Netzwerk (5 Hosts)")
+          ),
+
+          // Host tab: lazy tree browser via /filesystem-tree/browse
+          lanTab === "host" && h("div", { className: "auto-org-panel", style: { maxHeight: "420px", overflowY: "auto", marginTop: "0.5rem" } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.3rem", fontSize: "0.78rem", color: "#93c5fd" } },
+              h("span", null, "📍"),
+              h("span", { style: { fontFamily: "monospace", wordBreak: "break-all" } }, browsePath || "/"),
+              h("button", {
+                type: "button",
+                className: "auto-org-pill-btn",
+                style: { fontSize: "0.68rem", padding: "0.1rem 0.4rem", marginLeft: "auto" },
+                onClick: () => fetchBrowse("/")
+              }, "↻ Wurzel"),
+              h("span", null, browseFetching ? " ⏳ laden…" : "")
+            ),
+            browseChildren.length === 0 && !browseFetching ?
+              h("div", { style: { padding: "0.75rem", color: "#94a3b8", fontSize: "0.8rem" } }, "(Keine sichtbaren Unterordner in dieser Ebene)") :
+              renderHostChildren(browseChildren)
+          ),
+
+          // LAN tab: system-tree plus sign
+          lanTab === "lan" && h("div", { className: "auto-org-panel", style: { maxHeight: "420px", overflowY: "auto", marginTop: "0.5rem" } },
+            renderHostChildren(systemsTree)
+          )
+        );
+
+        return h("div", {
+          className: "auto-org-modal-backdrop",
+          onClick: (e) => { if (e.target === e.currentTarget) { setLanTreeOpen(false); } }
+        },
+          h("div", { className: "auto-org-modal auto-org-modal-lg" },
+            h("div", { className: "auto-org-modal-header" },
+              h("div", { className: "auto-org-modal-title" }, title2),
+              h("button", {
+                className: "auto-org-modal-close",
+                onClick: () => setLanTreeOpen(false)
+              }, "✕")
+            ),
+            h("div", { className: "auto-org-modal-body" }, content2)
+          )
+        );
       }
 
       let title = "";

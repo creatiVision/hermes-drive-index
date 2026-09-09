@@ -241,6 +241,8 @@ The dashboard features a guided, safety-first 4-step wizard:
 #### Step 1: Quelle & Ist-Stand (Source Detection & Ingestion)
 - **Proactive Storage Scan**: Hermes automatically identifies active local partitions, mounts, and Google Drive directories.
 - **Select Source Folders**: Choose unorganized dumpzones (e.g. `~/Downloads`, `~/Schreibtisch`) or specific workspace folders to analyze.
+- **➕ Add custom top-level sources**: The quick-source grid now supports **adding your own top-level folders** via the *„➕ Weitere Quelle hinzufügen"* button (enter any host path, e.g. `/home/mb/Dokumente`). The new source is added to the grid and sets a `source_folder` condition in the Step-3 rule builder.
+- **🧭 Whole computer / LAN as tree**: The *„Ganzer Computer / LAN als Baum"* button opens a browser for (a) the **full host filesystem** (lazy tree from `/`, via `GET /filesystem-tree/browse`) and (b) the **whole LAN** (`GET /system-tree`: kimi-laptop, kimi-debian1, hermes-laptop, cloud/gdrive, Note14new), each entry selectable as a source.
 - **Trigger Vectorization**: Click **"Embedding & Indexing starten"** to extract metadata and compute semantic embeddings in PostgreSQL (`pgvector` with HNSW).
 
 #### Step 2: Organisationssystem & Baum-Freigabe (Target Tree Approval)
@@ -253,6 +255,8 @@ The dashboard features a guided, safety-first 4-step wizard:
 #### Step 3: Proaktive Filter-Regeln & Zuordnung (Rule Configuration)
 - **Parametric Rule Cards**: Review match conditions (MIME types, keywords, regex, date intervals) and target path templates.
 - **Live Match Previews**: View matched file tallies and target destination paths before executing any move.
+- **🤔 Thought Process per rule**: Each suggested rule now shows a *„Warum diese Regel?"* block summarizing the reasoning (confidence, evidence, sample files) that led to the proposal.
+- **💬 AI Chat per rule (Hermes-Standard-Endpoint)**: Every rule card has a **chat input line** — you can converse with the Hermes-standard LLM to tweak the rule (e.g. *„Nimm nur PDFs >1 MB"* → the model replies with a proposed JSON modification). The chat history is kept per rule within the session.
 
 #### Step 4: Simulation & Reorganisation (Dry-Run & Sandbox Execution)
 - **Safety Dry-Run**: Every move is pre-simulated and verified for collisions, cross-device (`EXDEV`) boundaries, and write permissions.
@@ -299,7 +303,26 @@ Click the top-bar button **"🌐 Multi-Computer Tree & Radar (5 Hosts)"** at any
 
 ---
 
-### 5. Automated Web UI Test Harness
+### 5. Neue Quelle hinzufügen & Host-/LAN-Baum
+
+- **➕ Weitere Quelle hinzufügen** (Step 1): Enter a host path in the inline field and click **„➕ Quelle übernehmen"**. The new top-level folder appears in the quick-source grid and activates the Step-3 rule builder with a `source_folder` condition.
+- **🧭 Ganzer Computer / LAN als Baum**: Opens a browser (`activeModal`-style) with two tabs:
+  1. **💻 Dieser Computer** — full lazy tree of the host filesystem (starting at `/`, loaded via `GET /filesystem-tree/browse`).
+  2. **🌐 LAN-Netzwerk (5 Hosts)** — full LAN topology from `GET /system-tree` (kimi-laptop, kimi-debian1, hermes-laptop, cloud/gdrive, Note14new) with backup/sync badges.
+  - Every entry has a **„☑ Als Quelle"** button that selects it as the rule source.
+
+### 6. KI-Regel-Chat & Thought Process
+
+- Each **Step-3 suggested rule card** now shows:
+  - **🤔 Thought Process** — a short reasoning block (`ai_reasoning`) explaining *why* the rule was proposed.
+  - **💬 Chat input line** — send natural-language requests to the **Hermes-standard LLM** via the proxy endpoint `POST /api/plugins/auto-organizer/ai/rule-chat` (OpenAI-compatible `chat/completions`; configured via `HERMES_CHAT_BASE_URL`/`HERMES_CHAT_API_KEY`/`HERMES_CHAT_MODEL`, falling back to `OPENAI_*`/`OPENROUTER_API_KEY`).
+  - The assistant reply shows a `💭 thinking` reasoning line plus the textual response.
+  - If no LLM is configured, the endpoint returns a **deterministic fallback** (derived from `ai_reasoning`/`evidence`/`confidence`) instead of failing.
+- The chat modifies the *suggested rule in memory* (and, if the rule is already adopted, updates the DB) — it does **not** re-organize files by itself.
+
+---
+
+### 7. Automated Web UI Test Harness
 
 To test and debug the web UI without opening a desktop browser, run the included headless Chrome test:
 ```bash
