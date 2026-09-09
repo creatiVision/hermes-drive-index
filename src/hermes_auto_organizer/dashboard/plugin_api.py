@@ -56,6 +56,9 @@ DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 # In-memory session store for pending dry-runs
 _DRY_RUN_CACHE: Dict[str, Dict[str, Any]] = {}
 
+# In-memory store for AI-chat modifications applied to suggested rules
+_CHAT_MODIFIED_RULES: Dict[str, Dict[str, Any]] = {}
+
 
 def to_user_path(p: Optional[str]) -> str:
     """Translates container mount paths (e.g. /opt/data/...) to user host paths."""
@@ -158,6 +161,24 @@ class RollbackRequest(BaseModel):
 
 class PathCheckRequest(BaseModel):
     path: str
+
+
+class RuleChatMessage(BaseModel):
+    role: str = "user"  # "user" | "assistant"
+    content: str
+
+
+class RuleChatRequest(BaseModel):
+    rule_id: str
+    message: str
+    history: List[RuleChatMessage] = Field(default_factory=list)
+
+
+class RuleChatApplyRequest(BaseModel):
+    rule_id: str
+    condition_json: Optional[Dict[str, Any]] = None
+    target_template: Optional[str] = None
+    description: Optional[str] = None
 
 
 class TaxonomyApproveRequest(BaseModel):
@@ -942,6 +963,202 @@ async def switch_suggested_rule(req: RuleSwitchRequest) -> Dict[str, Any]:
         "approved_rules": list(_ACTIVE_SUGGESTED_RULE_IDS),
         "excluded_rules": list(_EXCLUDED_SUGGESTED_RULE_IDS),
         "message": msg
+    }
+
+
+# =====================================================================
+# AI Rule Chat — Thought-Process + Conversation-to-Rule (Hermes Standard)
+# =====================================================================
+ELLIPTIC_DEFAULT_MODEL = "anthropic/claude-3.7-sonnet"  # Hermes-standard default, overridable via env
+
+
+async def _rule_context(rule_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve a suggested rule's full context by id or name."""
+    try:
+        resp = await get_suggested_rules()
+        for r in resp.get("suggested_rules", []):
+            if r["id"] == rule_id or r["name"] == rule_id:
+                return r
+    except Exception as exc:
+        logger.warning("rule context lookup failed for %s: %s", rule_id, exc)
+    return None
+
+
+def _chat_endpoint_config() -> Tuple[str, str, str]:
+    """Return (base_url, api_key, model) using Hermes-standard env then OpenAI-compatible fallback."""
+    # Hermes-Standard (plugin env): most specific first
+    base_url = os.getenv("HERMES_CHAT_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://openrouter.ai/api/v1"
+    api_key = os.getenv("HERMES_CHAT_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+    model = os.getenv("HERMES_CHAT_MODEL") or os.getenv("OPENAI_MODEL") or ELLIPTIC_DEFAULT_MODEL
+    return base_url.rstrip("/"), api_key, model
+
+
+async def _llm_chat(messages: List[Dict[str, str]], max_tokens: int = 900) -> Optional[str]:
+    """Call the Hermes-standard /chat/completions endpoint (openai-compatible). Returns content or None."""
+    base_url, api_key, model = _chat_endpoint_config()
+    if not api_key:
+        return None
+    try:
+        import httpx
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+            logger.warning("LLM chat non-200: %s %s", resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning("LLM chat failed: %s", exc)
+    return None
+
+
+def _deterministic_thought_process(rule: Dict[str, Any]) -> Dict[str, Any]:
+    """Fallback when no LLM is configured: derive a concrete thought process from rule evidence."""
+    conf = rule.get("ai_confidence") or rule.get("confidence") or 0.95
+    conf_txt = f"{round(conf * 100)}% Konfidenz" if isinstance(conf, (int, float)) else "hoher Konfidenz"
+    sample_txt = ", ".join(rule.get("sample_files", [])[:4]) or "Beispieldateien"
+    return {
+        "thinking": (
+            f"Regel '{rule.get('name', rule.get('id', ''))}' wurde vorgeschlagen, weil die Analyse "
+            f"({conf_txt}) wiederkehrende Muster im Datenbestand erkannt hat. "
+            f"Beispiele: {sample_txt}. "
+            f"Evidenz: {rule.get('evidence', 'automatische Medienerkennung')}. "
+            f"Die Regel zielt auf {rule.get('target_template', 'einen Zielordner')} ab."
+        ),
+        "response": (
+            f"Die Regel basiert auf {rule.get('matched_files_count', 0)} passenden Dateien. "
+            f"Aktuell: Bedingung {json.dumps(rule.get('condition_json', {}), ensure_ascii=False)} "
+            f"→ Ziel {rule.get('target_template', '')}. Wie möchtest du sie ändern?"
+        ),
+        "changed_rule": None,
+        "llm": False,
+    }
+
+
+@router.post("/ai/rule-chat")
+async def ai_rule_chat(req: RuleChatRequest) -> Dict[str, Any]:
+    """
+    Provide a 'thought process' summary for a suggested rule and let the user
+    converse with the Hermes-standard LLM to modify the rule.
+    """
+    rule = await _rule_context(req.rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail=f"Regel '{req.rule_id}' nicht gefunden")
+
+    rule_snippet = {
+        "name": rule.get("name"),
+        "category": rule.get("category"),
+        "description": rule.get("description"),
+        "evidence": rule.get("evidence"),
+        "condition_json": rule.get("condition_json"),
+        "target_template": rule.get("target_template"),
+        "sample_files": rule.get("sample_files"),
+        "ai_confidence": rule.get("ai_confidence"),
+        "ai_reasoning": rule.get("ai_reasoning"),
+        "matched_files_count": rule.get("matched_files_count"),
+    }
+    system_prompt = (
+        "Du bist der Regel-Experte des Hermes Auto-Organizer-Plugins. "
+        "Erkläre kurz und präzise (3–5 Sätze), warum die vorliegende Organisationsregel vorgeschlagen wurde "
+        "(Thought Process), und beantworte dann die Anfrage des Nutzers zur Modifikation der Regel. "
+        "Wenn der Nutzer die Regel ändern möchte, liefere das Ergebnis als 'changed_condition' (JSON-Objekt "
+        "mit den Feldern der condition_json) und/oder 'target_template' (neuer Zielpfad) im JSON mit. "
+        "Antworte STRUKTURIErt als JSON-Objekt mit genau diesen Feldern:\n"
+        "{\"thought_process\": \"...\", \"response\": \"...\", "
+        "\"changed_condition\": <objekt|null>, \"target_template\": <string|null>}\n"
+        "Regel im Kontext:\n" + json.dumps(rule_snippet, ensure_ascii=False)
+    )
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for m in req.history:
+        messages.append({"role": m.role if m.role in ("user", "assistant") else "user", "content": m.content})
+    messages.append({"role": "user", "content": req.message})
+
+    content = await _llm_chat(messages)
+    if content is None:
+        # No LLM configured -> deterministic fallback (no failure)
+        return _deterministic_thought_process(rule)
+
+    try:
+        parsed = json.loads(content)
+        # Normalize field names from either the strict schema or loose variants
+        return {
+            "thinking": parsed.get("thought_process") or parsed.get("thinking") or rule.get("ai_reasoning", ""),
+            "response": parsed.get("response") or parsed.get("text") or "Regel angepasst.",
+            "changed_rule": {
+                "condition_json": parsed.get("changed_condition"),
+                "target_template": parsed.get("target_template"),
+            } if (parsed.get("changed_condition") or parsed.get("target_template")) else None,
+            "llm": True,
+        }
+    except Exception:
+        # LLM returned non-JSON: surface raw text with a basic statement
+        return {
+            "thinking": content[:1800],
+            "response": content[:2000],
+            "changed_rule": None,
+            "llm": True,
+        }
+
+
+@router.post("/rules/suggested/chat-apply")
+async def apply_rule_chat(req: RuleChatApplyRequest) -> Dict[str, Any]:
+    """Apply a proposed rule modification (from the AI chat) to a suggested rule's in-memory state."""
+    rule = await _rule_context(req.rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail=f"Regel '{req.rule_id}' nicht gefunden")
+
+    if req.condition_json is not None:
+        rule["condition_json"] = req.condition_json
+    if req.target_template is not None:
+        rule["target_template"] = req.target_template
+    if req.description is not None:
+        rule["description"] = req.description
+
+    _CHAT_MODIFIED_RULES[req.rule_id] = {
+        "condition_json": rule.get("condition_json"),
+        "target_template": rule.get("target_template"),
+        "description": rule.get("description"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Optionally persist to DB if the rule already exists as a native (adopted) rule.
+    conn = await _get_connection()
+    if conn:
+        try:
+            await conn.execute(
+                """
+                UPDATE organization_rules
+                SET condition_json = $1::jsonb,
+                    target_path_template = $2,
+                    description = COALESCE($3, description),
+                    updated_at = NOW()
+                WHERE rule_name = $4 OR id::text = $4
+                """,
+                json.dumps(req.condition_json) if req.condition_json is not None else None,
+                req.target_template if req.target_template is not None else rule.get("target_template"),
+                req.description,
+                req.rule_id,
+            )
+        except Exception:
+            pass
+        finally:
+            await conn.close()
+
+    return {
+        "ok": True,
+        "rule_id": req.rule_id,
+        "modified": _CHAT_MODIFIED_RULES[req.rule_id],
+        "message": "Regel-Vorschlag wurde im Dashboard-Speicher übernommen."
     }
 
 
