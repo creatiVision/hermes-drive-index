@@ -32,6 +32,8 @@ for _candidate in [_this_file.parent, _this_file.parent.parent, _this_file.paren
         sys.path.insert(0, str(_candidate))
 
 import asyncpg
+from hermes_auto_organizer.infrastructure.db.connection import DatabaseConnectionPool
+from hermes_auto_organizer.config import DatabaseConfig
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -89,12 +91,49 @@ def to_user_path(p: Optional[str]) -> str:
     return res
 
 
-async def _get_connection() -> Optional[asyncpg.Connection]:
+_db_pool: Optional[DatabaseConnectionPool] = None
+_pool_lock = asyncio.Lock()
+
+
+class PooledConnectionWrapper:
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+        self._closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
+    async def close(self):
+        if not self._closed:
+            self._closed = True
+            if self._pool and self._pool._pool:
+                await self._pool._pool.release(self._conn)
+
+
+async def _get_connection() -> Optional[Any]:
+    global _db_pool
     try:
-        conn = await asyncio.wait_for(asyncpg.connect(DSN), timeout=2.5)
-        return conn
+        if _db_pool is None:
+            async with _pool_lock:
+                if _db_pool is None:
+                    config = DatabaseConfig(
+                        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, database=DB_NAME
+                    )
+                    pool = DatabaseConnectionPool(config)
+                    await asyncio.wait_for(pool.initialize(), timeout=2.5)
+                    _db_pool = pool
+
+        conn = await _db_pool._pool.acquire()
+        return PooledConnectionWrapper(conn, _db_pool)
     except Exception as exc:
-        logger.warning("Failed to connect to PostgreSQL %s: %s", DSN, exc)
+        logger.warning("Failed to get PostgreSQL connection from pool: %s", exc)
         return None
 
 
@@ -1381,13 +1420,18 @@ async def execute_batch(req: ExecuteRequest) -> Dict[str, Any]:
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             # Safe copy-verify-trash
-            shutil.copy2(src, dst)
-            if send2trash:
-                send2trash(str(src))
-            else:
-                trash_dir = src.parent / ".hermes_trash"
-                trash_dir.mkdir(exist_ok=True)
-                shutil.move(src, trash_dir / src.name)
+            try:
+                shutil.copy2(src, dst)
+                if send2trash:
+                    send2trash(str(src))
+                else:
+                    trash_dir = src.parent / ".hermes_trash"
+                    trash_dir.mkdir(exist_ok=True)
+                    shutil.move(src, trash_dir / src.name)
+            except OSError as exc:
+                logger.error("File operation failed during move %s -> %s: %s", src, dst, exc)
+                failed_count += 1
+                continue
 
             executed_count += 1
 
@@ -1655,7 +1699,12 @@ async def get_taxonomy_tree() -> Dict[str, Any]:
     including match metrics against currently indexed files, Docker mount safety check,
     and user approval state.
     """
-    conn = await _get_connection()
+    try:
+        conn = await _get_connection()
+    except Exception as exc:
+        logger.error("Database connection failed in get_taxonomy_tree: %s", exc)
+        conn = None
+
     nodes_result = []
     total_matched_files = 0
 
@@ -1674,7 +1723,7 @@ async def get_taxonomy_tree() -> Dict[str, Any]:
                     exts = [e.lower() for e in node.get("extensions", [])]
 
                     clauses = []
-                    params: List[Any] = []
+                    params = []
                     param_idx = 1
 
                     if kw_patterns:

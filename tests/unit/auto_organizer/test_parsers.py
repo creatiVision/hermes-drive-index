@@ -67,6 +67,7 @@ import subprocess
 from hermes_auto_organizer.infrastructure.parsers.image_parser import ImageParser
 
 
+@patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract")
 def test_image_parser_support(tmp_path: Path):
     parser = ImageParser()
     img_file = tmp_path / "invoice.png"
@@ -80,6 +81,7 @@ def test_image_parser_support(tmp_path: Path):
         assert parser.supports(txt_file) is False
 
 
+@patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract")
 def test_image_parser_extract_content_ocr(tmp_path: Path):
     parser = ImageParser()
     img_file = tmp_path / "receipt.jpg"
@@ -99,6 +101,7 @@ def test_image_parser_extract_content_ocr(tmp_path: Path):
     assert extraction.metadata_json["ocr_engine"] == "tesseract"
 
 
+@patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract")
 def test_image_parser_timeout(tmp_path: Path):
     parser = ImageParser(timeout_seconds=5)
     img_file = tmp_path / "heavy.tiff"
@@ -129,8 +132,10 @@ def test_doc_parser_scanned_pdf_ocr_fallback(tmp_path: Path):
     mock_ocr_extraction.extraction_strategy = "ocr_pdf_tesseract"
     mock_ocr_extraction.summary_text = "Scanned PDF scanned_doc.pdf (1 pages, OCR text): Inhaltsverzeichnis..."
     mock_ocr_extraction.metadata_json = {"ocr": True}
+    mock_pypdf = MagicMock()
+    mock_pypdf.PdfReader.return_value = mock_reader
 
-    with patch("pypdf.PdfReader", return_value=mock_reader), \
+    with patch("hermes_auto_organizer.infrastructure.parsers.doc_parser.pypdf", mock_pypdf), \
          patch.object(parser, "_ocr_pdf", return_value=mock_ocr_extraction):
         extraction = parser._extract_pdf(pdf_file, "mock_sha256")
 
@@ -138,6 +143,7 @@ def test_doc_parser_scanned_pdf_ocr_fallback(tmp_path: Path):
     assert "OCR text" in extraction.summary_text
 
 
+@patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract")
 def test_composite_extractor_routes_image(tmp_path: Path):
     composite = CompositeExtractor()
     img_file = tmp_path / "diagram.png"
