@@ -578,4 +578,13 @@ def test_filesystem_node_switch_endpoint():
     assert "/media/work-data/projekte" in data["states"]
 
 
+def test_dashboard_bundle_accessibility():
+    manifest_path = Path(__file__).parents[3] / "src" / "hermes_auto_organizer" / "dashboard" / "manifest.json"
+    dist_js = manifest_path.parent / "dist" / "index.js"
+    assert dist_js.exists()
+    content = dist_js.read_text(encoding="utf-8")
+    assert '"aria-label": "Schließen"' in content or '"aria-label": "Fenster schließen"' in content
+    assert '"aria-label": "Bedingung entfernen"' in content
+    assert '"aria-label": "Sync-Ordner löschen"' in content
+    assert '"aria-label": "Vergrößern"' in content
 
