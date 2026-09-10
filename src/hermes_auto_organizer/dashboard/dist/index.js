@@ -13,13 +13,14 @@
   const SDK = window.__HERMES_PLUGIN_SDK__;
   const authedFetch = SDK && SDK.authedFetch;
 
-  // ---- React (loaded by host page) ----
+  // ---- React (loaded by host page via Hermes Plugin SDK) ----
   const React = window.React || window.__HERMES_PLUGIN_SDK__.React;
   const h = React.createElement;
-  const useState = React.useState;
-  const useEffect = React.useEffect;
-  const useCallback = React.useCallback;
-  const useRef = React.useRef;
+  const hooks = window.__HERMES_PLUGIN_SDK__.hooks || {};
+  const useState = hooks.useState || React.useState;
+  const useEffect = hooks.useEffect || React.useEffect;
+  const useCallback = hooks.useCallback || React.useCallback;
+  const useRef = hooks.useRef || React.useRef;
 
   // ---- Inline dark-theme styles ----
   if (typeof document !== "undefined") {
@@ -94,9 +95,18 @@
 
   // ---- Helpers ----
   function fetchJSON(url, opts) {
-    return authedFetch
-      ? authedFetch(url, opts)
-      : fetch(url, Object.assign({ credentials: "same-origin" }, opts || {})).then(function (r) { return r.json(); });
+    try {
+      var req = authedFetch
+        ? authedFetch(url, opts)
+        : fetch(url, Object.assign({ credentials: "same-origin" }, opts || {}));
+      if (!req || typeof req.then !== "function") return Promise.resolve(null);
+      return req.then(function (r) {
+        if (r && typeof r.json === "function") return r.json();
+        return r || null;
+      }).catch(function () { return null; });
+    } catch (e) {
+      return Promise.resolve(null);
+    }
   }
 
   function badgeHtml(type, label) {
@@ -211,12 +221,12 @@
           )
         ),
         h("main", { className: "ao-main" },
-          tab === "quellen" && QuellenTab(),
-          tab === "uebersicht" && UebersichtTab(),
-          tab === "taxonomie" && TaxonomieTab(),
-          tab === "regeln" && RegelnTab(),
-          tab === "vorschau" && VorschauTab(),
-          tab === "journal" && JournalTab()
+          h("div", { style: { display: tab === "quellen" ? "block" : "none" } }, QuellenTab()),
+          h("div", { style: { display: tab === "uebersicht" ? "block" : "none" } }, UebersichtTab()),
+          h("div", { style: { display: tab === "taxonomie" ? "block" : "none" } }, TaxonomieTab()),
+          h("div", { style: { display: tab === "regeln" ? "block" : "none" } }, RegelnTab()),
+          h("div", { style: { display: tab === "vorschau" ? "block" : "none" } }, VorschauTab()),
+          h("div", { style: { display: tab === "journal" ? "block" : "none" } }, JournalTab())
         )
       ),
       showSettings && h("div", { id: "ao-settings-modal" }, h(SettingsModal))
@@ -321,7 +331,10 @@
       Promise.all([
         fetchJSON(API_BASE + "/stats"),
         fetchJSON(API_BASE + "/mounts")
-      ]).then(function (r) { setStats(r[0]); setMounts(r[1]); });
+      ]).then(function (r) {
+        if (r && r[0]) setStats(r[0]);
+        if (r && r[1]) setMounts(r[1]);
+      }).catch(function () {});
     }, []);
 
     function statCard(label, value, sub, color) {
@@ -335,11 +348,13 @@
     if (!stats) return h("div", { className: "ao-empty" }, "Lade Statistiken…");
 
     var mountBars = (mounts && mounts.mounts) ? mounts.mounts.map(function (m) {
-      var pct = m.total_gb > 0 ? (m.free_gb / m.total_gb) * 100 : 0;
+      var free = Number(m.free_gb) || 0;
+      var total = Number(m.total_gb) || 0;
+      var pct = total > 0 ? (free / total) * 100 : 0;
       return h("div", { className: "ao-stat", key: m.host_path },
         h("div", { className: "ao-stat-label" }, m.label || m.host_path),
         h("div", { className: "ao-stat-value", style: { fontSize:"14px" } },
-          m.free_gb.toFixed(1) + " GB frei von " + m.total_gb.toFixed(1) + " GB"
+          free.toFixed(1) + " GB frei von " + total.toFixed(1) + " GB"
         ),
         h("div", { className: "ao-progress" },
           h("div", { className: "ao-progress-bar", style: { width: pct + "%" } })
@@ -372,7 +387,7 @@
     var [saving, setSaving] = useState(false);
 
     useEffect(function () {
-      fetchJSON(API_BASE + "/taxonomy").then(function (d) { setNodes(d); });
+      fetchJSON(API_BASE + "/taxonomy").then(function (d) { if (d) setNodes(d); }).catch(function () {});
     }, []);
 
     function toggleExpand(id) {
@@ -408,7 +423,7 @@
         })
       }).then(function () {
         setNewName(""); setNewPath(""); setSaving(false);
-        fetchJSON(API_BASE + "/taxonomy").then(function (d) { setNodes(d); });
+        fetchJSON(API_BASE + "/taxonomy").then(function (d) { if (d) setNodes(d); }).catch(function () {});
       });
     }
 
@@ -476,7 +491,7 @@
     var [creating, setCreating] = useState(false);
 
     useEffect(function () {
-      fetchJSON(API_BASE + "/rules").then(function (d) { setRules(d); });
+      fetchJSON(API_BASE + "/rules").then(function (d) { if (d) setRules(d); }).catch(function () {});
     }, []);
 
     function toggleRule(id) {
@@ -517,7 +532,7 @@
         })
       }).then(function () {
         setNewName(""); setNewDesc(""); setNewSource(""); setNewTarget(""); setCreating(false);
-        fetchJSON(API_BASE + "/rules").then(function (d) { setRules(d); });
+        fetchJSON(API_BASE + "/rules").then(function (d) { if (d) setRules(d); }).catch(function () {});
       });
     }
 
@@ -696,7 +711,7 @@
     var [rollingBack, setRollingBack] = useState({});
 
     useEffect(function () {
-      fetchJSON(API_BASE + "/journal").then(function (d) { setBatches(d); });
+      fetchJSON(API_BASE + "/journal").then(function (d) { if (d) setBatches(d); }).catch(function () {});
     }, []);
 
     function rollback(id) {
@@ -705,7 +720,7 @@
         .then(function (d) {
           alert("Rollback abgeschlossen: " + d.reverted_count + " Dateien zurückgesetzt.");
           setRollingBack(Object.assign({}, rollingBack, { [id]: false }));
-          fetchJSON(API_BASE + "/journal").then(function (d) { setBatches(d); });
+          fetchJSON(API_BASE + "/journal").then(function (d) { if (d) setBatches(d); }).catch(function () {});
         });
     }
 
