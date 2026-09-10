@@ -218,6 +218,29 @@ hermes-organizer dry-run --rule-id <UUID>
 .venv/bin/pytest -q
 ```
 
+143 tests pass.
+
+---
+
+## Vault Documentation
+
+Detailed documentation lives in the Obsidian Vault:
+`03-Entities/Services/Hermes-Auto-Organizer.md`
+
+Includes: architecture, DB schema, deployment steps, change log (v0.3→v0.4).
+
+---
+
+## Branch Status
+
+- `feat/source-lan-tree-ai-chat` — Active development branch (not merged to main)
+- `main` — Protected (required PR checks + approval)
+- Commits:
+  - `dde9e72` — Phase 1: 44→15 Routes, In-Memory→DB
+  - `2bd3455` — Phase 2: Frontend rewrite (Tabbed Dashboard, 428KB→36KB)
+  - `fe2ea90` — Phase 3: Config cleanup, README
+  - `7d6f549` — Phase 4: Tests + Bug Fixes
+
 ---
 
 ## License

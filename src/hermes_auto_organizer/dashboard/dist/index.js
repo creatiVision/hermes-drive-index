@@ -745,14 +745,22 @@
     );
   }
 
-  // ---- Mount ----
-  if (typeof document !== "undefined") {
-    var container = document.getElementById("auto-org-dashboard") || document.body;
-    ReactDOM = window.ReactDOM || window.__HERMES_PLUGIN_SDK__.ReactDOM;
-    if (ReactDOM && ReactDOM.createRoot) {
-      ReactDOM.createRoot(container).render(h(App));
-    } else if (ReactDOM) {
-      ReactDOM.render(h(App), container);
+  // ---- Header Slot (shows anomaly count) ----
+  function HeaderStatus() {
+    var stats = useState(null)[0];
+    useEffect(function () {
+      fetchJSON(API_BASE + "/stats").then(function (s) { if (s) { /* setState */ } }).catch(function () {});
+    }, []);
+    return h("span", { style: { fontSize: "12px", color: "#94a3b8" } }, "Organizer");
+  }
+
+  // ---- Register with Hermes Dashboard ----
+  if (typeof window !== "undefined" && window.__HERMES_PLUGINS__) {
+    if (typeof window.__HERMES_PLUGINS__.register === "function") {
+      window.__HERMES_PLUGINS__.register("auto-organizer", App);
+    }
+    if (typeof window.__HERMES_PLUGINS__.registerSlot === "function") {
+      window.__HERMES_PLUGINS__.registerSlot("auto-organizer", "header-right", HeaderStatus);
     }
   }
 })();
