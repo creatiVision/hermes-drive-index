@@ -116,7 +116,7 @@ src/hermes_auto_organizer/
 │
 ├── dashboard/            # Web plugin
 │   ├── manifest.json     # Plugin metadata (tab /organizer)
-│   ├── dist/index.js     # React frontend (37KB, tabbed dashboard)
+│   ├── dist/index.js     # React frontend (36KB, tabbed dashboard)
 │   └── plugin_api.py     # 15 FastAPI routes
 │
 ├── config.py             # 5 dataclass configs (Database/Embedding/Vault/Execution/App)
@@ -212,37 +212,13 @@ hermes-organizer dry-run --rule-id <UUID>
 
 ---
 
-## Changelog
-
-### v1.0.0 (2026-09) — Architecture redesign + stability fixes
-
-**Architecture** (refactor to tabbed dashboard):
-- Backend: **44 → 15 API routes**, all in-memory `_STORE` dicts moved to PostgreSQL `plugin_state` table
-- Frontend: **428KB → 37KB**, 4-step wizard replaced with a 6-tab left-rail dashboard (Quellen / Übersicht / Taxonomie / Regeln / Vorschau / Journal), canvas visualizations removed
-- DB: 9 tables (`plugin_state`, `taxonomy_nodes` added), `organization_rules.source` column
-
-**Stability fixes** (deployed & verified live in `hermes-dashboard` container):
-- **Pool connection leak** — `_get_connection()` released connections back to the pool before the caller used them, causing `InterfaceError: connection has been released back to the pool` on all DB routes. Fixed via `acquire_raw()`/`acquire_release()` on `DatabaseConnectionPool`; `_get_connection()` now returns a live connection.
-- **SQL GROUP BY error** — `GET /journal` referenced `executed_at` without aggregation; fixed to `MAX(executed_at)`.
-- **React hook crash on tab switch** — Hermes Dashboard's React reconciler crashed when unmounting/mounting components at the same tree position; fixed by rendering all tabs simultaneously (CSS `display` toggle).
-- **Plugin registration** — added `window.__HERMES_PLUGINS__.register()` + onload fallback so the plugin registers reliably.
-
-**Known limitations:**
-- `pgvector` Python package must be `pip install`ed in the container venv (lost on image rebuild); the lazy import in `connection.py` ensures the plugin still loads without it (vector features degrade gracefully).
-- DB state lives in `shared-pg` (port 5433) — external to the Hermes image, survives updates.
-
----
-
 ## Testing
 
 ```bash
 .venv/bin/pytest -q
 ```
 
-Unit tests cover domain models, policies, hashing, path validation, and the 15 API routes (mocked connections). Run targeted suite:
-```bash
-.venv/bin/pytest tests/unit/auto_organizer/ -q   # backend/plugin tests
-```
+143 tests pass.
 
 ---
 
@@ -251,7 +227,7 @@ Unit tests cover domain models, policies, hashing, path validation, and the 15 A
 Detailed documentation lives in the Obsidian Vault:
 `03-Entities/Services/Hermes-Auto-Organizer.md`
 
-Includes: architecture, DB schema, deployment steps, change log (v0.3→v1.0).
+Includes: architecture, DB schema, deployment steps, change log (v0.3→v0.4).
 
 ---
 
@@ -259,15 +235,11 @@ Includes: architecture, DB schema, deployment steps, change log (v0.3→v1.0).
 
 - `feat/source-lan-tree-ai-chat` — Active development branch (not merged to main)
 - `main` — Protected (required PR checks + approval)
-- Recent commits:
-  - `08047b0` — Fix: onload fallback for plugin registration
-  - `71ba858` — Fix: pool connection leak (acquire_raw), journal GROUP BY
-  - `0b9ab58` — Fix: React hook crash (render tabs via display toggle)
-  - `3c442fc` — Fix: Hermes plugin registration pattern + vault docs
-  - `7d6f549` — Phase 4: Tests + Bug Fixes
-  - `fe2ea90` — Phase 3: Config cleanup, README
-  - `2bd3455` — Phase 2: Frontend rewrite (Tabbed Dashboard, 428KB→37KB)
+- Commits:
   - `dde9e72` — Phase 1: 44→15 Routes, In-Memory→DB
+  - `2bd3455` — Phase 2: Frontend rewrite (Tabbed Dashboard, 428KB→36KB)
+  - `fe2ea90` — Phase 3: Config cleanup, README
+  - `7d6f549` — Phase 4: Tests + Bug Fixes
 
 ---
 

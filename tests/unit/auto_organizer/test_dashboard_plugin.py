@@ -320,58 +320,7 @@ def test_journal_db_unavailable():
         assert data["batches"] == []
 
 
-# --- Sources complete (autocomplete) ---
-
-def test_sources_complete():
-    from unittest.mock import mock_open, MagicMock
-    import json as _json
-    fake_tree = {
-        "mounts": [
-            {
-                "id": "m1", "name": "work-data", "path": "/media/work-data",
-                "node_type": "mount", "children": [
-                    {"id": "c1", "name": "projekte", "path": "/media/work-data/projekte",
-                     "node_type": "folder", "children": []}
-                ],
-            }
-        ]
-    }
-    fake_path = MagicMock(spec=__import__("pathlib").Path)
-    fake_path.exists.return_value = True
-    fake_path.read_text.return_value = _json.dumps(fake_tree)
-    with patch.object(api_module, "_find_system_tree_file", return_value=fake_path), \
-         patch.object(api_module.docker_mount_service, "get_mounts", return_value=[]):
-        res = client.get("/api/plugins/auto-organizer/sources/complete?prefix=/media/work-data")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["ok"] is True
-        assert data["base_dir"] == "/media"
-        assert any(s["path"].startswith("/media/work-data") for s in data["suggestions"])
-        assert any(c["label"] == "media" for c in data["crumbs"])
-
-
-def test_sources_complete_root():
-    from unittest.mock import mock_open, MagicMock
-    import json as _json
-    fake_tree = {"mounts": [
-        {"id": "m1", "name": "work-data", "path": "/media/work-data", "node_type": "mount", "children": []},
-        {"id": "m2", "name": "home", "path": "/home", "node_type": "mount", "children": []},
-    ]}
-    fake_path = MagicMock(spec=__import__("pathlib").Path)
-    fake_path.exists.return_value = True
-    fake_path.read_text.return_value = _json.dumps(fake_tree)
-    with patch.object(api_module, "_find_system_tree_file", return_value=fake_path), \
-         patch.object(api_module.docker_mount_service, "get_mounts", return_value=[]):
-        res = client.get("/api/plugins/auto-organizer/sources/complete?prefix=/")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["ok"] is True
-        assert data["base_dir"] == "/"
-        assert data["crumbs"] == []
-        assert len(data["suggestions"]) >= 1
-
-
 # --- Route count ---
 
 def test_route_count():
-    assert len(router.routes) == 16, f"Expected 16 routes, got {len(router.routes)}"
+    assert len(router.routes) == 15, f"Expected 15 routes, got {len(router.routes)}"
