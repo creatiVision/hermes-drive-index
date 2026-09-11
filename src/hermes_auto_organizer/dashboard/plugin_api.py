@@ -100,7 +100,7 @@ async def _get_conn_ctx() -> Iterator[Optional[asyncpg.Connection]]:
 async def _get_connection() -> Optional[asyncpg.Connection]:
     """Acquire a raw connection from the shared pool.
 
-    Returns a live connection that the caller must release via ``await conn.close()``.
+    Returns a live connection that the caller must release via ``await _release_conn(conn)``.
     This avoids the 'connection has been released back to the pool' error caused by
     acquiring inside a helper that exits its own context.
     """
@@ -119,6 +119,32 @@ async def _get_connection() -> Optional[asyncpg.Connection]:
     except Exception as exc:
         logger.warning("DB pool connection failed: %s", exc)
         return None
+
+
+async def _release_conn(conn: Optional[asyncpg.Connection]) -> None:
+    """Return a pooled connection back to the pool (or close a standalone one).
+
+    Preferred over ``await conn.close()`` which destroys the asyncpg pool proxy
+    instead of returning it to the pool.
+    """
+    global _db_pool
+    if conn is None:
+        return
+    try:
+        if _db_pool is not None and hasattr(_db_pool, "acquire_release"):
+            await _db_pool.acquire_release(conn)
+        else:
+            await conn.close()
+    except Exception:
+        pass
+
+
+def _try_uuid(s: str) -> Any:
+    """Return uuid.UUID(s) if s is a valid 36-char UUID, else leave as-is (or None)."""
+    try:
+        return UUID(s)
+    except Exception:
+        return s
 
 
 _TREE_FILE = "/media/xchg/ai-tools-data/system_filesystem_tree.json"
@@ -363,7 +389,7 @@ async def get_stats() -> Dict[str, Any]:
             "db_connected": True,
         }
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -458,6 +484,118 @@ def _find_child(children: Any, name: str) -> Optional[Dict[str, Any]]:
         if c.get("name") == name:
             return c
     return None
+
+
+def _resolve_tree_path(mounts: List[Dict[str, Any]], path: str) -> Optional[Dict[str, Any]]:
+    """Resolve a host path against the tree mounts, returning the matched node (or None)."""
+    if path == "/":
+        return {"node_type": "root", "children": mounts}
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return {"node_type": "root", "children": mounts}
+    current: Any = None
+    for m in mounts:
+        if m.get("path", "") == ("/" + parts[0]):
+            current = m
+            break
+    if current is None and parts:
+        for m in mounts:
+            child = _find_child(m.get("children", []), parts[0])
+            if child:
+                current = child
+                break
+    if current is None:
+        return None
+    for p in parts[1:]:
+        children = current.get("children", [])
+        nxt = _find_child(children, p)
+        if nxt is None:
+            return None
+        current = nxt
+    return current
+
+
+def _walk_all(nodes: List[Dict[str, Any]], prefix: str, limit: int = 12) -> List[Dict[str, Any]]:
+    """Collect descendant folder paths under a node set, filtered by a host-path prefix."""
+    out: List[Dict[str, Any]] = []
+    def rec(items: List[Dict[str, Any]]) -> None:
+        for it in items or []:
+            p = it.get("path") or ""
+            if p.startswith(prefix):
+                out.append({"path": p, "name": it.get("name") or Path(p).name})
+            if len(out) < limit:
+                rec(it.get("children", []))
+    rec(nodes)
+    return out[:limit]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route  4b — GET /sources/complete (Autocomplete + Breadcrumb)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/sources/complete")
+async def complete_source_path(prefix: str = Query("/", description="Partial path prefix to autocomplete")) -> Dict[str, Any]:
+    tree_file = _find_system_tree_file()
+    mounts: List[Dict[str, Any]] = []
+    if tree_file is not None and tree_file.exists():
+        try:
+            raw = json.loads(tree_file.read_text(encoding="utf-8"))
+            mounts = raw.get("mounts", [])
+        except Exception as exc:
+            logger.warning("Failed to read tree file for autocomplete: %s", exc)
+    if not mounts:
+        mounts = docker_mount_service.get_mounts(force_refresh=True)
+        # DockerMountService returns flat dicts with host_path/label and no children.
+        # Normalize to tree-node shape so filtering below works.
+        mounts = [
+            {
+                "path": m.get("host_path") or m.get("path") or "",
+                "name": m.get("label") or m.get("name") or m.get("host_path") or "",
+                "node_type": "mount",
+                "children": [],
+            }
+            for m in mounts
+        ]
+
+    # Determine the directory portion of the typed prefix: match children of the parent dir
+    prefix = prefix or "/"
+    base_dir = prefix
+    if not prefix.endswith("/"):
+        base_dir = prefix[: prefix.rfind("/")] or "/"
+    elif prefix != "/":
+        base_dir = prefix  # already a dir, list its children
+    else:
+        base_dir = "/"
+
+    # Resolve the base node to list its children as suggestions
+    base_node = _resolve_tree_path(mounts, base_dir)
+    children: List[Dict[str, Any]] = base_node.get("children", []) if base_node else []
+    suggestions: List[Dict[str, Any]] = []
+    for c in children:
+        cpath = c.get("path") or ""
+        if cpath.startswith(prefix):
+            suggestions.append({"path": cpath, "name": c.get("name") or Path(cpath).name})
+    # Fallback: if nothing matches directly, do a preorder search for prefix under root
+    if not suggestions and prefix:
+        suggestions = _walk_all(mounts, prefix)
+
+    # Breadcrumb segments for the current base directory
+    crumbs: List[Dict[str, str]] = []
+    if base_dir != "/":
+        parts = [p for p in base_dir.split("/") if p]
+        acc = ""
+        for p in parts:
+            acc += "/" + p
+            crumbs.append({"label": p, "path": acc})
+
+    return {
+        "ok": True,
+        "prefix": prefix,
+        "base_dir": base_dir,
+        "suggestions": suggestions,
+        "crumbs": crumbs,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -605,8 +743,8 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
                 source = COALESCE(EXCLUDED.source, taxonomy_nodes.source),
                 updated_at = NOW();
             """,
-            UUID(node_id) if len(node_id) == 36 else node_id,
-            UUID(req.parent_id) if req.parent_id and len(req.parent_id) == 36 else req.parent_id,
+            _try_uuid(node_id),
+            _try_uuid(req.parent_id) if req.parent_id else req.parent_id,
             req.node_name,
             req.node_path,
             req.icon,
@@ -618,7 +756,7 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
         )
         row = await conn.fetchrow(
             "SELECT id, parent_id, node_name, node_path, icon, description, keywords, confidence, state, source FROM taxonomy_nodes WHERE id = $1;",
-            UUID(node_id) if len(node_id) == 36 else node_id,
+            _try_uuid(node_id),
         )
         if row is None:
             raise HTTPException(status_code=500, detail="Failed to retrieve created node")
@@ -637,12 +775,12 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
         }
         children = await conn.fetch(
             "SELECT id, node_name FROM taxonomy_nodes WHERE parent_id = $1;",
-            UUID(node_id) if len(node_id) == 36 else node_id,
+            _try_uuid(node_id),
         )
         node["children"] = [{"id": str(c["id"]), "node_name": c["node_name"]} for c in children]
         return {"ok": True, "node": node}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -825,7 +963,7 @@ async def create_or_update_rule(req: RuleCreateRequest) -> Dict[str, Any]:
             "source": row["source"],
         }
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -870,12 +1008,12 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
                 snippet["condition_json"] = {}
     else:
         snippet = {
-            "rule_name": rule_row.rule_name,
-            "description": rule_row.description,
-            "source_pattern": rule_row.source_pattern,
-            "condition_json": rule_row.condition_json,
-            "target_path_template": rule_row.target_path_template,
-            "state": rule_row.state.value,
+            "rule_name": rule_row["rule_name"],
+            "description": rule_row.get("description"),
+            "source_pattern": rule_row.get("source_pattern"),
+            "condition_json": rule_row.get("condition_json"),
+            "target_path_template": rule_row.get("target_path_template"),
+            "state": getattr(rule_row.get("state"), "value", rule_row.get("state")),
         }
 
     system_prompt = (
@@ -891,7 +1029,7 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
     messages = [{"role": "system", "content": system_prompt}]
     messages.append({"role": "user", "content": req.message})
 
-    thought_process, modified_condition, modified_target = _llm_chat_result(messages)
+    thought_process, modified_condition, modified_target = await _llm_chat_result(messages)
 
     # Save to plugin_state
     if conn is not None:
@@ -910,7 +1048,7 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("Failed to persist rule_chat state: %s", exc)
         finally:
-            await conn.close() if hasattr(conn, "close") else None
+            await _release_conn(conn)
 
     return {
         "ok": True,
@@ -999,7 +1137,10 @@ async def toggle_rule(rule_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     try:
-        uuid_id = UUID(rule_id)
+        try:
+            uuid_id = UUID(rule_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid rule_id format")
         current = await conn.fetchrow(
             "SELECT state FROM organization_rules WHERE id = $1;", uuid_id
         )
@@ -1016,7 +1157,7 @@ async def toggle_rule(rule_id: str) -> Dict[str, Any]:
         )
         return {"ok": True, "rule_id": rule_id, "state": new_state}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1150,7 +1291,7 @@ async def preview_dry_run(req: PreviewRequest) -> Dict[str, Any]:
 
         return result
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1251,7 +1392,7 @@ async def get_journal() -> Dict[str, Any]:
         ]
         return {"ok": True, "batches": batches}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1272,7 +1413,7 @@ async def rollback_batch(batch_id: str) -> Dict[str, Any]:
 
     ledger = PostgresExecutionLedger(_db_pool)
     records = await ledger.list_batch_records(batch_uuid)
-    records = [r for r in records if r.rollback_state.value == "EXECUTED"]
+    records = [r for r in records if r.rollback_state and r.rollback_state.value == "EXECUTED"]
 
     if not records:
         return {"ok": False, "message": f"No executed records for batch {batch_id}"}

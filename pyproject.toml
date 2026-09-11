@@ -42,8 +42,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
-dev = ["pytest>=8", "ruff>=0.8"]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.8"]
 ocr = ["ocrmypdf>=15"]
 organizer = [
   "asyncpg>=0.29",
