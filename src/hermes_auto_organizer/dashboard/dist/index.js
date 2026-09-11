@@ -61,6 +61,15 @@
         .ao-tree-indent { flex:1; }
         .ao-tree-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ao-checkbox { width:16px; height:16px; accent-color:#3b82f6; cursor:pointer; }
+        .ao-link { color:#3b82f6; cursor:pointer; }
+        .ao-crumb-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:8px 12px; margin-bottom:12px; font-size:13px; }
+        .ao-crumb { color:#3b82f6; cursor:pointer; padding:2px 6px; border-radius:4px; white-space:nowrap; }
+        .ao-crumb:hover { background:#1e293b; }
+        .ao-crumb.active { color:#f8fafc; font-weight:600; }
+        .ao-crumb-sep { color:#64748b; }
+        .ao-ac-dropdown { position:absolute; top:100%; left:0; z-index:100; background:#1e293b; border:1px solid #334155; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.3); min-width:280px; max-height:280px; overflow-y:auto; }
+        .ao-ac-item { padding:8px 12px; cursor:pointer; font-size:13px; color:#f8fafc; white-space:nowrap; }
+        .ao-ac-item:hover { background:#3b82f6; color:#fff; }
         .ao-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
         .ao-badge-green { background:#166534; color:#4ade80; }
         .ao-badge-red { background:#7f1d1d; color:#fca5a5; }
@@ -240,6 +249,9 @@
     var [loading, setLoading] = useState(false);
     var [expanded, setExpanded] = useState({});
     var [checked, setChecked] = useState({});
+    var [suggestions, setSuggestions] = useState([]);
+    var [showAc, setShowAc] = useState(false);
+    var [crumbs, setCrumbs] = useState([]);
 
     function loadTree(p) {
       setLoading(true);
@@ -248,6 +260,30 @@
         .catch(function () { setLoading(false); });
     }
     useEffect(function () { loadTree(path); }, [path]);
+
+    function loadComplete(p) {
+      // Fetch autocomplete suggestions + breadcrumbs for the given prefix
+      fetchJSON(API_BASE + "/sources/complete?prefix=" + encodeURIComponent(p))
+        .then(function (d) {
+          if (d && d.ok) {
+            if (Array.isArray(d.suggestions)) setSuggestions(d.suggestions);
+            if (Array.isArray(d.crumbs)) setCrumbs(d.crumbs);
+          }
+        })
+        .catch(function () {});
+    }
+    useEffect(function () { loadComplete(path); }, [path]);
+
+    function pickSuggestion(p) {
+      setPath(p);
+      setShowAc(false);
+      setSuggestions([]);
+    }
+
+    function onPathInput(e) {
+      setPath(e.target.value);
+      setShowAc(true);
+    }
 
     function toggleExpand(id) {
       setExpanded(Object.assign({}, expanded, { [id]: !expanded[id] }));
@@ -274,7 +310,11 @@
               : h("span", { className: "ao-tree-caret" }, "·"),
             h("span", { style: { paddingLeft: (indent || 0) + "px" } }, null),
             h("input", { type: "checkbox", className: "ao-checkbox", checked: !!checked[n.id], onClick: function (e) { toggleCheck(n.id, e); } }),
-            h("span", { className: "ao-tree-name" }, n.name || n.path)
+            // Clicking a folder name navigates into it (loads its subtree from server)
+            h("span", {
+              className: "ao-tree-name" + (hasChildren ? " ao-link" : ""),
+              onClick: function () { if (hasChildren && n.path) { setPath(n.path); } }
+            }, n.name || n.path)
           )
         ));
         if (isOpen && hasChildren) {
@@ -284,9 +324,28 @@
       });
     }
 
+    function crumbBar() {
+      // Prepend root crumb, then each segment from the server's /sources/complete crumbs
+      var items = [];
+      items.push(h("span", {
+        className: "ao-crumb" + (path === "/" ? " active" : ""),
+        onClick: function () { setPath("/"); }
+      }, "📁 /"));
+      crumbs.map(function (c) {
+        items.push(h("span", { className: "ao-crumb-sep" }, "›"));
+        items.push(h("span", {
+          className: "ao-crumb",
+          onClick: function () { setPath(c.path); }
+        }, c.label));
+      });
+      return items;
+    }
+
     var containerPath = path === "/" ? "/" : path.substring(0, path.lastIndexOf("/") || 0);
 
     return h("div", null,
+      // Breadcrumb navigation bar
+      h("div", { className: "ao-crumb-bar" }, crumbBar()),
       h("div", { className: "ao-card" },
         h("div", { className: "ao-card-title" }, "📁 Quellen — Dateisystem"),
         loading && spinner(),
@@ -297,15 +356,26 @@
       ),
       h("div", { className: "ao-card" },
         h("div", { style: { display:"flex", justifyContent:"space-between", alignItems:"center" } },
-          h("div", null,
+          h("div", { style: { position:"relative" } },
             h("span", { style: { fontSize:"12px", color:"#94a3b8" } }, "Pfad: "),
             h("input", {
               className: "ao-form-input",
-              style: { width:"240px", fontSize:"13px" },
+              style: { width:"260px", fontSize:"13px" },
               value: path,
-              onChange: function (e) { setPath(e.target.value); }
+              onChange: onPathInput,
+              onFocus: function () { setShowAc(true); },
+              onBlur: function () { setTimeout(function () { setShowAc(false); }, 150); }
             }),
-            h("button", { className: "ao-btn-ghost ao-btn-sm", onClick: function () { loadTree(path); } }, "Neu laden")
+            showAc && suggestions && suggestions.length ? h("div", { className: "ao-ac-dropdown" },
+              suggestions.map(function (s) {
+                return h("div", {
+                  className: "ao-ac-item",
+                  key: s.path,
+                  onMouseDown: function (e) { e.preventDefault(); pickSuggestion(s.path); }
+                }, s.name);
+              })
+            ) : null,
+            h("button", { className: "ao-btn-ghost ao-btn-sm", style: { marginLeft:"6px" }, onClick: function () { loadTree(path); } }, "Neu laden")
           ),
           h("button", { className: "ao-btn", onClick: function () {
             var paths = Object.keys(checked).filter(function (k) { return checked[k]; });

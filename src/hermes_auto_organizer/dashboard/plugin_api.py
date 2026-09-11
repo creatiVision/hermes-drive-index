@@ -460,6 +460,118 @@ def _find_child(children: Any, name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _resolve_tree_path(mounts: List[Dict[str, Any]], path: str) -> Optional[Dict[str, Any]]:
+    """Resolve a host path against the tree mounts, returning the matched node (or None)."""
+    if path == "/":
+        return {"node_type": "root", "children": mounts}
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return {"node_type": "root", "children": mounts}
+    current: Any = None
+    for m in mounts:
+        if m.get("path", "") == ("/" + parts[0]):
+            current = m
+            break
+    if current is None and parts:
+        for m in mounts:
+            child = _find_child(m.get("children", []), parts[0])
+            if child:
+                current = child
+                break
+    if current is None:
+        return None
+    for p in parts[1:]:
+        children = current.get("children", [])
+        nxt = _find_child(children, p)
+        if nxt is None:
+            return None
+        current = nxt
+    return current
+
+
+def _walk_all(nodes: List[Dict[str, Any]], prefix: str, limit: int = 12) -> List[Dict[str, Any]]:
+    """Collect descendant folder paths under a node set, filtered by a host-path prefix."""
+    out: List[Dict[str, Any]] = []
+    def rec(items: List[Dict[str, Any]]) -> None:
+        for it in items or []:
+            p = it.get("path") or ""
+            if p.startswith(prefix):
+                out.append({"path": p, "name": it.get("name") or Path(p).name})
+            if len(out) < limit:
+                rec(it.get("children", []))
+    rec(nodes)
+    return out[:limit]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route  4b — GET /sources/complete (Autocomplete + Breadcrumb)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/sources/complete")
+async def complete_source_path(prefix: str = Query("/", description="Partial path prefix to autocomplete")) -> Dict[str, Any]:
+    tree_file = _find_system_tree_file()
+    mounts: List[Dict[str, Any]] = []
+    if tree_file is not None and tree_file.exists():
+        try:
+            raw = json.loads(tree_file.read_text(encoding="utf-8"))
+            mounts = raw.get("mounts", [])
+        except Exception as exc:
+            logger.warning("Failed to read tree file for autocomplete: %s", exc)
+    if not mounts:
+        mounts = docker_mount_service.get_mounts(force_refresh=True)
+        # DockerMountService returns flat dicts with host_path/label and no children.
+        # Normalize to tree-node shape so filtering below works.
+        mounts = [
+            {
+                "path": m.get("host_path") or m.get("path") or "",
+                "name": m.get("label") or m.get("name") or m.get("host_path") or "",
+                "node_type": "mount",
+                "children": [],
+            }
+            for m in mounts
+        ]
+
+    # Determine the directory portion of the typed prefix: match children of the parent dir
+    prefix = prefix or "/"
+    base_dir = prefix
+    if not prefix.endswith("/"):
+        base_dir = prefix[: prefix.rfind("/")] or "/"
+    elif prefix != "/":
+        base_dir = prefix  # already a dir, list its children
+    else:
+        base_dir = "/"
+
+    # Resolve the base node to list its children as suggestions
+    base_node = _resolve_tree_path(mounts, base_dir)
+    children: List[Dict[str, Any]] = base_node.get("children", []) if base_node else []
+    suggestions: List[Dict[str, Any]] = []
+    for c in children:
+        cpath = c.get("path") or ""
+        if cpath.startswith(prefix):
+            suggestions.append({"path": cpath, "name": c.get("name") or Path(cpath).name})
+    # Fallback: if nothing matches directly, do a preorder search for prefix under root
+    if not suggestions and prefix:
+        suggestions = _walk_all(mounts, prefix)
+
+    # Breadcrumb segments for the current base directory
+    crumbs: List[Dict[str, str]] = []
+    if base_dir != "/":
+        parts = [p for p in base_dir.split("/") if p]
+        acc = ""
+        for p in parts:
+            acc += "/" + p
+            crumbs.append({"label": p, "path": acc})
+
+    return {
+        "ok": True,
+        "prefix": prefix,
+        "base_dir": base_dir,
+        "suggestions": suggestions,
+        "crumbs": crumbs,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Route  5 — POST /sources/scan
 # ═══════════════════════════════════════════════════════════════════════════════
