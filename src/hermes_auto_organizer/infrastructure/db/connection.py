@@ -69,13 +69,24 @@ class DatabaseConnectionPool:
 
     @asynccontextmanager
     async def acquire(self) -> AsyncIterator[asyncpg.Connection]:
-        """Acquire a connection from the pool."""
+        """Acquire a connection from the pool (async context manager)."""
         if self._pool is None:
             await self.initialize()
             assert self._pool is not None
 
         async with self._pool.acquire() as conn:
             yield conn
+
+    async def acquire_raw(self) -> asyncpg.Connection:
+        """Acquire a raw connection WITHOUT releasing it to the pool.
+
+        Caller MUST release it via ``await pool.acquire_release(conn)``.
+        """
+        return await self._pool.acquire()
+
+    async def acquire_release(self, conn: asyncpg.Connection) -> None:
+        """Release a connection acquired via acquire_raw back to the pool."""
+        await self._pool.release(conn)
 
     async def execute(self, query: str, *args: Any) -> str:
         """Execute query on pooled connection."""

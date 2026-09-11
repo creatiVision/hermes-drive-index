@@ -15,7 +15,8 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, Dict, Iterator, List, Optional
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -70,8 +71,15 @@ def _ensure_lock() -> Any:
     return _pool_lock
 
 
-async def _get_connection() -> Optional[asyncpg.Connection]:
-    """Acquire a raw asyncpg connection from the shared pool (or None)."""
+@asynccontextmanager
+async def _get_conn_ctx() -> Iterator[Optional[asyncpg.Connection]]:
+    """Async context manager yielding a raw connection from the shared pool.
+
+    The connection is returned to the pool when the context exits. Routes use
+    ``async with _get_conn_ctx() as conn:`` to avoid the 'connection has been
+    released back to the pool' error that happens when acquiring is done in a
+    helper and the caller holds a stale reference.
+    """
     global _db_pool
     try:
         if _db_pool is None:
@@ -83,7 +91,31 @@ async def _get_connection() -> Optional[asyncpg.Connection]:
                     await pool.initialize()
                     _db_pool = pool
         async with _db_pool.acquire() as conn:
-            return conn
+            yield conn
+    except Exception as exc:
+        logger.warning("DB pool connection failed: %s", exc)
+        yield None
+
+
+async def _get_connection() -> Optional[asyncpg.Connection]:
+    """Acquire a raw connection from the shared pool.
+
+    Returns a live connection that the caller must release via ``await conn.close()``.
+    This avoids the 'connection has been released back to the pool' error caused by
+    acquiring inside a helper that exits its own context.
+    """
+    global _db_pool
+    try:
+        if _db_pool is None:
+            lock = _ensure_lock()
+            async with lock:
+                if _db_pool is None:
+                    cfg = DatabaseConfig()
+                    _db_pool = DatabaseConnectionPool(cfg)
+                    await _db_pool.initialize()
+        if _db_pool is None:
+            return None
+        return await _db_pool.acquire_raw()
     except Exception as exc:
         logger.warning("DB pool connection failed: %s", exc)
         return None
@@ -1198,7 +1230,8 @@ async def get_journal() -> Dict[str, Any]:
     try:
         rows = await conn.fetch(
             """
-            SELECT batch_id, executed_at,
+            SELECT batch_id,
+                   MAX(executed_at) AS executed_at,
                    COUNT(*) AS file_count,
                    ARRAY_AGG(DISTINCT rule_id) AS rule_ids
             FROM execution_log
