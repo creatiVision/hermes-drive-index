@@ -778,4 +778,24 @@
       window.__HERMES_PLUGINS__.registerSlot("auto-organizer", "header-right", HeaderStatus);
     }
   }
+
+  // Also register via onload as fallback for Hermes Dashboard plugin loader
+  // (in case the above runs before the plugin system is ready)
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    var scripts = document.querySelectorAll('script[src*="auto-organizer"]');
+    if (scripts.length > 0) {
+      var s = scripts[0];
+      var originalOnload = s.onload;
+      s.onload = function(event) {
+        if (originalOnload) originalOnload.call(this, event);
+        // Ensure registration happens
+        if (window.__HERMES_PLUGINS__ && window.__HERMES_PLUGINS__.register) {
+          window.__HERMES_PLUGINS__.register("auto-organizer", App);
+          if (window.__HERMES_PLUGINS__.registerSlot) {
+            window.__HERMES_PLUGINS__.registerSlot("auto-organizer", "header-right", HeaderStatus);
+          }
+        }
+      };
+    }
+  }
 })();
