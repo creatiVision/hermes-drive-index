@@ -48,7 +48,7 @@ The dashboard at `http://localhost:9119/organizer` has a left rail with 6 tabs:
 
 | Tab | What you do |
 |-----|-------------|
-| 📁 Quellen | Select source folders from the host filesystem tree, trigger scanning |
+| 📁 Quellen | Select source folders from the host filesystem tree, trigger scanning. **Path autocomplete** while typing + **clickable breadcrumb** navigation |
 | 📊 Übersicht | Overview cards: file count, size, duplicates, disk usage |
 | 🗺️ Taxonomie | Approve/edit the target folder hierarchy tree |
 | 📋 Regeln | Manage rules — each rule has a thought-process summary and an AI chat input for natural-language modification |
@@ -64,7 +64,7 @@ The dashboard at `http://localhost:9119/organizer` has a left rail with 6 tabs:
 
 ---
 
-## API — 15 Routes
+## API — 16 Routes
 
 Base path: `/api/plugins/auto-organizer/`
 
@@ -74,6 +74,7 @@ Base path: `/api/plugins/auto-organizer/`
 | GET | `/stats` | Overview numbers |
 | GET | `/mounts` | Docker mount list |
 | GET | `/sources/tree` | Host-filesystem tree (from cached JSON) |
+| GET | `/sources/complete` | Path autocomplete suggestions + breadcrumbs for a typed prefix |
 | POST | `/sources/scan` | Trigger indexing of selected sources |
 | GET | `/taxonomy` | Target hierarchy from `taxonomy_nodes` table |
 | POST | `/taxonomy/node` | Create/update/approve a taxonomy node |
@@ -226,6 +227,10 @@ hermes-organizer dry-run --rule-id <UUID>
 - **SQL GROUP BY error** — `GET /journal` referenced `executed_at` without aggregation; fixed to `MAX(executed_at)`.
 - **React hook crash on tab switch** — Hermes Dashboard's React reconciler crashed when unmounting/mounting components at the same tree position; fixed by rendering all tabs simultaneously (CSS `display` toggle).
 - **Plugin registration** — added `window.__HERMES_PLUGINS__.register()` + onload fallback so the plugin registers reliably.
+
+**Features**:
+- **Path autocomplete + breadcrumb (Quellen tab)** — new `GET /sources/complete` endpoint returns autocomplete suggestions + breadcrumb segments for a typed path prefix; the Quellen tab shows a live dropdown while typing and a clickable breadcrumb bar.
+- **PR #11 audit fixes** — `rule_chat` AttributeError (Record accessed as attribute + missing `await`), UUID validation returning 400, rollback `None` dereference; all covered by `tests/unit/auto_organizer/test_plugin_api_bugs.py` (12 regression tests).
 
 **Known limitations:**
 - `pgvector` Python package must be `pip install`ed in the container venv (lost on image rebuild); the lazy import in `connection.py` ensures the plugin still loads without it (vector features degrade gracefully).
