@@ -1354,16 +1354,16 @@
           h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, "• Force Physics & Faltung")
         ),
         h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap" } },
-          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen" }, "🎯 Auto-Fit"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen" }, "[+] Alles"),
+          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen", "aria-label": "Ansicht zentrieren und einpassen" }, "🎯 Auto-Fit"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen", "aria-label": "Alle Ordner ausklappen" }, "[+] Alles"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => {
             const map = simRef.current.nodeMap;
             const mountIds = new Set(Array.from(map.values()).filter(n => n.node_type === "mount").map(n => n.id));
             setFoldedIds(mountIds);
-          }, title: "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })) }, "+"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })) }, "-"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }) }, "↺ Reset")
+          }, title: "Nur Hauptlaufwerke zeigen", "aria-label": "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), "aria-label": "Ansicht vergrößern" }, "+"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), "aria-label": "Ansicht verkleinern" }, "-"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), "aria-label": "Ansicht zurücksetzen" }, "↺ Reset")
         ),
         // Color Legend
         h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
@@ -7149,6 +7149,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 className: "auto-org-btn auto-org-btn-outline",
                 style: { padding: "0.3rem 0.6rem", color: "#f87171" },
                 disabled: conditions.length <= 1,
+                "aria-label": `Bedingung ${idx + 1} entfernen`,
                 onClick: () => handleRemoveCondition(idx)
               }, "✕")
             );
@@ -8042,6 +8043,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                         type: "button",
                         className: "auto-org-pill-btn",
                         style: { color: "#f87171" },
+                        "aria-label": `Sync-Zuordnung '${m.name}' löschen`,
                         onClick: () => handleDeleteSyncMapping(m.id, m.name)
                       }, "🗑")
                     )
@@ -8572,6 +8574,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                           type: "button",
                           className: "auto-org-btn auto-org-btn-danger",
                           style: { fontSize: "0.75rem", padding: "0.25rem 0.4rem" },
+                          "aria-label": `Sync-Zuordnung '${m.name}' löschen`,
                           onClick: () => handleDeleteSyncMapping(m.id, m.name)
                         }, "✕")
                       )
@@ -8637,13 +8640,18 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
       return h("div", {
         className: "auto-org-modal-backdrop",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "auto-org-modal-title",
         onClick: (e) => { if (e.target === e.currentTarget) setActiveModal(null); }
       },
         h("div", { className: "auto-org-modal" },
           h("div", { className: "auto-org-modal-header" },
-            h("div", { className: "auto-org-modal-title" }, title),
+            h("div", { className: "auto-org-modal-title", id: "auto-org-modal-title" }, title),
             h("button", {
+              type: "button",
               className: "auto-org-modal-close",
+              "aria-label": "Dialog schließen",
               onClick: () => setActiveModal(null)
             }, "✕")
           ),
