@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+pytest_plugins = ('pytest_asyncio',)
+
 from hermes_auto_organizer.config import DatabaseConfig
 from hermes_auto_organizer.infrastructure.db.connection import DatabaseConnectionPool
 
