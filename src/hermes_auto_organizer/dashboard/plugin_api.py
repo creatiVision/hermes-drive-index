@@ -140,11 +140,24 @@ async def _release_conn(conn: Optional[asyncpg.Connection]) -> None:
 
 
 def _try_uuid(s: str) -> Any:
-    """Return uuid.UUID(s) if s is a valid 36-char UUID, else leave as-is (or None)."""
+    """Return uuid.UUID(s) if s is a valid 36-char UUID, else None (invalid → skip/crash-safe)."""
+    if not s:
+        return None
     try:
         return UUID(s)
     except Exception:
-        return s
+        return None
+
+
+def _is_uuid(s: str) -> bool:
+    """True if s is a structurally valid UUID string."""
+    if not s:
+        return False
+    try:
+        UUID(s)
+        return True
+    except Exception:
+        return False
 
 
 _TREE_FILE = "/media/xchg/ai-tools-data/system_filesystem_tree.json"
@@ -721,6 +734,13 @@ async def get_taxonomy() -> Dict[str, Any]:
 
 @router.post("/taxonomy/node")
 async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
+    # Validate explicitly-provided UUIDs up front so a malformed id/parent_id
+    # returns 400 instead of a Postgres DataError (500) on the INSERT.
+    if req.id and not _is_uuid(req.id):
+        raise HTTPException(status_code=400, detail="Invalid id format")
+    if req.parent_id and not _is_uuid(req.parent_id):
+        raise HTTPException(status_code=400, detail="Invalid parent_id format")
+
     conn = await _get_connection()
     if conn is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
