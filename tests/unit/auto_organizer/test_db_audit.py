@@ -14,7 +14,7 @@ async def test_acquire_raw_and_release():
         host="localhost",
         port=5432,
         user="test_user",
-        password="test_password",
+        password="test_pass",
         database="test_db"
     )
     pool = DatabaseConnectionPool(config)
