@@ -25,11 +25,12 @@ CHUNK_SIZE = 65536  # 64 KB
 PROBE_BLOCK_SIZE = 4096  # 4 KB
 
 
-def compute_fast_probe_hash(path: Path) -> str:
+def compute_fast_probe_hash(path: Path | str) -> str:
     """
     Compute O(1) fast probe hash reading 4KB head and 4KB tail.
     Extremely fast for detecting file mutations without streaming the entire file.
     Optimized: Uses fstat on open descriptor to eliminate redundant path-based os.stat syscalls.
+    Accepts Path or str to avoid Path wrapper allocations during batch scanning.
     """
     try:
         head_bytes = b""
@@ -50,11 +51,12 @@ def compute_fast_probe_hash(path: Path) -> str:
     return hashlib.sha256(probe_data).hexdigest()[:16]
 
 
-def compute_full_sha256(path: Path) -> str:
+def compute_full_sha256(path: Path | str) -> str:
     """
     Stream full SHA-256 of file contents in 64KB chunks.
     Ensures bounded memory consumption regardless of file size.
     Optimized: Avoids extra path-based os.stat check prior to open.
+    Accepts Path or str to avoid Path wrapper allocations during batch scanning.
     """
     try:
         hasher = hashlib.sha256()
