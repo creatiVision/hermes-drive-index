@@ -100,7 +100,7 @@ async def _get_conn_ctx() -> Iterator[Optional[asyncpg.Connection]]:
 async def _get_connection() -> Optional[asyncpg.Connection]:
     """Acquire a raw connection from the shared pool.
 
-    Returns a live connection that the caller must release via ``await conn.close()``.
+    Returns a live connection that the caller must release via ``await _release_conn(conn)``.
     This avoids the 'connection has been released back to the pool' error caused by
     acquiring inside a helper that exits its own context.
     """
@@ -119,6 +119,32 @@ async def _get_connection() -> Optional[asyncpg.Connection]:
     except Exception as exc:
         logger.warning("DB pool connection failed: %s", exc)
         return None
+
+
+async def _release_conn(conn: Optional[asyncpg.Connection]) -> None:
+    """Return a pooled connection back to the pool (or close a standalone one).
+
+    Preferred over ``await conn.close()`` which destroys the asyncpg pool proxy
+    instead of returning it to the pool.
+    """
+    global _db_pool
+    if conn is None:
+        return
+    try:
+        if _db_pool is not None and hasattr(_db_pool, "acquire_release"):
+            await _db_pool.acquire_release(conn)
+        else:
+            await conn.close()
+    except Exception:
+        pass
+
+
+def _try_uuid(s: str) -> Any:
+    """Return uuid.UUID(s) if s is a valid 36-char UUID, else leave as-is (or None)."""
+    try:
+        return UUID(s)
+    except Exception:
+        return s
 
 
 _TREE_FILE = "/media/xchg/ai-tools-data/system_filesystem_tree.json"
@@ -363,7 +389,7 @@ async def get_stats() -> Dict[str, Any]:
             "db_connected": True,
         }
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -717,8 +743,8 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
                 source = COALESCE(EXCLUDED.source, taxonomy_nodes.source),
                 updated_at = NOW();
             """,
-            UUID(node_id) if len(node_id) == 36 else node_id,
-            UUID(req.parent_id) if req.parent_id and len(req.parent_id) == 36 else req.parent_id,
+            _try_uuid(node_id),
+            _try_uuid(req.parent_id) if req.parent_id else req.parent_id,
             req.node_name,
             req.node_path,
             req.icon,
@@ -730,7 +756,7 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
         )
         row = await conn.fetchrow(
             "SELECT id, parent_id, node_name, node_path, icon, description, keywords, confidence, state, source FROM taxonomy_nodes WHERE id = $1;",
-            UUID(node_id) if len(node_id) == 36 else node_id,
+            _try_uuid(node_id),
         )
         if row is None:
             raise HTTPException(status_code=500, detail="Failed to retrieve created node")
@@ -749,12 +775,12 @@ async def create_taxonomy_node(req: TaxonomyNodeRequest) -> Dict[str, Any]:
         }
         children = await conn.fetch(
             "SELECT id, node_name FROM taxonomy_nodes WHERE parent_id = $1;",
-            UUID(node_id) if len(node_id) == 36 else node_id,
+            _try_uuid(node_id),
         )
         node["children"] = [{"id": str(c["id"]), "node_name": c["node_name"]} for c in children]
         return {"ok": True, "node": node}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -937,7 +963,7 @@ async def create_or_update_rule(req: RuleCreateRequest) -> Dict[str, Any]:
             "source": row["source"],
         }
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -982,12 +1008,12 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
                 snippet["condition_json"] = {}
     else:
         snippet = {
-            "rule_name": rule_row.rule_name,
-            "description": rule_row.description,
-            "source_pattern": rule_row.source_pattern,
-            "condition_json": rule_row.condition_json,
-            "target_path_template": rule_row.target_path_template,
-            "state": rule_row.state.value,
+            "rule_name": rule_row["rule_name"],
+            "description": rule_row.get("description"),
+            "source_pattern": rule_row.get("source_pattern"),
+            "condition_json": rule_row.get("condition_json"),
+            "target_path_template": rule_row.get("target_path_template"),
+            "state": getattr(rule_row.get("state"), "value", rule_row.get("state")),
         }
 
     system_prompt = (
@@ -1003,7 +1029,7 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
     messages = [{"role": "system", "content": system_prompt}]
     messages.append({"role": "user", "content": req.message})
 
-    thought_process, modified_condition, modified_target = _llm_chat_result(messages)
+    thought_process, modified_condition, modified_target = await _llm_chat_result(messages)
 
     # Save to plugin_state
     if conn is not None:
@@ -1022,7 +1048,7 @@ async def rule_chat(rule_id: str, req: RuleChatRequest) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("Failed to persist rule_chat state: %s", exc)
         finally:
-            await conn.close() if hasattr(conn, "close") else None
+            await _release_conn(conn)
 
     return {
         "ok": True,
@@ -1111,7 +1137,10 @@ async def toggle_rule(rule_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     try:
-        uuid_id = UUID(rule_id)
+        try:
+            uuid_id = UUID(rule_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid rule_id format")
         current = await conn.fetchrow(
             "SELECT state FROM organization_rules WHERE id = $1;", uuid_id
         )
@@ -1128,7 +1157,7 @@ async def toggle_rule(rule_id: str) -> Dict[str, Any]:
         )
         return {"ok": True, "rule_id": rule_id, "state": new_state}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1262,7 +1291,7 @@ async def preview_dry_run(req: PreviewRequest) -> Dict[str, Any]:
 
         return result
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1363,7 +1392,7 @@ async def get_journal() -> Dict[str, Any]:
         ]
         return {"ok": True, "batches": batches}
     finally:
-        await conn.close() if hasattr(conn, "close") else None
+        await _release_conn(conn)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1384,7 +1413,7 @@ async def rollback_batch(batch_id: str) -> Dict[str, Any]:
 
     ledger = PostgresExecutionLedger(_db_pool)
     records = await ledger.list_batch_records(batch_uuid)
-    records = [r for r in records if r.rollback_state.value == "EXECUTED"]
+    records = [r for r in records if r.rollback_state and r.rollback_state.value == "EXECUTED"]
 
     if not records:
         return {"ok": False, "message": f"No executed records for batch {batch_id}"}
