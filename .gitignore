@@ -39,3 +39,7 @@ __pycache__/
 .vscode/
 .idea/
 .agents/
+
+# Graphify knowledge graph (synced via Syncthing, never committed)
+graphify-out/
+graphify-out.*
