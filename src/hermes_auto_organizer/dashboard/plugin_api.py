@@ -606,9 +606,48 @@ async def complete_source_path(prefix: str = Query("/", description="Partial pat
         "ok": True,
         "prefix": prefix,
         "base_dir": base_dir,
-        "suggestions": suggestions,
+        "suggestions": _rank_suggestions(suggestions),
         "crumbs": crumbs,
     }
+
+
+# ── Semantic classification helpers ──────────────────────────────────────────
+# A host path's "kind" drives how it is presented in the Quellen tab:
+#   semantic — real filing targets (taxonomy / rules / business folders)
+#   human    — personal folders (Dokumente, Bilder, Videos, Downloads)
+#   system   — AI/agent infrastructure, MCP servers, scripts (de-emphasized)
+_AI_SYSTEM_MARKERS = (
+    "/media/xchg/ai-tools-data", "/media/xchg/ai-graph",
+    "/media/xchg/ai-knowledge-base", "/media/xchg/ai-agents-workspaces",
+    "/.hermes", "/jules-mcp-server",
+)
+_HUMAN_HOME_MARKERS = ("/home/", "/Dokumente", "/Bilder", "/Videos", "/Downloads", "/Schreibtisch", "/Desktop")
+
+
+def _suggestion_kind(path: str) -> str:
+    """Classify a host path as semantic / human / system."""
+    p = (path or "").rstrip("/")
+    if any(m in p for m in _AI_SYSTEM_MARKERS):
+        return "system"
+    if any(m in p for m in _HUMAN_HOME_MARKERS):
+        return "human"
+    # Business / private data trees (work-data, privat-data) are filing targets
+    if "/media/work-data" in p or "/media/privat-data" in p:
+        return "semantic"
+    return "human"
+
+
+def _rank_suggestions(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Annotate each suggestion with a kind + priority and sort semantic first."""
+    order = {"semantic": 0, "human": 1, "system": 2}
+    out = []
+    for it in items:
+        p = it.get("path") or ""
+        kind = _suggestion_kind(p)
+        it["kind"] = kind
+        it["priority"] = order.get(kind, 1)
+        out.append(it)
+    return sorted(out, key=lambda x: (x.get("priority", 1), x.get("name", "").lower()))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

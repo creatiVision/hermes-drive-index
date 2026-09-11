@@ -70,6 +70,8 @@
         .ao-ac-dropdown { position:absolute; top:100%; left:0; z-index:100; background:#1e293b; border:1px solid #334155; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.3); min-width:280px; max-height:280px; overflow-y:auto; }
         .ao-ac-item { padding:8px 12px; cursor:pointer; font-size:13px; color:#f8fafc; white-space:nowrap; }
         .ao-ac-item:hover { background:#3b82f6; color:#fff; }
+        .ao-ac-more { color:#94a3b8; font-size:12px; border-top:1px solid #475569; }
+        .ao-ac-more:hover { background:#334155; color:#f8fafc; }
         .ao-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
         .ao-badge-green { background:#166534; color:#4ade80; }
         .ao-badge-red { background:#7f1d1d; color:#fca5a5; }
@@ -252,6 +254,7 @@
     var [suggestions, setSuggestions] = useState([]);
     var [showAc, setShowAc] = useState(false);
     var [crumbs, setCrumbs] = useState([]);
+    var [showSystem, setShowSystem] = useState(false);
 
     function loadTree(p) {
       setLoading(true);
@@ -367,13 +370,18 @@
               onBlur: function () { setTimeout(function () { setShowAc(false); }, 150); }
             }),
             showAc && suggestions && suggestions.length ? h("div", { className: "ao-ac-dropdown" },
-              suggestions.map(function (s) {
+              suggestions.filter(function (s) { return showSystem || s.kind !== "system"; }).map(function (s) {
+                var badge = s.kind === "semantic" ? "📁 " : s.kind === "system" ? "⚙️ " : "🏠 ";
                 return h("div", {
                   className: "ao-ac-item",
                   key: s.path,
                   onMouseDown: function (e) { e.preventDefault(); pickSuggestion(s.path); }
-                }, s.name);
-              })
+                }, badge + s.name + (s.kind === "system" ? " (System)" : ""));
+              }).concat(
+                showSystem ? [] : suggestions.some(function (s) { return s.kind === "system"; })
+                  ? [h("div", { key: "__toggle", className: "ao-ac-item ao-ac-more", onClick: function () { setShowSystem(true); } }, "⚙️ Systemordner anzeigen")]
+                  : []
+              )
             ) : null,
             h("button", { className: "ao-btn-ghost ao-btn-sm", style: { marginLeft:"6px" }, onClick: function () { loadTree(path); } }, "Neu laden")
           ),
