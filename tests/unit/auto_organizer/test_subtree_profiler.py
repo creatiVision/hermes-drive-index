@@ -291,3 +291,43 @@ def test_subtree_profiler_execution_and_rollback(tmp_path: Path):
     assert (repo / "main.py").exists()
     assert not Path(target_dest).exists()
 
+
+def test_desktop_and_downloads_thematic_outliers(tmp_path: Path):
+    profiler = RecursiveSubtreeProfiler()
+
+    desktop = tmp_path / "Schreibtisch"
+    desktop.mkdir()
+
+    # 1. Private tickets package
+    tickets = desktop / "strafzettel_ibiza"
+    tickets.mkdir()
+    (tickets / "ticket.pdf").write_text("ticket")
+
+    # 2. Work project
+    work_proj = desktop / "cv_project_alpha"
+    work_proj.mkdir()
+    (work_proj / "readme.md").write_text("# Project")
+
+    # 3. Empty folder
+    empty_dir = desktop / "old_empty_folder"
+    empty_dir.mkdir()
+
+    profile = profiler.profile_directory(desktop)
+    outliers = profiler.detect_outliers(profile)
+
+    types = {o.source_path: (o.disruption_type, o.proposal.action_type, o.proposal.target_path) for o in outliers}
+
+    assert str(tickets) in types
+    assert types[str(tickets)][0] == DisruptionType.TYPE_OUTLIER
+    assert types[str(tickets)][1] == "MOVE"
+    assert "PrivatBüro" in types[str(tickets)][2]
+
+    assert str(work_proj) in types
+    assert types[str(work_proj)][0] == DisruptionType.TYPE_OUTLIER
+    assert types[str(work_proj)][1] == "MOVE"
+    assert "cv-projects" in types[str(work_proj)][2]
+
+    assert str(empty_dir) in types
+    assert types[str(empty_dir)][0] == DisruptionType.CLEANABLE_TEMP
+    assert types[str(empty_dir)][1] == "CLEAN"
+

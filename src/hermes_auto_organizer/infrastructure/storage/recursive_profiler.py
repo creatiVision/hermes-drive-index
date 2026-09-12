@@ -341,6 +341,57 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
                 )
             )
 
+        # Check 4: Thematic folder or document collection sitting directly on Desktop/Downloads
+        if is_generic_parent and node.total_files_count > 0:
+            if any(k in name_lower for k in ["strafzettel", "rechnung", "steuer", "konto", "finanz", "ibiza", "vertrag", "arzt"]):
+                target = f"/media/privat-data/6_PrivatBüro/{node.name}"
+                outliers.append(
+                    OutlierItem(
+                        source_path=node.path,
+                        disruption_type=DisruptionType.TYPE_OUTLIER,
+                        reason_de=f"Privates Dokumentenpaket '{node.name}' liegt ungesichert auf '{p_path.parent.name}'.",
+                        proposal=SolutionProposal(
+                            target_path=target,
+                            confidence=0.92,
+                            reasoning_de="In das PrivatBüro auf privat-data verschieben und sichern.",
+                            action_type="MOVE",
+                        ),
+                        status="pending",
+                    )
+                )
+            elif any(k in name_lower for k in ["cv_", "work", "admin", "client", "bookaccount", "project", "wiki", "code"]):
+                target = f"/media/work-data/002_cv-projects/{node.name}"
+                outliers.append(
+                    OutlierItem(
+                        source_path=node.path,
+                        disruption_type=DisruptionType.TYPE_OUTLIER,
+                        reason_de=f"Geschäftliches Projekt '{node.name}' liegt auf '{p_path.parent.name}'.",
+                        proposal=SolutionProposal(
+                            target_path=target,
+                            confidence=0.90,
+                            reasoning_de="In Projektverzeichnis auf work-data einsortieren.",
+                            action_type="MOVE",
+                        ),
+                        status="pending",
+                    )
+                )
+        # Check 5: Empty directory left on Desktop/Downloads
+        elif is_generic_parent and node.total_files_count == 0 and node.direct_subdirs_count == 0:
+            outliers.append(
+                OutlierItem(
+                    source_path=node.path,
+                    disruption_type=DisruptionType.CLEANABLE_TEMP,
+                    reason_de=f"Leerer Ordner '{node.name}' auf '{p_path.parent.name}'.",
+                    proposal=SolutionProposal(
+                        target_path=f"trash://{node.name}",
+                        confidence=0.95,
+                        reasoning_de="Leeren Ordner in den Papierkorb verschieben.",
+                        action_type="CLEAN",
+                    ),
+                    status="pending",
+                )
+            )
+
         # Recurse down
         for child in node.subfolders:
             self._find_outliers_recursive(child, outliers)
@@ -390,7 +441,7 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
                     NaturalLanguageRule(
                         id="rule-downloads-archive",
                         title_de="Inaktive Downloads archivieren",
-                        description_de=f"Dateien aus '{target_dl.name}', die seit über 90 Tagen nicht verwendet wurden, nach '{target_dl.name}/Archiv/{YYYY}' verschieben.",
+                        description_de=f"Dateien aus '{target_dl.name}', die seit über 90 Tagen nicht verwendet wurden, nach '{target_dl.name}/Archiv/{{YYYY}}' verschieben.",
                         condition_json={
                             "logic": "AND",
                             "conditions": [
