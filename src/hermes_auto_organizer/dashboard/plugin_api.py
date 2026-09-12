@@ -4653,6 +4653,26 @@ async def get_mesh_root_triage() -> Dict[str, Any]:
     return {"ok": True, "candidates": _lan_mesh_use_case.get_root_triage_plan()}
 
 
+class ExecuteRootTriageRequest(BaseModel):
+    candidate_paths: Optional[List[str]] = None
+
+
+class RollbackRootTriageRequest(BaseModel):
+    batch_id: str
+
+
+@router.post("/mesh/root-triage/execute")
+async def execute_mesh_root_triage(req: ExecuteRootTriageRequest) -> Dict[str, Any]:
+    """Executes verified root partition triage moves with rollback tracking."""
+    return _lan_mesh_use_case.execute_root_triage(candidate_paths=req.candidate_paths)
+
+
+@router.post("/mesh/root-triage/rollback")
+async def rollback_mesh_root_triage(req: RollbackRootTriageRequest) -> Dict[str, Any]:
+    """Rolls back a previously executed root partition triage batch."""
+    return _lan_mesh_use_case.rollback_root_triage(batch_id=req.batch_id)
+
+
 # =====================================================================
 # Remote SSH Node Telemetry & Profiling APIs
 # =====================================================================

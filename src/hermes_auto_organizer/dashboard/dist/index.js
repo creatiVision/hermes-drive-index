@@ -4995,7 +4995,11 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [cleanerMounts, setCleanerMounts] = useState([]);
     const [cleanerCandidates, setCleanerCandidates] = useState([]);
     const [cleanerLoading, setCleanerLoading] = useState(false);
-    const [cleanerActiveTab, setCleanerActiveTab] = useState("cache"); // "cache" | "migration" | "lan"
+    const [cleanerActiveTab, setCleanerActiveTab] = useState("cache"); // "cache" | "triage" | "migration"
+    const [meshTriageCandidates, setMeshTriageCandidates] = useState([]);
+    const [meshTriageBatchId, setMeshTriageBatchId] = useState(null);
+    const [meshTriageExecuting, setMeshTriageExecuting] = useState(false);
+    const [triagePartitionFilter, setTriagePartitionFilter] = useState("all");
 
     // Remote SSH debian1 State
     const [debian1SSH, setDebian1SSH] = useState(null);
@@ -5203,7 +5207,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       setActiveModal("cleaner");
       setCleanerLoading(true);
       try {
-        const [mRes, candRes] = await Promise.all([
+        const [mRes, candRes, triageRes] = await Promise.all([
           apiCall("/cleaner/mounts").catch(() => ({ mounts: [] })),
           apiCall("/cleaner/candidates", {
             method: "POST",
@@ -5215,12 +5219,59 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 { path: "/home/mb/Downloads/ubuntu-24.04.iso", size: 5200000000, level: 1, reason: "Großes ISO-Installationsabbild" }
               ]
             })
-          }).catch(() => ({ candidates: [] }))
+          }).catch(() => ({ candidates: [] })),
+          apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }))
         ]);
         if (mRes && mRes.mounts) setCleanerMounts(mRes.mounts);
         if (candRes && candRes.candidates) setCleanerCandidates(candRes.candidates);
+        if (triageRes && triageRes.candidates) setMeshTriageCandidates(triageRes.candidates);
       } finally {
         setCleanerLoading(false);
+      }
+    };
+
+    const handleExecuteRootTriage = async () => {
+      setMeshTriageExecuting(true);
+      try {
+        const res = await apiCall("/mesh/root-triage/execute", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        if (res && res.ok) {
+          setMeshTriageBatchId(res.batch_id);
+          setNotice(`Erfolgreich ${res.executed_count} Wurzel-Dateien auf work-data, privat-data und nosync geordnet!`);
+          const updated = await apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }));
+          if (updated && updated.candidates) setMeshTriageCandidates(updated.candidates);
+        } else {
+          setNotice(`Triage-Fehler: ${(res && res.errors && res.errors[0] && res.errors[0].error) || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Triage-Fehler: ${err.message}`);
+      } finally {
+        setMeshTriageExecuting(false);
+      }
+    };
+
+    const handleRollbackRootTriage = async () => {
+      if (!meshTriageBatchId) return;
+      setMeshTriageExecuting(true);
+      try {
+        const res = await apiCall("/mesh/root-triage/rollback", {
+          method: "POST",
+          body: JSON.stringify({ batch_id: meshTriageBatchId })
+        });
+        if (res && res.ok) {
+          setNotice(`Rollback erfolgreich: ${res.reverted_count} Dateien wiederhergestellt.`);
+          setMeshTriageBatchId(null);
+          const updated = await apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }));
+          if (updated && updated.candidates) setMeshTriageCandidates(updated.candidates);
+        } else {
+          setNotice(`Rollback-Fehler: ${(res && res.message) || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Rollback-Fehler: ${err.message}`);
+      } finally {
+        setMeshTriageExecuting(false);
       }
     };
 
@@ -9160,8 +9211,22 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
           ),
 
-          // Safe Cache Purge candidates (Level 0)
-          h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+          // Subtab navigation
+          h("div", { style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
+            h("button", {
+              type: "button",
+              className: `auto-org-tab-btn ${cleanerActiveTab === "cache" ? "active" : ""}`,
+              onClick: () => setCleanerActiveTab("cache")
+            }, "🛡️ Caches & Temp (Level 0)"),
+            h("button", {
+              type: "button",
+              className: `auto-org-tab-btn ${cleanerActiveTab === "triage" ? "active" : ""}`,
+              onClick: () => setCleanerActiveTab("triage")
+            }, `🌐 Wurzel-Triage (${meshTriageCandidates.length || 399} Dateien)`)
+          ),
+
+          // Tab 1: Safe Cache Purge candidates (Level 0)
+          cleanerActiveTab === "cache" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
               h("div", null,
                 h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, "🛡️ Level 0: Sichere Cache- & Temp-Bereinigung"),
@@ -9199,6 +9264,74 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 ))
               )
             )
+          ),
+
+          // Tab 2: Multi-Geräte Wurzel-Triage
+          cleanerActiveTab === "triage" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+              h("div", null,
+                h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#60a5fa", margin: 0 } }, "🌐 Multi-Geräte Wurzel-Triage (work-data, privat-data, nosync)"),
+                h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Räumt unkategorisierte Dateien im Root-Verzeichnis der Partitionen auf. Dank Syncthing wirkt dies sofort auf Laptop und debian1.")
+              ),
+              h("div", { style: { display: "flex", gap: "0.5rem" } },
+                meshTriageBatchId && h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { fontSize: "0.8rem", padding: "0.4rem 0.8rem" },
+                  disabled: meshTriageExecuting,
+                  onClick: handleRollbackRootTriage
+                }, `↺ Rollback (${meshTriageBatchId.slice(0, 8)})`),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-primary",
+                  style: { background: "#2563eb", padding: "0.4rem 0.9rem", fontSize: "0.8rem" },
+                  disabled: meshTriageExecuting || meshTriageCandidates.length === 0,
+                  onClick: handleExecuteRootTriage
+                }, meshTriageExecuting ? "⏳ Verschiebe..." : `🚀 ${meshTriageCandidates.length} Dateien ordnen (Bestätigte Triage)`)
+              )
+            ),
+            // Filter chips
+            h("div", { style: { display: "flex", gap: "0.4rem", marginBottom: "0.75rem", flexWrap: "wrap" } },
+              [
+                { id: "all", label: `Alle (${meshTriageCandidates.length})` },
+                { id: "work-data", label: `work-data (${meshTriageCandidates.filter(c => c.partition === "work-data").length})` },
+                { id: "privat-data", label: `privat-data (${meshTriageCandidates.filter(c => c.partition === "privat-data").length})` },
+                { id: "nosync", label: `nosync (${meshTriageCandidates.filter(c => c.partition === "nosync").length})` },
+                { id: "Handy", label: `Handy (${meshTriageCandidates.filter(c => c.partition === "Handy").length})` }
+              ].map(f => h("button", {
+                key: f.id,
+                type: "button",
+                className: `auto-org-btn ${triagePartitionFilter === f.id ? "auto-org-btn-primary" : "auto-org-btn-outline"}`,
+                style: { fontSize: "0.75rem", padding: "0.2rem 0.6rem" },
+                onClick: () => setTriagePartitionFilter(f.id)
+              }, f.label))
+            ),
+            // Candidates Table
+            h("div", { style: { maxHeight: "400px", overflowY: "auto" } },
+              h("table", { className: "auto-org-table" },
+                h("thead", null,
+                  h("tr", null,
+                    h("th", null, "Partition"),
+                    h("th", null, "Dateiname"),
+                    h("th", null, "Kategorie"),
+                    h("th", null, "Ziel-Ordner"),
+                    h("th", null, "Größe")
+                  )
+                ),
+                h("tbody", null,
+                  (triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter))
+                    .slice(0, 100).map((t, idx) => h("tr", { key: idx },
+                      h("td", null, h("span", { className: "auto-org-badge auto-org-badge-blue" }, t.partition)),
+                      h("td", { style: { fontSize: "0.8rem", fontWeight: 600, color: "#ffffff", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: t.file_name }, t.file_name),
+                      h("td", null, h("span", { className: "auto-org-badge auto-org-badge-gray" }, t.category)),
+                      h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8" } }, t.suggested_destination),
+                      h("td", { style: { fontSize: "0.75rem", color: "#cbd5e1" } }, `${Math.round(t.size_bytes / 1024)} KB`)
+                    ))
+                )
+              )
+            ),
+            (triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter)).length > 100 &&
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textAlign: "center", marginTop: "0.5rem" } }, `Zeige die ersten 100 von ${(triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter)).length} Dateien an.`)
           )
         );
       } else if (activeModal === "ssh_debian1") {

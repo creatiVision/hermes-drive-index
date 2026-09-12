@@ -277,6 +277,9 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
         return outliers
 
     def _find_outliers_recursive(self, node: FolderProfile, outliers: List[OutlierItem]) -> None:
+        if node.name in ("lost+found", ".stfolder", ".stversions", "$RECYCLE.BIN", "System Volume Information"):
+            return
+
         p_path = Path(node.path)
         name_lower = node.name.lower()
         parent_name = p_path.parent.name.lower()
@@ -285,7 +288,11 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
         # (e.g. inside "Downloads", "Desktop", "Dokumente")
         is_generic_parent = any(k in parent_name for k in ["download", "desktop", "schreibtisch", "temp"])
         has_code_dominant = any(ext in CODE_EXTENSIONS for ext in node.extension_counts.keys())
-        has_git = (p_path / ".git").exists()
+        has_git = False
+        try:
+            has_git = (p_path / ".git").exists()
+        except OSError:
+            has_git = False
 
         if is_generic_parent and (has_git or (has_code_dominant and node.total_files_count >= 5)):
             target = str(p_path.parent.parent / "Projekte" / node.name)
