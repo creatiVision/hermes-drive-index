@@ -1361,9 +1361,9 @@
             const mountIds = new Set(Array.from(map.values()).filter(n => n.node_type === "mount").map(n => n.id));
             setFoldedIds(mountIds);
           }, title: "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })) }, "+"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })) }, "-"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }) }, "↺ Reset")
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset")
         ),
         // Color Legend
         h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
@@ -3154,7 +3154,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               type: "button",
               className: "auto-org-modal-close",
               onClick: onClose,
-              title: "Schließen"
+              title: "Schließen",
+              "aria-label": "Fenster schließen"
             }, "✕")
           )
         ),
@@ -3255,14 +3256,15 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   onClick: autoFitScreen,
                   title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
                 }, "🎯 Auto-Fit Screen"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern" }, "+"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern" }, "-"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht" }, "↺ Reset"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset"),
                 h("button", {
                   type: "button",
                   className: "auto-org-pill-btn",
                   onClick: () => setIsPaused(!isPaused),
-                  title: isPaused ? "Animation starten" : "Animation pausieren"
+                  title: isPaused ? "Animation starten" : "Animation pausieren",
+                  "aria-label": isPaused ? "Animation starten" : "Animation pausieren"
                 }, isPaused ? "▶️ Play" : "⏸️ Pause")
               )
             ),
@@ -7149,7 +7151,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 className: "auto-org-btn auto-org-btn-outline",
                 style: { padding: "0.3rem 0.6rem", color: "#f87171" },
                 disabled: conditions.length <= 1,
-                onClick: () => handleRemoveCondition(idx)
+                onClick: () => handleRemoveCondition(idx),
+                "aria-label": "Bedingung entfernen",
+                title: "Bedingung entfernen"
               }, "✕")
             );
           }),
@@ -8042,7 +8046,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                         type: "button",
                         className: "auto-org-pill-btn",
                         style: { color: "#f87171" },
-                        onClick: () => handleDeleteSyncMapping(m.id, m.name)
+                        onClick: () => handleDeleteSyncMapping(m.id, m.name),
+                        "aria-label": "Sync-Zuordnung löschen",
+                        title: "Sync-Zuordnung löschen"
                       }, "🗑")
                     )
                   )
@@ -8572,7 +8578,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                           type: "button",
                           className: "auto-org-btn auto-org-btn-danger",
                           style: { fontSize: "0.75rem", padding: "0.25rem 0.4rem" },
-                          onClick: () => handleDeleteSyncMapping(m.id, m.name)
+                          onClick: () => handleDeleteSyncMapping(m.id, m.name),
+                          "aria-label": "Sync-Zuordnung löschen",
+                          title: "Sync-Zuordnung löschen"
                         }, "✕")
                       )
                     )
@@ -8644,7 +8652,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { className: "auto-org-modal-title" }, title),
             h("button", {
               className: "auto-org-modal-close",
-              onClick: () => setActiveModal(null)
+              onClick: () => setActiveModal(null),
+              "aria-label": "Fenster schließen",
+              title: "Schließen"
             }, "✕")
           ),
           h("div", { className: "auto-org-modal-body" }, content)
