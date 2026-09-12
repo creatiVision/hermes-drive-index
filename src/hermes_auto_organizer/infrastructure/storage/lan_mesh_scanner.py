@@ -117,17 +117,25 @@ class LanMeshScanner:
         for loose files sitting directly in root that need reorganization.
         """
         targets = [
-            ("/media/work-data", "work-data"),
-            ("/media/privat-data", "privat-data"),
-            ("/media/nosync", "nosync"),
-            ("/media/xchg/Handy", "Handy"),
+            ("/media/work-data", "work-data", ["/opt/data/work-data", "/opt/work-data"]),
+            ("/media/privat-data", "privat-data", ["/opt/data/privat-data", "/opt/privat-data"]),
+            ("/media/nosync", "nosync", ["/opt/data/nosync", "/media/nosync"]),
+            ("/media/xchg/Handy", "Handy", ["/opt/data/knowledge-base/Handy", "/media/xchg/Handy"]),
         ]
         candidates: list[dict[str, Any]] = []
 
-        for base_path, partition_name in targets:
+        for base_path, partition_name, fallbacks in targets:
             p = Path(base_path)
             if not p.exists() or not p.is_dir():
-                continue
+                found = False
+                for fb in fallbacks:
+                    alt_p = Path(fb)
+                    if alt_p.exists() and alt_p.is_dir():
+                        p = alt_p
+                        found = True
+                        break
+                if not found:
+                    continue
 
             try:
                 for item in p.iterdir():

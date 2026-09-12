@@ -32,10 +32,26 @@ class SSHNodeInspector(SSHNodePort):
             "role": "Server Node & Compute Hub",
             "user": "mb",
             "candidate_hosts": ["192.168.178.89", "debian1", "192.168.178.111"],
-            "key_path": str(Path.home() / ".ssh" / "id_ed25519_debian1"),
+            "key_name": "id_ed25519_debian1",
             "port": 22,
         }
     }
+
+    @classmethod
+    def _find_key_path(cls, key_name: str = "id_ed25519_debian1") -> Optional[str]:
+        candidates = [
+            Path.home() / ".ssh" / key_name,
+            Path("/opt/data/.ssh") / key_name,
+            Path("/home/mb/.ssh") / key_name,
+            Path("/media/xchg/ai-agents-workspaces/hermes/.hermes/.ssh") / key_name,
+        ]
+        for p in candidates:
+            try:
+                if p.exists() and p.is_file():
+                    return str(p)
+            except OSError:
+                pass
+        return None
 
     def __init__(self, node_configs: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
         self._configs = dict(self.DEFAULT_NODE_CONFIGS)
@@ -59,7 +75,8 @@ class SSHNodeInspector(SSHNodePort):
 
         # Probe candidate hosts
         candidates = cfg.get("candidate_hosts", [])
-        key_path = cfg.get("key_path", "")
+        key_name = cfg.get("key_name", "id_ed25519_debian1")
+        key_path = cfg.get("key_path") or self._find_key_path(key_name)
         user = cfg.get("user", "mb")
         port = cfg.get("port", 22)
 
@@ -98,7 +115,8 @@ class SSHNodeInspector(SSHNodePort):
             return False, f"Host for node '{node_id}' could not be resolved or is offline.", 0.0
 
         cfg = self._configs.get(node_id, {})
-        key_path = cfg.get("key_path", "")
+        key_name = cfg.get("key_name", "id_ed25519_debian1")
+        key_path = cfg.get("key_path") or self._find_key_path(key_name)
         user = cfg.get("user", "mb")
         port = cfg.get("port", 22)
 
