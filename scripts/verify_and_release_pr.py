@@ -82,13 +82,13 @@ def check_conflicts(base_ref: str, head_ref: str) -> tuple[bool, list[str]]:
     return False, conflicts
 
 
-def run_test_suite() -> dict:
+def run_test_suite(cwd: Path | None = None) -> dict:
     """Run pytest suite in .venv and measure performance."""
     venv_pytest = REPO_DIR / ".venv" / "bin" / "pytest"
     pytest_bin = str(venv_pytest) if venv_pytest.exists() else "pytest"
 
     start = time.perf_counter()
-    res = run_cmd([pytest_bin, "-v", "--tb=short"], check=False)
+    res = run_cmd([pytest_bin, "-v", "--tb=short"], cwd=cwd or REPO_DIR, check=False)
     duration = time.perf_counter() - start
 
     passed = res.returncode == 0
@@ -104,17 +104,21 @@ def run_test_suite() -> dict:
     }
 
 
-def run_pr15_benchmark() -> dict:
+def run_pr15_benchmark(cwd: Path | None = None) -> dict:
     """Run dedicated PR 15 local scanner optimization benchmark."""
     venv_pytest = REPO_DIR / ".venv" / "bin" / "pytest"
     pytest_bin = str(venv_pytest) if venv_pytest.exists() else "pytest"
+    target_dir = cwd or REPO_DIR
     test_path = "tests/unit/auto_organizer/test_scanner_optimization_pr15.py"
 
-    if not (REPO_DIR / test_path).exists():
-        return {"passed": True, "note": "No dedicated benchmark test found."}
+    if not (target_dir / test_path).exists():
+        # Fallback to REPO_DIR test if not yet in worktree branch
+        test_file = str(REPO_DIR / test_path)
+    else:
+        test_file = test_path
 
     start = time.perf_counter()
-    res = run_cmd([pytest_bin, test_path, "-v"], check=False)
+    res = run_cmd([pytest_bin, test_file, "-v"], cwd=target_dir, check=False)
     duration = time.perf_counter() - start
 
     return {
@@ -124,12 +128,12 @@ def run_pr15_benchmark() -> dict:
     }
 
 
-def run_package_build_check() -> bool:
+def run_package_build_check(cwd: Path | None = None) -> bool:
     """Smoke test python wheel build to mirror CI 'package' job."""
     venv_py = REPO_DIR / ".venv" / "bin" / "python"
     py_bin = str(venv_py) if venv_py.exists() else sys.executable
 
-    res = run_cmd([py_bin, "-m", "build", "--wheel", "--no-isolation"], check=False)
+    res = run_cmd([py_bin, "-m", "build", "--wheel", "--no-isolation"], cwd=cwd or REPO_DIR, check=False)
     return res.returncode == 0
 
 
@@ -192,37 +196,45 @@ def main() -> int:
         return 1
     print("✅ Zero merge conflicts detected. Clean git merge-tree.")
 
-    # 3. Checkout PR Head Branch
-    print(f"\n📦 Checking out {head_ref}...")
-    run_cmd(["git", "checkout", head_ref])
+    # 3. Create isolated worktree for testing
+    worktree_path = Path(f"/tmp/pr-gatekeeper-{pr_number}")
+    if worktree_path.exists():
+        run_cmd(["git", "worktree", "remove", str(worktree_path), "--force"], check=False)
 
-    # 4. Run Dedicated PR 15 Benchmark
-    print("\n⚡ Running PR-specific scanner optimization benchmark...")
-    bench_results = run_pr15_benchmark()
-    if bench_results["passed"]:
-        print(f"✅ Scanner benchmark passed ({bench_results.get('duration_sec', 0)}s)")
-    else:
-        print("❌ Scanner benchmark failed!")
-        return 1
+    print(f"\n📦 Creating isolated worktree at {worktree_path} for origin/{head_ref}...")
+    run_cmd(["git", "worktree", "add", "--detach", str(worktree_path), f"origin/{head_ref}"])
 
-    # 5. Run Full Test Suite
-    print("\n🧪 Running full test suite...")
-    test_results = run_test_suite()
-    if test_results["passed"]:
-        print(f"✅ All tests passed! ({test_results['duration_sec']}s)")
-        print(f"   Summary: {test_results['summary']}")
-    else:
-        print("❌ Test suite failed!")
-        print(test_results["stdout"][-500:])
-        return 1
+    try:
+        # 4. Run Dedicated PR 15 Benchmark
+        print("\n⚡ Running PR-specific scanner optimization benchmark...")
+        bench_results = run_pr15_benchmark(cwd=worktree_path)
+        if bench_results["passed"]:
+            print(f"✅ Scanner benchmark passed ({bench_results.get('duration_sec', 0)}s)")
+        else:
+            print("❌ Scanner benchmark failed!")
+            return 1
 
-    # 6. Run Package Build Smoke Check
-    print("\n🛠️ Running package wheel build integrity check...")
-    pkg_passed = run_package_build_check()
-    if pkg_passed:
-        print("✅ Wheel build successful.")
-    else:
-        print("⚠️ Wheel build warning (non-fatal if build module absent).")
+        # 5. Run Full Test Suite in worktree
+        print("\n🧪 Running full test suite in isolated worktree...")
+        test_results = run_test_suite(cwd=worktree_path)
+        if test_results["passed"]:
+            print(f"✅ All tests passed! ({test_results['duration_sec']}s)")
+            print(f"   Summary: {test_results['summary']}")
+        else:
+            print("❌ Test suite failed!")
+            print(test_results["stdout"][-500:])
+            return 1
+
+        # 6. Run Package Build Smoke Check
+        print("\n🛠️ Running package wheel build integrity check...")
+        pkg_passed = run_package_build_check(cwd=worktree_path)
+        if pkg_passed:
+            print("✅ Wheel build successful.")
+        else:
+            print("⚠️ Wheel build warning (non-fatal if build module absent).")
+    finally:
+        if worktree_path.exists():
+            run_cmd(["git", "worktree", "remove", str(worktree_path), "--force"], check=False)
 
     # 7. Generate Verification Review Report
     report = (
@@ -265,10 +277,12 @@ def main() -> int:
         if success:
             print(f"🎉 PR #{pr_number} successfully merged into {base_ref}!")
             # Update local main
-            print(f"🔄 Updating local branch {base_ref}...")
-            run_cmd(["git", "checkout", base_ref])
-            run_cmd(["git", "pull", "origin", base_ref])
-            print(f"✅ Local {base_ref} is up to date.")
+            print(f"🔄 Fetching origin {base_ref}...")
+            run_cmd(["git", "fetch", "origin", base_ref])
+            current_branch = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+            if current_branch == base_ref:
+                run_cmd(["git", "pull", "origin", base_ref])
+            print(f"✅ Local {base_ref} is synchronized.")
         else:
             print(f"❌ Failed to merge PR #{pr_number}.")
             return 1
