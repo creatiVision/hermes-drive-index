@@ -64,8 +64,6 @@ class OperationType(str, Enum):
     LOCAL_MOVE = "LOCAL_MOVE"
     CROSS_FS_COPY_DELETE = "CROSS_FS_COPY_DELETE"
     GDRIVE_MOVE = "GDRIVE_MOVE"
-    DIRECTORY_MOVE = "DIRECTORY_MOVE"
-    TRASH_DELETE = "TRASH_DELETE"
 
 
 class RollbackState(str, Enum):
@@ -195,74 +193,3 @@ class ExecutionRecord:
     file_id: UUID | None = None
     executed_at: datetime = field(default_factory=_utc_now)
     reverted_at: datetime | None = None
-
-
-class CleanupLevel(int, Enum):
-    """Safety classification for disk cleaning candidates (inspired by ai-disk-cleaner)."""
-    SAFE_CACHE = 0      # Level 0: Safe auto-regenerating caches, temp files, crash dumps, logs
-    MIGRATION = 1       # Level 1: Migration candidates (heavy models, videos, old backups)
-    RISKY_CONFIRM = 2   # Level 2: Requires explicit human review (app data, sync directories, DBs)
-
-
-class MigrationStatus(str, Enum):
-    """Status of a symlink directory migration."""
-    ACTIVE = "ACTIVE"
-    REVERTED = "REVERTED"
-    FAILED = "FAILED"
-
-
-@dataclass(frozen=True, slots=True)
-class TrashCandidate:
-    """A file or directory identified as candidate for removal or cleanup."""
-    path: str
-    size_bytes: int
-    level: CleanupLevel = CleanupLevel.SAFE_CACHE
-    reason: str = ""
-    name: str = ""
-    source_device: str = "laptop"
-    created_at: datetime = field(default_factory=_utc_now)
-
-
-@dataclass(frozen=True, slots=True)
-class DiskUsageEntry:
-    """Directory tree usage node for progressive analysis (path, size, type)."""
-    path: str
-    total_size: int
-    type_id: int = 0  # 0 for directory, 1 for regular file
-    file_count: int = 1
-
-
-@dataclass(frozen=True, slots=True)
-class MigrationRecord:
-    """Tracks a directory migrated to another disk with a symlink left behind."""
-    id: UUID = field(default_factory=uuid4)
-    source_path: str = ""
-    destination_path: str = ""
-    size_bytes: int = 0
-    symlink_created: bool = True
-    status: MigrationStatus = MigrationStatus.ACTIVE
-    created_at: datetime = field(default_factory=_utc_now)
-    reverted_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class LanDeviceNode:
-    """Represents an accessible machine in the LAN mesh."""
-    device_id: str
-    name: str
-    addresses: tuple[str, ...] = ()
-    synced_folders: tuple[str, ...] = ()
-    is_online: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class GDriveSelectiveMapping:
-    """Configured selective sync mapping between a local directory and a Drive path."""
-    name: str
-    local_path: str
-    drive_folder_path: str
-    direction: str = "bidirectional"
-    include_patterns: tuple[str, ...] = ()
-    exclude_patterns: tuple[str, ...] = ()
-    status: str = "in_sync"
-

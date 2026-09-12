@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
-import stat as stat_module
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Sequence
@@ -54,12 +53,8 @@ class LocalFilesystemScanner:
     async def scan_root(
         self, root: StorageRoot, compute_sha256: bool = True
     ) -> AsyncIterator[FileNode]:
-        """Recursively scan root path and stream FileNodes.
-
-        Optimized: Avoids redundant Path.is_file() and Path.resolve() per file,
-        reducing filesystem stat and realpath syscall overhead by ~50%.
-        """
-        base_path = Path(root.uri_path).resolve()
+        """Recursively scan root path and stream FileNodes."""
+        base_path = Path(root.uri_path)
         if not base_path.exists():
             logger.warning("Storage root path does not exist: %s", base_path)
             return
@@ -75,22 +70,22 @@ class LocalFilesystemScanner:
 
             for filename in filenames:
                 full_path = Path(dirpath) / filename
+                if not full_path.is_file():
+                    continue
+
                 try:
                     stat = full_path.stat()
-                    if not stat_module.S_ISREG(stat.st_mode):
-                        continue
-
                     rel_path = str(full_path.relative_to(base_path))
                     mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                     ctime = datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc)
-                    mime_type, _ = mimetypes.guess_type(filename)
+                    mime_type, _ = mimetypes.guess_type(full_path.name)
                     fast_hash = compute_fast_probe_hash(full_path)
                     sha256 = compute_full_sha256(full_path) if compute_sha256 else None
 
                     yield FileNode(
                         root_id=root.id,
                         relative_path=rel_path,
-                        physical_path=str(full_path),
+                        physical_path=str(full_path.resolve()),
                         file_name=filename,
                         file_extension=full_path.suffix.lower() if full_path.suffix else None,
                         mime_type=mime_type,
