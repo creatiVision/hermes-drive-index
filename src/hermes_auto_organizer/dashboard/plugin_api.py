@@ -37,12 +37,32 @@ from hermes_auto_organizer.config import DatabaseConfig
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from hermes_auto_organizer.domain.models import FileNode
+from hermes_auto_organizer.domain.models import (
+    FileNode,
+    MigrationRecord,
+    MigrationStatus,
+)
 from hermes_auto_organizer.domain.rule_engine import (
     evaluate_modular_rule,
     resolve_destination_path,
 )
 from hermes_auto_organizer.infrastructure.storage.docker_mounts import docker_mount_service
+from hermes_auto_organizer.application.use_cases.subtree_profiler_service import (
+    subtree_profiler_service,
+)
+from hermes_auto_organizer.application.use_cases.disk_analyzer import DiskAnalyzerUseCase
+from hermes_auto_organizer.application.use_cases.symlink_migrator import SymlinkMigratorUseCase
+from hermes_auto_organizer.application.use_cases.lan_mesh_service import LanMeshUseCase
+from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import FastDiskScanner
+from hermes_auto_organizer.infrastructure.storage.migration_service import FilesystemMigrationService
+from hermes_auto_organizer.infrastructure.storage.lan_mesh_scanner import LanMeshScanner
+
+_disk_scanner = FastDiskScanner()
+_disk_analyzer_use_case = DiskAnalyzerUseCase(_disk_scanner)
+_migration_service = FilesystemMigrationService()
+_symlink_migrator_use_case = SymlinkMigratorUseCase(_migration_service)
+_lan_mesh_scanner = LanMeshScanner()
+_lan_mesh_use_case = LanMeshUseCase(_lan_mesh_scanner)
 
 router = APIRouter()
 logger = logging.getLogger("hermes.plugins.auto_organizer")
@@ -4329,4 +4349,306 @@ async def get_filesystem_node_states() -> Dict[str, Any]:
         "states": _NODE_SWITCH_STATES,
         "node_states": _NODE_SWITCH_STATES,
     }
+
+
+# =====================================================================
+# Subtree Profiler, Disruption Diagnostics, NL Rules, and Tree-Diff APIs
+# =====================================================================
+
+class ProfilerScanRequest(BaseModel):
+    path: str
+    max_depth: int = 6
+    include_hidden: bool = False
+
+
+class OutlierResolveRequest(BaseModel):
+    outlier_id: str
+    status: str = "approved"  # "approved", "rejected", "customized"
+    custom_target_path: Optional[str] = None
+
+
+class RuleApproveRequest(BaseModel):
+    rule_id: str
+    approved: bool = True
+
+
+class ObsidianExportRequest(BaseModel):
+    vault_path: Optional[str] = None
+
+
+@router.post("/profiler/scan")
+async def scan_and_profile_subtree(req: ProfilerScanRequest) -> Dict[str, Any]:
+    """
+    Recursively scans target path, calculates Shannon entropy,
+    lifecycle age distribution, identifies disruptions and outliers,
+    and synthesizes natural language rules.
+    """
+    target = req.path.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Path must not be empty.")
+    try:
+        res = subtree_profiler_service.scan_and_profile(
+            path=target,
+            max_depth=req.max_depth,
+            include_hidden=req.include_hidden,
+        )
+        return {"ok": True, "data": res}
+    except Exception as exc:
+        logger.error("Error profiling subtree %s: %s", target, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/profiler/outliers")
+async def get_profiler_outliers() -> Dict[str, Any]:
+    """Returns the outlier triage queue with pre-calculated solution proposals."""
+    from dataclasses import asdict
+    outliers = [asdict(o) for o in subtree_profiler_service.outliers]
+    return {
+        "ok": True,
+        "count": len(outliers),
+        "outliers": outliers,
+    }
+
+
+@router.post("/profiler/outliers/resolve")
+async def resolve_profiler_outlier(req: OutlierResolveRequest) -> Dict[str, Any]:
+    """Human-in-the-loop 1-click confirmation or adjustment of an outlier proposal."""
+    success = subtree_profiler_service.resolve_outlier(
+        outlier_id=req.outlier_id,
+        status=req.status,
+        custom_target_path=req.custom_target_path,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Outlier {req.outlier_id} not found.")
+    return {
+        "ok": True,
+        "outlier_id": req.outlier_id,
+        "status": req.status,
+        "custom_target_path": req.custom_target_path,
+    }
+
+
+@router.get("/profiler/rules")
+async def get_profiler_rules() -> Dict[str, Any]:
+    """Returns synthesized natural language rules in German."""
+    from dataclasses import asdict
+    rules = [asdict(r) for r in subtree_profiler_service.rules]
+    return {
+        "ok": True,
+        "count": len(rules),
+        "rules": rules,
+    }
+
+
+@router.post("/profiler/rules/approve")
+async def approve_profiler_rule(req: RuleApproveRequest) -> Dict[str, Any]:
+    """Human-in-the-middle approval/rejection of a bulk meta-rule."""
+    success = subtree_profiler_service.approve_rule(req.rule_id, approved=req.approved)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Rule {req.rule_id} not found.")
+    return {
+        "ok": True,
+        "rule_id": req.rule_id,
+        "approved": req.approved,
+    }
+
+
+@router.get("/profiler/tree-diff")
+async def get_tree_diff() -> Dict[str, Any]:
+    """
+    Computes and returns the 'Von -> Nach' (S_now -> S_ideal) comparison tree
+    based on confirmed rules and resolved outliers.
+    """
+    from dataclasses import asdict
+    diff_nodes = subtree_profiler_service.generate_tree_diff()
+    return {
+        "ok": True,
+        "count": len(diff_nodes),
+        "tree_diff": [asdict(n) for n in diff_nodes],
+    }
+
+
+@router.post("/profiler/export-obsidian")
+async def export_obsidian_extended_graph(req: ObsidianExportRequest) -> Dict[str, Any]:
+    """
+    Exports scanned folder tree and Tree-Diff nodes to Markdown notes
+    formatted for Obsidian's Extended Graph plugin.
+    """
+    vault = req.vault_path or "/media/xchg/ai-knowledge-base"
+    try:
+        index_path = subtree_profiler_service.export_to_obsidian(vault)
+        return {
+            "ok": True,
+            "vault_path": vault,
+            "index_path": index_path,
+            "message": f"Extended Graph Notes erfolgreich nach {vault}/Auto-Organizer/ exportiert.",
+        }
+    except Exception as exc:
+        logger.error("Failed to export Obsidian graph: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class ProfilerExecuteRequest(BaseModel):
+    batch_id: Optional[str] = None
+    only_approved: bool = True
+
+
+class ProfilerRollbackRequest(BaseModel):
+    batch_id: str
+
+
+@router.post("/profiler/execute")
+async def execute_tree_diff_endpoint(req: ProfilerExecuteRequest) -> Dict[str, Any]:
+    """
+    Executes the projected Tree-Diff moves and cleaning operations atomically
+    with rollback tracking.
+    """
+    batch_uuid = UUID(req.batch_id) if req.batch_id else uuid4()
+    result = subtree_profiler_service.execute_tree_diff(
+        batch_id=batch_uuid,
+        only_approved=req.only_approved,
+    )
+    return result
+
+
+@router.post("/profiler/rollback")
+async def rollback_tree_diff_endpoint(req: ProfilerRollbackRequest) -> Dict[str, Any]:
+    """
+    Reverses an executed Tree-Diff batch in LIFO order.
+    """
+    result = subtree_profiler_service.rollback_batch(req.batch_id)
+    return result
+
+
+# =====================================================================
+# Disk Cleaner & Symlink Migration Sonderfunktion APIs
+# =====================================================================
+
+class CleanerAnalyzeRequest(BaseModel):
+    path: str
+    max_entries: int = 200
+
+
+class CleanerCandidatesRequest(BaseModel):
+    candidates: List[Dict[str, Any]]
+
+
+class CleanerMigrateRequest(BaseModel):
+    source_path: str
+    destination_dir: str
+    name: Optional[str] = None
+
+
+class CleanerRollbackRequest(BaseModel):
+    record: Dict[str, Any]
+
+
+@router.get("/cleaner/mounts")
+async def get_cleaner_mounts() -> Dict[str, Any]:
+    """Returns disk usages across system mount points."""
+    return {"ok": True, "mounts": _disk_scanner.get_mount_usages()}
+
+
+@router.post("/cleaner/analyze")
+async def analyze_cleaner_directory(req: CleanerAnalyzeRequest) -> Dict[str, Any]:
+    """Inspects directory usage entries sorted descending by size."""
+    try:
+        entries = _disk_analyzer_use_case.analyze_directory(req.path, req.max_entries)
+        csv_data = _disk_analyzer_use_case.analyze_directory_csv(req.path, req.max_entries)
+        return {
+            "ok": True,
+            "path": req.path,
+            "count": len(entries),
+            "entries": [{"path": e.path, "total_size": e.total_size, "type_id": e.type_id} for e in entries],
+            "csv": csv_data,
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Pfad nicht gefunden: {req.path}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/cleaner/candidates")
+async def evaluate_cleaner_candidates(req: CleanerCandidatesRequest) -> Dict[str, Any]:
+    """Validates, classifies (Level 0/1/2), and deduplicates trash candidates."""
+    try:
+        evaluated = _disk_analyzer_use_case.evaluate_trash_candidates(req.candidates)
+        return {
+            "ok": True,
+            "count": len(evaluated),
+            "candidates": [
+                {
+                    "path": c.path,
+                    "name": c.name,
+                    "size_bytes": c.size_bytes,
+                    "level": c.level.value,
+                    "reason": c.reason,
+                    "source_device": c.source_device,
+                }
+                for c in evaluated
+            ],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/cleaner/migrate")
+async def execute_symlink_migration(req: CleanerMigrateRequest) -> Dict[str, Any]:
+    """Migrates a heavy directory to another partition leaving a symlink behind."""
+    try:
+        rec = _symlink_migrator_use_case.migrate(
+            source_path=req.source_path,
+            destination_dir=req.destination_dir,
+            name=req.name,
+        )
+        return {
+            "ok": True,
+            "id": str(rec.id),
+            "source_path": rec.source_path,
+            "destination_path": rec.destination_path,
+            "size_bytes": rec.size_bytes,
+            "status": rec.status.value,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/cleaner/rollback")
+async def rollback_symlink_migration(req: CleanerRollbackRequest) -> Dict[str, Any]:
+    """Rolls back a symlink migration."""
+    try:
+        rec_data = req.record
+        record = MigrationRecord(
+            id=UUID(rec_data["id"]) if "id" in rec_data else uuid4(),
+            source_path=rec_data["source_path"],
+            destination_path=rec_data["destination_path"],
+            size_bytes=rec_data.get("size_bytes", 0),
+            status=MigrationStatus(rec_data.get("status", "ACTIVE")),
+        )
+        reverted = _symlink_migrator_use_case.rollback(record)
+        return {
+            "ok": True,
+            "id": str(reverted.id),
+            "source_path": reverted.source_path,
+            "status": reverted.status.value,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# =====================================================================
+# LAN Mesh Topology & Root Triage APIs
+# =====================================================================
+
+@router.get("/mesh/overview")
+async def get_mesh_overview() -> Dict[str, Any]:
+    """Returns network mesh devices and Syncthing sync mappings."""
+    return {"ok": True, "mesh": _lan_mesh_use_case.get_mesh_overview()}
+
+
+@router.get("/mesh/root-triage")
+async def get_mesh_root_triage() -> Dict[str, Any]:
+    """Returns classification of loose files in root partitions."""
+    return {"ok": True, "candidates": _lan_mesh_use_case.get_root_triage_plan()}
+
 

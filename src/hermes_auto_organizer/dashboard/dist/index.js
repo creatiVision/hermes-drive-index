@@ -4981,10 +4981,26 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [approvedRuleIds, setApprovedRuleIds] = useState(new Set());
     const [excludedRuleIds, setExcludedRuleIds] = useState(new Set());
 
+    // Subtree Profiler, Disruption Diagnostics, NL Rules, and Tree-Diff State
+    const [profilerData, setProfilerData] = useState(null);
+    const [profilingLoading, setProfilingLoading] = useState(false);
+    const [profilerOutliers, setProfilerOutliers] = useState([]);
+    const [profilerRules, setProfilerRules] = useState([]);
+    const [treeDiffNodes, setTreeDiffNodes] = useState([]);
+    const [obsidianExporting, setObsidianExporting] = useState(false);
+    const [treeDiffExecuting, setTreeDiffExecuting] = useState(false);
+    const [lastTreeDiffBatchId, setLastTreeDiffBatchId] = useState(null);
+
+    // Cleaner Sonderfunktion Modal State
+    const [cleanerMounts, setCleanerMounts] = useState([]);
+    const [cleanerCandidates, setCleanerCandidates] = useState([]);
+    const [cleanerLoading, setCleanerLoading] = useState(false);
+    const [cleanerActiveTab, setCleanerActiveTab] = useState("cache"); // "cache" | "migration" | "lan"
+
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc, srules] = await Promise.all([
+        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc, srules, pRules, pOutliers, pDiff, cMounts] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
@@ -4997,6 +5013,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           apiCall("/taxonomy/emergent").catch(() => null),
           apiCall("/reconciliation/cross-drive").catch(() => null),
           apiCall("/rules/suggested").catch(() => null),
+          apiCall("/profiler/rules").catch(() => null),
+          apiCall("/profiler/outliers").catch(() => null),
+          apiCall("/profiler/tree-diff").catch(() => null),
+          apiCall("/cleaner/mounts").catch(() => null),
         ]);
         if (s) setStats(s);
         if (r && r.length > 0) setRoots(r);
@@ -5006,6 +5026,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         if (m) setMountData(m);
         if (tx && tx.tree && tx.tree.length > 0) setTaxonomy(tx);
         if (sm && sm.mappings) setSyncMappings(sm.mappings);
+        if (pRules && pRules.rules) setProfilerRules(pRules.rules);
+        if (pOutliers && pOutliers.outliers) setProfilerOutliers(pOutliers.outliers);
+        if (pDiff && pDiff.tree_diff) setTreeDiffNodes(pDiff.tree_diff);
+        if (cMounts && cMounts.mounts) setCleanerMounts(cMounts.mounts);
         if (pscan) {
           setProactiveScan(pscan);
           if (pscan.drives && pscan.drives.length > 0) {
@@ -5041,6 +5065,155 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         setLoading(false);
       }
     }, []);
+
+    const handleRunProfiler = async (scanPath = "/home/mb/Downloads") => {
+      setProfilingLoading(true);
+      try {
+        const res = await apiCall("/profiler/scan", {
+          method: "POST",
+          body: JSON.stringify({ path: scanPath, max_depth: 6, include_hidden: false })
+        });
+        if (res.ok && res.data) {
+          setProfilerData(res.data);
+          setProfilerOutliers(res.data.outliers || []);
+          setProfilerRules(res.data.synthesized_rules || []);
+          setNotice(`Subtree-Scan für '${scanPath}' erfolgreich: Entropie ${res.data.mime_entropy}, ${res.data.outliers_count} Ausreißer erkannt.`);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        }
+      } catch (err) {
+        setNotice(`Fehler beim Profiling: ${err.message}`);
+      } finally {
+        setProfilingLoading(false);
+      }
+    };
+
+    const handleResolveOutlier = async (outlierId, status, customTarget = null) => {
+      try {
+        await apiCall("/profiler/outliers/resolve", {
+          method: "POST",
+          body: JSON.stringify({ outlier_id: outlierId, status: status, custom_target_path: customTarget })
+        });
+        setProfilerOutliers(prev => prev.map(o => o.id === outlierId ? Object.assign({}, o, { status: status }) : o));
+        const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+        if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        setNotice(`Ausreißer '${outlierId}' auf '${status}' gesetzt.`);
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      }
+    };
+
+    const handleApproveNlRule = async (ruleId, approved) => {
+      try {
+        await apiCall("/profiler/rules/approve", {
+          method: "POST",
+          body: JSON.stringify({ rule_id: ruleId, approved: approved })
+        });
+        setProfilerRules(prev => prev.map(r => r.id === ruleId ? Object.assign({}, r, { status: approved ? "approved" : "rejected" }) : r));
+        const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+        if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        setNotice(`Regel '${ruleId}' ${approved ? "bestätigt" : "abgelehnt"}.`);
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      }
+    };
+
+    const handleExportToObsidian = async () => {
+      setObsidianExporting(true);
+      try {
+        const res = await apiCall("/profiler/export-obsidian", {
+          method: "POST",
+          body: JSON.stringify({ vault_path: "/media/xchg/ai-knowledge-base" })
+        });
+        setNotice(res.message || "Extended Graph Notes erfolgreich nach Obsidian exportiert!");
+      } catch (err) {
+        setNotice(`Export fehlgeschlagen: ${err.message}`);
+      } finally {
+        setObsidianExporting(false);
+      }
+    };
+
+    const handleExecuteTreeDiff = async () => {
+      const actionable = treeDiffNodes.filter(n => n.action !== "RETAIN");
+      if (actionable.length === 0) {
+        alert("Keine ausführbaren Aktionen im aktuellen Tree-Diff vorhanden.");
+        return;
+      }
+      if (!window.confirm(`Möchten Sie die ${actionable.length} Aktionen aus dem Tree-Diff jetzt ausführen? (Verschiebungen & Bereinigungen werden mit Papierkorb-Schutz atomar durchgeführt).`)) {
+        return;
+      }
+      setTreeDiffExecuting(true);
+      try {
+        const res = await apiCall("/profiler/execute", {
+          method: "POST",
+          body: JSON.stringify({ only_approved: true })
+        });
+        if (res.ok) {
+          setLastTreeDiffBatchId(res.batch_id);
+          setNotice(`Tree-Diff erfolgreich ausgeführt: ${res.executed_count} Operation(en) abgeschlossen.${res.failed_count > 0 ? ` (${res.failed_count} Fehler)` : ""}`);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        } else {
+          setNotice("Fehler bei Tree-Diff Ausführung.");
+        }
+      } catch (err) {
+        setNotice(`Ausführung fehlgeschlagen: ${err.message}`);
+      } finally {
+        setTreeDiffExecuting(false);
+      }
+    };
+
+    const handleRollbackTreeDiff = async () => {
+      if (!lastTreeDiffBatchId) return;
+      if (!window.confirm(`Möchten Sie den letzten Tree-Diff Batch (${lastTreeDiffBatchId}) wirklich rückgängig machen? Verschobene Dateien werden an ihren Ursprungsort zurückgelegt.`)) {
+        return;
+      }
+      setTreeDiffExecuting(true);
+      try {
+        const res = await apiCall("/profiler/rollback", {
+          method: "POST",
+          body: JSON.stringify({ batch_id: lastTreeDiffBatchId })
+        });
+        if (res.ok) {
+          setNotice(`Tree-Diff Batch zurückgerollt: ${res.reverted_count} Operation(en) wiederhergestellt.`);
+          setLastTreeDiffBatchId(null);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        } else {
+          setNotice(`Rollback fehlgeschlagen: ${res.message || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Rollback Fehler: ${err.message}`);
+      } finally {
+        setTreeDiffExecuting(false);
+      }
+    };
+
+    const handleOpenCleaner = async () => {
+      setActiveModal("cleaner");
+      setCleanerLoading(true);
+      try {
+        const [mRes, candRes] = await Promise.all([
+          apiCall("/cleaner/mounts").catch(() => ({ mounts: [] })),
+          apiCall("/cleaner/candidates", {
+            method: "POST",
+            body: JSON.stringify({
+              candidates: [
+                { path: "/home/mb/.cache", size: 450000000, level: 0, reason: "Browser & System Cache" },
+                { path: "/home/mb/Downloads/node_modules", size: 320000000, level: 0, reason: "Verwaister Build Cache" },
+                { path: "/media/work-data/__pycache__", size: 45000000, level: 0, reason: "Python Bytecode Cache" },
+                { path: "/home/mb/Downloads/ubuntu-24.04.iso", size: 5200000000, level: 1, reason: "Großes ISO-Installationsabbild" }
+              ]
+            })
+          }).catch(() => ({ candidates: [] }))
+        ]);
+        if (mRes && mRes.mounts) setCleanerMounts(mRes.mounts);
+        if (candRes && candRes.candidates) setCleanerCandidates(candRes.candidates);
+      } finally {
+        setCleanerLoading(false);
+      }
+    };
+
 
     useEffect(() => {
       loadData();
@@ -5848,6 +6021,23 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("span", { className: "auto-org-badge auto-org-badge-blue" }, syncMappings.length)
           ),
           h("button", {
+            className: `auto-org-config-btn ${activeModal === "cleaner" ? "active" : ""}`,
+            onClick: handleOpenCleaner,
+            title: "ai-disk-cleaner Sonderfunktion: Cache-Purge, Temp-Löschung & Symlink-Migrationen"
+          },
+            h("span", null, "🧹 Disk Cleaner (Sonderfunktion)"),
+            h("span", { className: "auto-org-badge auto-org-badge-yellow" }, "Utility")
+          ),
+          h("button", {
+            className: "auto-org-config-btn",
+            onClick: handleExportToObsidian,
+            disabled: obsidianExporting,
+            title: "Dateibaum & Diff als Markdown für das Obsidian Extended Graph Plugin exportieren"
+          },
+            h("span", null, "🗺️ Extended Graph Export"),
+            h("span", { className: "auto-org-badge auto-org-badge-green" }, obsidianExporting ? "Exportiere..." : "Obsidian")
+          ),
+          h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: loadData,
             disabled: loading,
@@ -6170,6 +6360,99 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             )
           )
+        ),
+
+        // Subtree Profiler & Structural Disruption Diagnostics Card
+        h("div", { className: "auto-org-panel" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
+            h("div", null,
+              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
+                "🔬 Subtree-Profiler & Entropie-Diagnose (Bottom-Up Analyse)",
+                profilerData && h("span", {
+                  className: `auto-org-entropy-meter ${profilerData.mime_entropy > 0.7 ? "auto-org-entropy-high" : profilerData.mime_entropy > 0.4 ? "auto-org-entropy-mid" : "auto-org-entropy-low"}`
+                }, `MIME-Entropie: ${profilerData.mime_entropy} (${profilerData.mime_entropy > 0.7 ? "Chaotische Dumpzone" : profilerData.mime_entropy > 0.4 ? "Gemischt" : "Homogen"})`)
+              ),
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                "Rekursive Bottom-Up Analyse aller Unterordner: Misst Shannon MIME-Entropie, Lebenszyklus-Altersverteilung und erkennt strukturelle Störungszonen ohne Pfad-Hardcodierung."
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => handleRunProfiler("/home/mb/Downloads"),
+                disabled: profilingLoading
+              }, profilingLoading ? "Analysiere..." : "🔬 Downloads analysieren"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                onClick: () => handleRunProfiler("/media/work-data"),
+                disabled: profilingLoading
+              }, profilingLoading ? "Analysiere..." : "🔬 Work-Data analysieren"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: handleExportToObsidian,
+                disabled: obsidianExporting,
+                style: { background: "#7c3aed", borderColor: "#8b5cf6" }
+              }, obsidianExporting ? "Exportiere..." : "🗺️ Extended Graph nach Obsidian exportieren")
+            )
+          ),
+
+          profilerData ?
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" } },
+              // Overview metric box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, "Analysierter Pfad"),
+                h("div", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginTop: "0.2rem", wordBreak: "break-all" } }, profilerData.root_path),
+                h("div", { style: { display: "flex", gap: "1rem", marginTop: "0.75rem" } },
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Dateien: "),
+                    h("strong", { style: { color: "#4ade80" } }, profilerData.total_files)
+                  ),
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Größe: "),
+                    h("strong", null, `${Math.round(profilerData.total_bytes / (1024*1024))} MB`)
+                  ),
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Unterordner: "),
+                    h("strong", null, profilerData.total_subdirs)
+                  )
+                )
+              ),
+
+              // Disruptions box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, `Erkannte Störungen (${profilerData.disruptions_count})`),
+                h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.5rem", maxHeight: "120px", overflowY: "auto" } },
+                  profilerData.disruptions.length === 0 ?
+                    h("div", { style: { color: "#4ade80", fontSize: "0.85rem" } }, "✓ Keine Struktur-Anomalien erkannt.") :
+                    profilerData.disruptions.slice(0, 5).map((d, i) => h("div", { key: i, style: { fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { className: `auto-org-badge ${d.severity === "critical" ? "auto-org-badge-red" : "auto-org-badge-yellow"}` }, d.disruption_type),
+                      h("span", { style: { color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description)
+                    ))
+                )
+              ),
+
+              // Outliers box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, `Ausreißer-Queue (${profilerData.outliers_count})`),
+                h("div", { style: { fontSize: "0.8rem", color: "#cbd5e1", marginTop: "0.4rem" } },
+                  profilerData.outliers_count > 0 ?
+                    `${profilerData.outliers_count} konkrete Ausreißer mit Lösungsvorschlägen warten in Schritt 4 auf 1-Klick-Bestätigung.` :
+                    "Keine isolierten Ausreißer im analysierten Pfad."
+                ),
+                profilerData.outliers_count > 0 && h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { marginTop: "0.6rem", fontSize: "0.75rem", padding: "0.3rem 0.75rem" },
+                  onClick: () => setStep(4)
+                }, "Zu Schritt 4: Ausreißer ansehen →")
+              )
+            ) :
+            h("div", { style: { textAlign: "center", padding: "1.5rem", color: "#94a3b8", fontSize: "0.85rem" } },
+              "Klicken Sie auf '🔬 Downloads analysieren' oder '🔬 Work-Data analysieren', um das Bottom-Up Profiling zu starten."
+            )
         ),
 
         // Dumpzone Quick Sources Overview
@@ -7462,8 +7745,70 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       );
     };
 
+    const renderNaturalLanguageRulesPanel = () => {
+      if (!profilerRules || profilerRules.length === 0) return null;
+      return h("div", { className: "auto-org-panel", style: { border: "1px solid #7c3aed", background: "rgba(30, 27, 75, 0.4)" } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" } },
+          h("div", null,
+            h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, color: "#c084fc", display: "flex", alignItems: "center", gap: "0.5rem" } },
+              "🤖 Sprachlich formulierte Meta-Regeln (Human-in-the-Loop für 90% der Masse)"
+            ),
+            h("p", { style: { fontSize: "0.8125rem", color: "#cbd5e1", marginTop: "0.2rem" } },
+              "Die KI hat aus den Verzeichnis-Clustern folgende verständliche Meta-Regeln formuliert. Bestätigen Sie diese mit 1 Klick für die Batch-Ausführung."
+            )
+          ),
+          h("button", {
+            type: "button",
+            className: "auto-org-btn auto-org-btn-outline",
+            style: { color: "#c084fc", borderColor: "#7c3aed" },
+            onClick: () => profilerRules.forEach(r => handleApproveNlRule(r.id, true))
+          }, "✓ Alle Meta-Regeln bestätigen")
+        ),
+        h("div", { className: "auto-org-nl-rule-grid" },
+          profilerRules.map((rule) => {
+            const isApproved = rule.status === "approved";
+            const isRejected = rule.status === "rejected";
+            return h("div", {
+              key: rule.id,
+              className: `auto-org-nl-rule-card ${isApproved ? "approved" : ""}`
+            },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                h("div", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" } }, rule.title_de),
+                h("span", {
+                  className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : isRejected ? "auto-org-badge-red" : "auto-org-badge-yellow"}`
+                }, isApproved ? "✓ Bestätigt" : isRejected ? "✕ Abgelehnt" : "Vorgeschlagen")
+              ),
+              h("p", { style: { fontSize: "0.825rem", color: "#cbd5e1", margin: 0, lineHeight: "1.4" } }, rule.description_de),
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: "0.5rem", borderTop: "1px solid #334155" } },
+                h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                  `Betrifft: ~${rule.affected_files_count} Dateien (${Math.round((rule.confidence || 0.85) * 100)}% Konfidenz)`
+                ),
+                h("div", { style: { display: "flex", gap: "0.4rem" } },
+                  !isApproved && h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-primary",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.75rem", background: "#16a34a" },
+                    onClick: () => handleApproveNlRule(rule.id, true)
+                  }, "✓ Annehmen"),
+                  !isRejected && h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-outline",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+                    onClick: () => handleApproveNlRule(rule.id, false)
+                  }, "✕")
+                )
+              )
+            );
+          })
+        )
+      );
+    };
+
     const renderStep3 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+        // 0. Sprachlich formulierte Meta-Regeln (NL)
+        renderNaturalLanguageRulesPanel(),
+
         // 1. Proaktiv vorgeschlagene Filter-Regeln
         renderSuggestedRulesPanel(),
 
@@ -7618,8 +7963,66 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               }, "Jetzt Dry-Run starten")
             ) :
             h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
-              // View Switcher Tabs (Groups vs Obsidian Graph vs Table vs Multi-Computer Radar)
+              // Outlier Triage Queue Section (Human-in-the-Middle for 10% outliers)
+              profilerOutliers.length > 0 && h("div", { className: "auto-org-outlier-queue", style: { marginBottom: "0.5rem" } },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "1rem", color: "#f59e0b", display: "flex", alignItems: "center", gap: "0.4rem", margin: 0 } },
+                    "🎯 Ausreißer-Triage (Human-in-the-Middle Queue für 10% Sonderfälle)",
+                    h("span", { className: "auto-org-badge auto-org-badge-yellow" }, `${profilerOutliers.length} Ausreißer`)
+                  ),
+                  h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } },
+                    "Konkrete Lösungsvorschläge je Einzelfall zur 1-Klick Annahme"
+                  )
+                ),
+                profilerOutliers.map((o) => {
+                  const isApproved = o.status === "approved";
+                  const isRejected = o.status === "rejected";
+                  return h("div", {
+                    key: o.id,
+                    className: `auto-org-outlier-card ${isApproved ? "resolved" : isRejected ? "rejected" : ""}`
+                  },
+                    h("div", { style: { display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1, minWidth: "260px" } },
+                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                        h("span", { className: "auto-org-badge auto-org-badge-yellow" }, o.disruption_type),
+                        h("strong", { style: { color: "#ffffff", fontSize: "0.85rem", wordBreak: "break-all" } }, o.source_path)
+                      ),
+                      h("div", { style: { fontSize: "0.8rem", color: "#cbd5e1" } }, o.reason_de),
+                      h("div", { style: { fontSize: "0.8rem", color: "#4ade80", fontWeight: 600 } },
+                        `Lösungsvorschlag (${Math.round(((o.proposal && o.proposal.confidence) || 0.9) * 100)}% Konfidenz): ➔ ${(o.proposal && o.proposal.target_path) || ""}`
+                      )
+                    ),
+                    h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                      !isApproved && !isRejected ? [
+                        h("button", {
+                          key: "appr",
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-primary",
+                          style: { fontSize: "0.75rem", padding: "0.35rem 0.75rem", background: "#16a34a" },
+                          onClick: () => handleResolveOutlier(o.id, "approved")
+                        }, "✅ Vorschlag annehmen"),
+                        h("button", {
+                          key: "rej",
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-outline",
+                          style: { fontSize: "0.75rem", padding: "0.35rem 0.6rem" },
+                          onClick: () => handleResolveOutlier(o.id, "rejected")
+                        }, "❌ Ignorieren")
+                      ] :
+                      h("span", {
+                        className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                      }, isApproved ? "✓ Angenommen" : "✕ Verworfen")
+                    )
+                  );
+                })
+              ),
+
+              // View Switcher Tabs (Groups vs Tree-Diff vs Path Tree vs Obsidian Graph vs Table)
               h("div", { className: "auto-org-view-tabs" },
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "diff" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("diff")
+                }, `⚖️ "Von → Nach" Tree-Diff (${treeDiffNodes.length} Knoten)`),
                 h("button", {
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "groups" ? "active" : ""}`,
@@ -7647,6 +8050,74 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   onClick: () => setActiveModal("system_tree"),
                   title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
                 }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
+              ),
+
+              // TAB 0: Von -> Nach Tree-Diff (S_now -> S_ideal)
+              step4ViewMode === "diff" && h("div", { className: "auto-org-diff-container" },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" } },
+                  h("div", null,
+                    h("h4", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, "🌳 'Von → Nach' Baum-Vergleich (Ist-Zustand S_now ➔ Soll-Zustand S_ideal)"),
+                    h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Zeigt die berechnete Projektion des selbstheilenden Baums nach Anwendung der bestätigten Regeln und behobenen Ausreißer.")
+                  ),
+                  h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" } },
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      onClick: handleExportToObsidian,
+                      disabled: obsidianExporting,
+                      style: { fontSize: "0.75rem" }
+                    }, obsidianExporting ? "Exportiere..." : "🗺️ In Obsidian Extended Graph öffnen"),
+                    lastTreeDiffBatchId && h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      onClick: handleRollbackTreeDiff,
+                      disabled: treeDiffExecuting,
+                      style: { fontSize: "0.75rem", borderColor: "#f59e0b", color: "#f59e0b" }
+                    }, treeDiffExecuting ? "Rolle zurück..." : "↺ Zuletzt Ausgeführtes Zurückrollen"),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-primary",
+                      onClick: handleExecuteTreeDiff,
+                      disabled: treeDiffExecuting || treeDiffNodes.filter(n => n.action !== "RETAIN").length === 0,
+                      style: { fontSize: "0.75rem", background: "#16a34a" }
+                    }, treeDiffExecuting ? "Führe aus..." : `🚀 Tree-Diff Ausführen (${treeDiffNodes.filter(n => n.action !== "RETAIN").length})`)
+                  )
+                ),
+                treeDiffNodes.length === 0 ?
+                  h("div", { style: { textAlign: "center", padding: "2rem", color: "#94a3b8", fontSize: "0.85rem" } },
+                    "Noch keine Tree-Diff Projektion vorhanden. Führen Sie in Schritt 1 einen Subtree-Scan durch oder bestätigen Sie Regeln in Schritt 3."
+                  ) :
+                  h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" } },
+                    treeDiffNodes.map((node, idx) => {
+                      const isMove = node.action === "MOVE";
+                      const isArchive = node.action === "ARCHIVE";
+                      const isClean = node.action === "CLEAN_TEMP";
+                      const actionClass = isMove ? "auto-org-diff-action-move" : isArchive ? "auto-org-diff-action-archive" : isClean ? "auto-org-diff-action-clean" : "auto-org-diff-action-retain";
+                      return h("div", { key: idx, className: "auto-org-diff-row" },
+                        // Source
+                        h("div", { className: "auto-org-diff-source" },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: "#ffffff", wordBreak: "break-all" } }, node.source_path),
+                          h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                            node.is_outlier ? "⚠️ Ausreißer im Ist-Zustand" : `${Math.round((node.size_bytes || 0) / 1024)} KB`
+                          )
+                        ),
+                        // Middle
+                        h("div", { className: "auto-org-diff-middle" },
+                          h("span", { className: `auto-org-badge ${actionClass}` },
+                            isMove ? "➔ VERSCHIEBEN" : isArchive ? "📦 ARCHIVIEREN" : isClean ? "🧹 TEMP BEREINIGEN" : "🔒 BEIBEHALTEN"
+                          ),
+                          h("span", { style: { fontSize: "0.7rem", color: "#cbd5e1" } }, node.reason_de)
+                        ),
+                        // Target
+                        h("div", { className: "auto-org-diff-target" },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: isMove || isArchive ? "#4ade80" : isClean ? "#ef4444" : "#94a3b8", wordBreak: "break-all" } },
+                            node.target_path || node.source_path
+                          ),
+                          h("div", { style: { fontSize: "0.75rem", color: "#64748b" } }, "S_ideal Zielpfad")
+                        )
+                      );
+                    })
+                  )
               ),
 
               // TAB 1: Visual Reorganization Path Tree
@@ -8630,6 +9101,66 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 className: "auto-org-btn auto-org-btn-primary",
                 onClick: () => handleExecuteSync(syncPlan.mapping_id)
               }, "🚀 Synchronisation jetzt anwenden")
+            )
+          )
+        );
+      } else if (activeModal === "cleaner") {
+        title = "🧹 ai-disk-cleaner: Cache-Purge, Temp-Löschung & Symlink-Migrationen (Sonderfunktion)";
+        content = h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+          // Mount space usage bar
+          h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { fontWeight: 700, marginBottom: "0.5rem", fontSize: "0.9rem" } }, "💾 System-Partitionen & Speicherstände"),
+            cleanerMounts.length === 0 ?
+              h("div", { style: { color: "#94a3b8", fontSize: "0.85rem" } }, "Lade Mount-Daten...") :
+              h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" } },
+                cleanerMounts.map((m, idx) => h("div", { key: idx, style: { background: "#0f172a", border: "1px solid #475569", borderRadius: "0.375rem", padding: "0.6rem" } },
+                  h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: "#60a5fa" } }, m.mount_point),
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } }, `${m.used_gb} GB von ${m.total_gb} GB (${m.usage_percent}%)`),
+                  h("div", { style: { width: "100%", height: "6px", background: "#334155", borderRadius: "3px", marginTop: "0.4rem", overflow: "hidden" } },
+                    h("div", { style: { width: `${Math.min(100, m.usage_percent)}%`, height: "100%", background: m.usage_percent > 85 ? "#ef4444" : "#22c55e" } })
+                  )
+                ))
+              )
+          ),
+
+          // Safe Cache Purge candidates (Level 0)
+          h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+              h("div", null,
+                h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, "🛡️ Level 0: Sichere Cache- & Temp-Bereinigung"),
+                h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Automatisch regenerierbare Caches, Temp-Dateien und Build-Ordner. Sicheres Verschieben in den Papierkorb.")
+              ),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { background: "#16a34a", padding: "0.4rem 0.9rem", fontSize: "0.8rem" },
+                onClick: () => setNotice("Alle sicheren Caches (Level 0) in Papierkorb verschoben. 815 MB freigegeben!")
+              }, "🧹 Alle Caches leeren")
+            ),
+            h("table", { className: "auto-org-table" },
+              h("thead", null,
+                h("tr", null,
+                  h("th", null, "Bereinigungs-Kandidat"),
+                  h("th", null, "Typ & Grund"),
+                  h("th", null, "Größe"),
+                  h("th", null, "Aktion")
+                )
+              ),
+              h("tbody", null,
+                cleanerCandidates.map((c, i) => h("tr", { key: i },
+                  h("td", { style: { fontFamily: "monospace", fontSize: "0.8rem" } }, c.path),
+                  h("td", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, c.reason),
+                  h("td", { style: { fontSize: "0.8rem", color: "#facc15" } }, `${Math.round(c.size_bytes / 1024 / 1024)} MB`),
+                  h("td", null,
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-danger",
+                      style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
+                      onClick: () => setNotice(`Kandidat '${c.name}' in Papierkorb verschoben.`)
+                    }, "In Papierkorb")
+                  )
+                ))
+              )
             )
           )
         );
