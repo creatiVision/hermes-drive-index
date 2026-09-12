@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import logging
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -58,11 +59,16 @@ class SubtreeProfilerService:
 
     def __init__(self, profiler: Optional[SubtreeProfilerPort] = None) -> None:
         self._profiler = profiler or RecursiveSubtreeProfiler()
+        self._current_node_id: str = "laptop"
         self._current_profile: Optional[FolderProfile] = None
         self._disruptions: List[DisruptionItem] = []
         self._outliers: List[OutlierItem] = []
         self._rules: List[NaturalLanguageRule] = []
         self._execution_history: Dict[UUID, List[ExecutionRecord]] = {}
+
+    @property
+    def current_node_id(self) -> str:
+        return self._current_node_id
 
     @property
     def current_profile(self) -> Optional[FolderProfile]:
@@ -83,11 +89,25 @@ class SubtreeProfilerService:
     def scan_and_profile(
         self,
         path: Path | str,
+        node_id: str = "laptop",
         max_depth: int = 8,
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
         """Scans path recursively, profiles subtrees, finds outliers and synthesizes rules."""
-        profile = self._profiler.profile_directory(path, max_depth=max_depth, include_hidden=include_hidden)
+        self._current_node_id = (node_id or "laptop").strip()
+
+        if self._current_node_id not in ("laptop", "local", "localhost"):
+            from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+            ssh_inspector = SSHNodeInspector()
+            profile = ssh_inspector.profile_remote_subtree(
+                node_id=self._current_node_id,
+                remote_path=str(path),
+                max_depth=max_depth,
+                include_hidden=include_hidden,
+            )
+        else:
+            profile = self._profiler.profile_directory(path, max_depth=max_depth, include_hidden=include_hidden)
+
         disruptions = self._profiler.detect_disruptions(profile)
         outliers = self._profiler.detect_outliers(profile)
         rules = self._profiler.synthesize_rules(profile)
@@ -98,6 +118,7 @@ class SubtreeProfilerService:
         self._rules = rules
 
         return {
+            "node_id": self._current_node_id,
             "root_path": profile.path,
             "root_name": profile.name,
             "total_files": profile.total_files_count,
@@ -194,8 +215,20 @@ class SubtreeProfilerService:
         executed: List[ExecutionRecord] = []
         errors: List[Dict[str, str]] = []
 
+        is_remote = self._current_node_id not in ("laptop", "local", "localhost")
+
         for node in diff_nodes:
             if node.action not in ("MOVE", "ARCHIVE", "CLEAN_TEMP"):
+                continue
+
+            if is_remote:
+                try:
+                    rec = self._execute_remote_node(node, batch_uuid)
+                    if rec:
+                        executed.append(rec)
+                except Exception as e:
+                    logger.error("Failed remote execute tree-diff node %s -> %s: %s", node.source_path, node.target_path, e)
+                    errors.append({"source": node.source_path, "error": str(e)})
                 continue
 
             src = Path(node.source_path)
@@ -286,6 +319,76 @@ class SubtreeProfilerService:
             "errors": errors,
         }
 
+    def _execute_remote_node(
+        self,
+        node: TreeDiffNode,
+        batch_uuid: UUID,
+    ) -> Optional[ExecutionRecord]:
+        """Executes a move, archive or clean operation remotely via SSH."""
+        from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+        inspector = SSHNodeInspector()
+        node_id = self._current_node_id
+        src = node.source_path
+        DiskCleaningPolicy.assert_cleanup_safe(src)
+
+        if node.action == "CLEAN_TEMP":
+            py_code = (
+                "import os, shutil, sys, time\n"
+                "from pathlib import Path\n"
+                f"src = Path('{src}')\n"
+                "if not src.exists(): sys.exit(2)\n"
+                "trash_dir = src.parent / '.hermes_trash'\n"
+                "trash_dir.mkdir(parents=True, exist_ok=True)\n"
+                "dst = trash_dir / src.name\n"
+                "if dst.exists(): dst = trash_dir / f'{src.stem}_{int(time.time())}{src.suffix}'\n"
+                "shutil.move(str(src), str(dst))\n"
+                "print(str(dst))\n"
+            )
+            success, out, _ = inspector.execute_remote(node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+            if not success or "Traceback" in out:
+                raise RuntimeError(f"Remote trash failed on {node_id}: {out}")
+            lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
+            trash_dst = lines[-1] if lines else f"trash://{Path(src).name}"
+            return ExecutionRecord(
+                id=uuid4(),
+                batch_id=batch_uuid,
+                source_path=src,
+                destination_path=trash_dst,
+                operation_type=OperationType.TRASH_DELETE,
+                rollback_state=RollbackState.EXECUTED,
+                executed_at=datetime.now(timezone.utc),
+            )
+
+        elif node.action in ("MOVE", "ARCHIVE"):
+            dst = node.target_path
+            if not dst:
+                return None
+            DiskCleaningPolicy.assert_cleanup_safe(dst)
+            py_code = (
+                "import os, shutil, sys\n"
+                "from pathlib import Path\n"
+                f"src = Path('{src}')\n"
+                f"dst = Path('{dst}')\n"
+                "if not src.exists(): sys.exit(2)\n"
+                "dst.parent.mkdir(parents=True, exist_ok=True)\n"
+                "shutil.move(str(src), str(dst))\n"
+                "print('OK')\n"
+            )
+            success, out, _ = inspector.execute_remote(node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+            if not success or "OK" not in out:
+                raise RuntimeError(f"Remote move failed on {node_id}: {out}")
+            return ExecutionRecord(
+                id=uuid4(),
+                batch_id=batch_uuid,
+                source_path=src,
+                destination_path=dst,
+                operation_type=OperationType.DIRECTORY_MOVE,
+                rollback_state=RollbackState.EXECUTED,
+                executed_at=datetime.now(timezone.utc),
+            )
+
+        return None
+
     def rollback_batch(self, batch_id: UUID | str) -> Dict[str, Any]:
         """
         Reverses executed operations from batch_id in LIFO order.
@@ -300,9 +403,30 @@ class SubtreeProfilerService:
 
         reverted_count = 0
         failed_count = 0
+        is_remote = self._current_node_id not in ("laptop", "local", "localhost")
 
         for rec in reversed(records):
             if rec.rollback_state != RollbackState.EXECUTED:
+                continue
+
+            if is_remote:
+                from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+                inspector = SSHNodeInspector()
+                py_code = (
+                    "import shutil, sys\n"
+                    "from pathlib import Path\n"
+                    f"dst = Path('{rec.destination_path}')\n"
+                    f"src = Path('{rec.source_path}')\n"
+                    "if not dst.exists(): sys.exit(2)\n"
+                    "src.parent.mkdir(parents=True, exist_ok=True)\n"
+                    "shutil.move(str(dst), str(src))\n"
+                    "print('ROLLBACK_OK')\n"
+                )
+                success, out, _ = inspector.execute_remote(self._current_node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+                if success and "ROLLBACK_OK" in out:
+                    reverted_count += 1
+                else:
+                    failed_count += 1
                 continue
 
             if rec.operation_type in (

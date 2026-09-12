@@ -38,3 +38,14 @@ class SSHNodePort(Protocol):
     ) -> Dict[str, Any]:
         """Perform remote directory analysis and retrieve file/subdir distributions."""
         ...
+
+    def profile_remote_subtree(
+        self,
+        node_id: str = "debian1",
+        remote_path: str = "/media/sdc2-2tb-work-privat-xchg",
+        max_depth: int = 2,
+        include_hidden: bool = False,
+    ) -> Any:
+        """Perform recursive subtree profiling on the remote node returning a FolderProfile."""
+        ...
+

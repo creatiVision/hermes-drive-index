@@ -19,6 +19,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_auto_organizer.application.ports.ssh_node_port import SSHNodePort
+from hermes_auto_organizer.domain.profiler_models import FolderProfile
 
 logger = logging.getLogger("hermes.storage.ssh_node_inspector")
 
@@ -335,3 +336,112 @@ class SSHNodeInspector(SSHNodePort):
             return res
         except json.JSONDecodeError as exc:
             return {"ok": False, "path": remote_path, "error": f"Failed to parse JSON: {exc}"}
+
+    def profile_remote_subtree(
+        self,
+        node_id: str = "debian1",
+        remote_path: str = "/media/sdc2-2tb-work-privat-xchg",
+        max_depth: int = 2,
+        include_hidden: bool = False,
+    ) -> FolderProfile:
+        """Runs recursive subtree profiling on the remote machine and reconstructs a FolderProfile."""
+        inc_hid = "True" if include_hidden else "False"
+        py_script = (
+            "import os, sys, json, math\n"
+            "from pathlib import Path\n"
+            "from collections import Counter\n"
+            "from datetime import datetime, timezone\n"
+            "now = datetime.now(timezone.utc)\n"
+            "def profile_node(p, depth, max_depth):\n"
+            "    exts = Counter()\n"
+            "    direct_files = 0\n"
+            "    direct_bytes = 0\n"
+            "    direct_active = 0\n"
+            "    direct_dormant = 0\n"
+            "    direct_cold = 0\n"
+            "    children = []\n"
+            "    try:\n"
+            "        with os.scandir(str(p)) as entries:\n"
+            "            for entry in entries:\n"
+            f"                if not {inc_hid} and entry.name.startswith('.'):\n"
+            "                    continue\n"
+            "                if entry.name in ('lost+found', '$RECYCLE.BIN'):\n"
+            "                    continue\n"
+            "                try:\n"
+            "                    if entry.is_file(follow_symlinks=False):\n"
+            "                        direct_files += 1\n"
+            "                        st = entry.stat(follow_symlinks=False)\n"
+            "                        direct_bytes += st.st_size\n"
+            "                        ext = Path(entry.name).suffix.lower() or '(no_ext)'\n"
+            "                        exts[ext] += 1\n"
+            "                        mtime_dt = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)\n"
+            "                        age = (now - mtime_dt).total_seconds() / 86400.0\n"
+            "                        if age < 30.0: direct_active += 1\n"
+            "                        elif age <= 365.0: direct_dormant += 1\n"
+            "                        else: direct_cold += 1\n"
+            "                    elif entry.is_dir(follow_symlinks=False) and depth < max_depth:\n"
+            "                        children.append(profile_node(Path(entry.path), depth + 1, max_depth))\n"
+            "                except Exception: pass\n"
+            "    except Exception: pass\n"
+            "    tot_files = direct_files + sum(c['total_files_count'] for c in children)\n"
+            "    tot_bytes = direct_bytes + sum(c['total_bytes'] for c in children)\n"
+            "    tot_subdirs = len(children) + sum(c['total_subdirs_count'] for c in children)\n"
+            "    agg_exts = Counter(exts)\n"
+            "    agg_act = direct_active\n"
+            "    agg_dorm = direct_dormant\n"
+            "    agg_cold = direct_cold\n"
+            "    for c in children:\n"
+            "        agg_exts.update(c['extension_counts'])\n"
+            "        agg_act += c['lifecycle']['active_count']\n"
+            "        agg_dorm += c['lifecycle']['dormant_count']\n"
+            "        agg_cold += c['lifecycle']['cold_count']\n"
+            "    total_ext = sum(agg_exts.values())\n"
+            "    entropy = 0.0\n"
+            "    if total_ext > 1 and len(agg_exts) > 1:\n"
+            "        for cnt in agg_exts.values():\n"
+            "            if cnt > 0:\n"
+            "                p_i = cnt / total_ext\n"
+            "                entropy -= p_i * math.log2(p_i)\n"
+            "        entropy = min(1.0, entropy / math.log2(max(2, len(agg_exts))))\n"
+            "    return {\n"
+            "        'path': str(p),\n"
+            "        'name': p.name or str(p),\n"
+            "        'depth': depth,\n"
+            "        'direct_files_count': direct_files,\n"
+            "        'direct_bytes': direct_bytes,\n"
+            "        'total_files_count': tot_files,\n"
+            "        'total_bytes': tot_bytes,\n"
+            "        'direct_subdirs_count': len(children),\n"
+            "        'total_subdirs_count': tot_subdirs,\n"
+            "        'mime_entropy': round(entropy, 3),\n"
+            "        'dominant_extension': agg_exts.most_common(1)[0][0] if agg_exts else '',\n"
+            "        'extension_counts': dict(agg_exts),\n"
+            "        'lifecycle': {\n"
+            "            'active_count': agg_act,\n"
+            "            'dormant_count': agg_dorm,\n"
+            "            'cold_count': agg_cold,\n"
+            "            'total_count': tot_files,\n"
+            "        },\n"
+            "        'root_pollution_ratio': round(direct_files / max(1, tot_files), 3) if len(children) > 0 else 0.0,\n"
+            "        'children': children,\n"
+            "    }\n"
+            f"root = Path('{remote_path}')\n"
+            f"res = profile_node(root, 0, {max_depth})\n"
+            "print(json.dumps(res))\n"
+        )
+        success, out, _ = self.execute_remote(
+            node_id,
+            f"python3 -c {subprocess.list2cmdline([py_script])}",
+            timeout=25,
+        )
+        if not success:
+            logger.error("Failed remote subtree profile on %s: %s", node_id, out)
+            return FolderProfile(path=remote_path, name=Path(remote_path).name or remote_path)
+
+        try:
+            data = json.loads(out.strip())
+            return FolderProfile.from_dict(data)
+        except Exception as exc:
+            logger.error("Failed to parse remote profile JSON: %s", exc)
+            return FolderProfile(path=remote_path, name=Path(remote_path).name or remote_path)
+

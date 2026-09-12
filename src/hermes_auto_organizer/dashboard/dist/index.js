@@ -4990,6 +4990,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [obsidianExporting, setObsidianExporting] = useState(false);
     const [treeDiffExecuting, setTreeDiffExecuting] = useState(false);
     const [lastTreeDiffBatchId, setLastTreeDiffBatchId] = useState(null);
+    const [profilerNodeId, setProfilerNodeId] = useState("laptop");
+    const [profilerTargetInput, setProfilerTargetInput] = useState("/home/mb/Downloads");
+    const [profilerMaxDepth, setProfilerMaxDepth] = useState(2);
 
     // Cleaner Sonderfunktion Modal State
     const [cleanerMounts, setCleanerMounts] = useState([]);
@@ -5080,23 +5083,27 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       }
     }, []);
 
-    const handleRunProfiler = async (scanPath = "/home/mb/Downloads") => {
+    const handleRunProfiler = async (scanPath, targetNodeId, maxDepth) => {
+      const p = (scanPath !== undefined ? scanPath : profilerTargetInput) || "/home/mb/Downloads";
+      const nid = targetNodeId !== undefined ? targetNodeId : profilerNodeId;
+      const depth = maxDepth !== undefined ? maxDepth : profilerMaxDepth;
       setProfilingLoading(true);
       try {
         const res = await apiCall("/profiler/scan", {
           method: "POST",
-          body: JSON.stringify({ path: scanPath, max_depth: 6, include_hidden: false })
+          body: JSON.stringify({ path: p, node_id: nid, max_depth: depth, include_hidden: false })
         });
         if (res.ok && res.data) {
           setProfilerData(res.data);
           setProfilerOutliers(res.data.outliers || []);
           setProfilerRules(res.data.synthesized_rules || []);
-          setNotice(`Subtree-Scan für '${scanPath}' erfolgreich: Entropie ${res.data.mime_entropy}, ${res.data.outliers_count} Ausreißer erkannt.`);
+          const nodeLabel = nid === "debian1" ? "🖥️ kimi-debian1 (SSH)" : "💻 kimi-laptop (Lokal)";
+          setNotice(`Subtree-Scan auf ${nodeLabel} für '${p}' erfolgreich: Entropie ${res.data.mime_entropy}, ${res.data.outliers_count} Ausreißer erkannt.`);
           const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
           if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
         }
       } catch (err) {
-        setNotice(`Fehler beim Profiling: ${err.message}`);
+        setNotice(`Fehler beim Profiling (${nid}): ${err.message}`);
       } finally {
         setProfilingLoading(false);
       }
@@ -6458,25 +6465,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 "🔬 Subtree-Profiler & Entropie-Diagnose (Bottom-Up Analyse)",
                 profilerData && h("span", {
                   className: `auto-org-entropy-meter ${profilerData.mime_entropy > 0.7 ? "auto-org-entropy-high" : profilerData.mime_entropy > 0.4 ? "auto-org-entropy-mid" : "auto-org-entropy-low"}`
-                }, `MIME-Entropie: ${profilerData.mime_entropy} (${profilerData.mime_entropy > 0.7 ? "Chaotische Dumpzone" : profilerData.mime_entropy > 0.4 ? "Gemischt" : "Homogen"})`)
+                }, `MIME-Entropie: ${profilerData.mime_entropy} (${profilerData.mime_entropy > 0.7 ? "Chaotische Dumpzone" : profilerData.mime_entropy > 0.4 ? "Gemischt" : "Homogen"})`),
+                h("span", {
+                  className: `auto-org-badge ${profilerNodeId === "debian1" ? "auto-org-badge-blue" : "auto-org-badge-green"}`
+                }, profilerNodeId === "debian1" ? "🖥️ kimi-debian1 (SSH: 192.168.178.89)" : "💻 kimi-laptop (Lokal)")
               ),
               h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
                 "Rekursive Bottom-Up Analyse aller Unterordner: Misst Shannon MIME-Entropie, Lebenszyklus-Altersverteilung und erkennt strukturelle Störungszonen ohne Pfad-Hardcodierung."
               )
             ),
             h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-outline",
-                onClick: () => handleRunProfiler("/home/mb/Downloads"),
-                disabled: profilingLoading
-              }, profilingLoading ? "Analysiere..." : "🔬 Downloads analysieren"),
-              h("button", {
-                type: "button",
-                className: "auto-org-btn auto-org-btn-outline",
-                onClick: () => handleRunProfiler("/media/work-data"),
-                disabled: profilingLoading
-              }, profilingLoading ? "Analysiere..." : "🔬 Work-Data analysieren"),
               h("button", {
                 type: "button",
                 className: "auto-org-btn auto-org-btn-primary",
@@ -6487,11 +6485,156 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             )
           ),
 
+          // Node Selector and Path Config Control Row
+          h("div", {
+            style: {
+              background: "rgba(15, 23, 42, 0.85)",
+              border: "1px solid #334155",
+              borderRadius: "0.5rem",
+              padding: "1rem",
+              marginBottom: "1rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.85rem"
+            }
+          },
+            // Row 1: Node Selector
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" } },
+              h("span", { style: { fontSize: "0.85rem", fontWeight: 600, color: "#94a3b8" } }, "Ziel-Knoten im LAN:"),
+              h("button", {
+                type: "button",
+                className: `auto-org-config-btn ${profilerNodeId === "laptop" ? "active" : ""}`,
+                onClick: () => {
+                  setProfilerNodeId("laptop");
+                  if (profilerTargetInput.startsWith("/media/sdc2") || profilerTargetInput.startsWith("/media/whatever") || profilerTargetInput.startsWith("/media/sdb1") || profilerTargetInput.startsWith("/media/ext10tb")) {
+                    setProfilerTargetInput("/home/mb/Downloads");
+                  }
+                }
+              }, "💻 kimi-laptop (Lokal)"),
+              h("button", {
+                type: "button",
+                className: `auto-org-config-btn ${profilerNodeId === "debian1" ? "active" : ""}`,
+                onClick: () => {
+                  setProfilerNodeId("debian1");
+                  if (!profilerTargetInput.startsWith("/media/sdc2") && !profilerTargetInput.startsWith("/media/whatever") && !profilerTargetInput.startsWith("/media/sdb1") && !profilerTargetInput.startsWith("/media/ext10tb")) {
+                    setProfilerTargetInput("/media/sdc2-2tb-work-privat-xchg");
+                  }
+                }
+              },
+                "🖥️ kimi-debian1 (SSH)",
+                debian1SSH && h("span", {
+                  style: {
+                    marginLeft: "0.35rem",
+                    fontSize: "0.7rem",
+                    color: debian1SSH.is_online ? "#4ade80" : "#f87171"
+                  }
+                }, debian1SSH.is_online ? "● online (192.168.178.89)" : "○ offline")
+              )
+            ),
+
+            // Row 2: Quick Mount / Directory Chips for selected node
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+              h("span", { style: { fontSize: "0.8rem", color: "#64748b" } }, "Schnellauswahl:"),
+              (profilerNodeId === "debian1" ? [
+                { label: "📁 /media/sdc2-2tb-work-privat-xchg (Work & Privat Pool)", path: "/media/sdc2-2tb-work-privat-xchg" },
+                { label: "📁 /media/whatever (Downloads, Root-Images)", path: "/media/whatever" },
+                { label: "📁 /media/sdb1-nosync (Twin NoSync)", path: "/media/sdb1-nosync" },
+                { label: "📁 /media/ext10tb (10TB Cold-Backup)", path: "/media/ext10tb" },
+              ] : [
+                { label: "📁 /home/mb/Downloads (Flüchtige Downloads)", path: "/home/mb/Downloads" },
+                { label: "📁 /media/work-data (Work-Partition)", path: "/media/work-data" },
+                { label: "📁 /media/privat-data (Privat-Partition)", path: "/media/privat-data" },
+                { label: "📁 /media/xchg (Shared Pool)", path: "/media/xchg" },
+                { label: "📁 /media/nosync (Medien & Videos)", path: "/media/nosync" },
+              ]).map((chip, idx) =>
+                h("button", {
+                  key: idx,
+                  type: "button",
+                  className: `auto-org-pill-btn ${profilerTargetInput === chip.path ? "active" : ""}`,
+                  style: {
+                    fontSize: "0.75rem",
+                    padding: "0.25rem 0.6rem",
+                    cursor: "pointer",
+                    background: profilerTargetInput === chip.path ? "rgba(59, 130, 246, 0.3)" : "#1e293b",
+                    borderColor: profilerTargetInput === chip.path ? "#3b82f6" : "#334155",
+                    color: profilerTargetInput === chip.path ? "#60a5fa" : "#cbd5e1"
+                  },
+                  onClick: () => setProfilerTargetInput(chip.path)
+                }, chip.label)
+              )
+            ),
+
+            // Row 3: Target Path Input, Max Depth, and Run Button
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("div", { style: { flex: 1, minWidth: "260px", display: "flex", alignItems: "center", gap: "0.5rem" } },
+                h("span", { style: { fontSize: "0.85rem", color: "#94a3b8", whiteSpace: "nowrap" } }, "Pfad:"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: {
+                    flex: 1,
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    color: "#ffffff",
+                    padding: "0.4rem 0.65rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.85rem"
+                  },
+                  value: profilerTargetInput,
+                  onChange: (e) => setProfilerTargetInput(e.target.value),
+                  placeholder: profilerNodeId === "debian1" ? "/media/sdc2-2tb-work-privat-xchg" : "/home/mb/Downloads"
+                })
+              ),
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.35rem" } },
+                h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, "Tiefe:"),
+                h("select", {
+                  value: profilerMaxDepth,
+                  onChange: (e) => setProfilerMaxDepth(parseInt(e.target.value, 10)),
+                  style: {
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    color: "#ffffff",
+                    padding: "0.35rem 0.5rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.8rem"
+                  }
+                },
+                  h("option", { value: 1 }, "Ebene 1 (Schnell)"),
+                  h("option", { value: 2 }, "Ebene 2 (Empfohlen)"),
+                  h("option", { value: 4 }, "Ebene 4 (Tief)"),
+                  h("option", { value: 6 }, "Ebene 6 (Vollständig)")
+                )
+              ),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: {
+                  background: "#2563eb",
+                  borderColor: "#3b82f6",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem"
+                },
+                onClick: () => handleRunProfiler(profilerTargetInput, profilerNodeId, profilerMaxDepth),
+                disabled: profilingLoading
+              },
+                profilingLoading ? "⏳ Analysiere..." : `🔍 ${profilerNodeId === "debian1" ? "SSH-Profiling starten" : "Analyse & Profiling starten"}`
+              )
+            )
+          ),
+
           profilerData ?
             h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" } },
               // Overview metric box
               h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
-                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, "Analysierter Pfad"),
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, "Analysierter Pfad"),
+                  h("span", {
+                    className: `auto-org-badge ${profilerData.node_id === "debian1" ? "auto-org-badge-blue" : "auto-org-badge-green"}`,
+                    style: { fontSize: "0.65rem", padding: "0.15rem 0.45rem" }
+                  }, profilerData.node_id === "debian1" ? "🖥️ debian1 (SSH)" : "💻 laptop (Lokal)")
+                ),
                 h("div", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginTop: "0.2rem", wordBreak: "break-all" } }, profilerData.root_path),
                 h("div", { style: { display: "flex", gap: "1rem", marginTop: "0.75rem" } },
                   h("div", null,
@@ -6500,7 +6643,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   ),
                   h("div", null,
                     h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Größe: "),
-                    h("strong", null, `${Math.round(profilerData.total_bytes / (1024*1024))} MB`)
+                    h("strong", null, profilerData.total_bytes >= 1024*1024*1024 ? `${(profilerData.total_bytes / (1024*1024*1024)).toFixed(1)} GB` : `${Math.round(profilerData.total_bytes / (1024*1024))} MB`)
                   ),
                   h("div", null,
                     h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Unterordner: "),
@@ -6539,7 +6682,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             ) :
             h("div", { style: { textAlign: "center", padding: "1.5rem", color: "#94a3b8", fontSize: "0.85rem" } },
-              "Klicken Sie auf '🔬 Downloads analysieren' oder '🔬 Work-Data analysieren', um das Bottom-Up Profiling zu starten."
+              `Wählen Sie einen Knoten (z.B. '${profilerNodeId === "debian1" ? "kimi-debian1 (SSH)" : "kimi-laptop (Lokal)"}'), wählen Sie einen Pfad und klicken Sie auf 'Analyse & Profiling starten'.`
             )
         ),
 

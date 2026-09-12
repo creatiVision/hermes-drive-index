@@ -32,6 +32,7 @@ class DisruptionType(str, Enum):
     ROOT_POLLUTION = "ROOT_POLLUTION"
     ORPHAN_MEDIA = "ORPHAN_MEDIA"
     CLEANABLE_TEMP = "CLEANABLE_TEMP"
+    DUPLICATE_CLUSTER = "DUPLICATE_CLUSTER"
 
 
 class DisruptionSeverity(str, Enum):
@@ -126,6 +127,36 @@ class FolderProfile:
     root_pollution_ratio: float = 0.0  # direct_files / max(1, total_files)
     disruptions: List[DisruptionItem] = field(default_factory=list)
     subfolders: List[FolderProfile] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> FolderProfile:
+        """Reconstructs a FolderProfile domain entity from a serialized dict."""
+        lc_data = data.get("lifecycle", {})
+        lc = LifecycleDistribution(
+            active_count=lc_data.get("active_count", 0),
+            dormant_count=lc_data.get("dormant_count", 0),
+            cold_count=lc_data.get("cold_count", 0),
+            total_count=lc_data.get("total_count", 0),
+        )
+        children_list = data.get("subfolders") or data.get("children") or []
+        subfolders = [cls.from_dict(c) for c in children_list if isinstance(c, dict)]
+        return cls(
+            path=data.get("path", ""),
+            name=data.get("name", ""),
+            depth=data.get("depth", 0),
+            direct_files_count=data.get("direct_files_count", 0),
+            direct_bytes=data.get("direct_bytes", 0),
+            total_files_count=data.get("total_files_count", 0),
+            total_bytes=data.get("total_bytes", 0),
+            direct_subdirs_count=data.get("direct_subdirs_count", len(subfolders)),
+            total_subdirs_count=data.get("total_subdirs_count", 0),
+            mime_entropy=data.get("mime_entropy", 0.0),
+            dominant_extension=data.get("dominant_extension", ""),
+            extension_counts=data.get("extension_counts", {}),
+            lifecycle=lc,
+            root_pollution_ratio=data.get("root_pollution_ratio", 0.0),
+            subfolders=subfolders,
+        )
 
     @staticmethod
     def calculate_mime_entropy(extension_counts: Dict[str, int]) -> float:

@@ -4358,6 +4358,7 @@ async def get_filesystem_node_states() -> Dict[str, Any]:
 
 class ProfilerScanRequest(BaseModel):
     path: str
+    node_id: Optional[str] = "laptop"
     max_depth: int = 6
     include_hidden: bool = False
 
@@ -4390,6 +4391,7 @@ async def scan_and_profile_subtree(req: ProfilerScanRequest) -> Dict[str, Any]:
     try:
         res = subtree_profiler_service.scan_and_profile(
             path=target,
+            node_id=req.node_id or "laptop",
             max_depth=req.max_depth,
             include_hidden=req.include_hidden,
         )
@@ -4406,6 +4408,7 @@ async def get_profiler_outliers() -> Dict[str, Any]:
     outliers = [asdict(o) for o in subtree_profiler_service.outliers]
     return {
         "ok": True,
+        "node_id": subtree_profiler_service.current_node_id,
         "count": len(outliers),
         "outliers": outliers,
     }
@@ -4436,6 +4439,7 @@ async def get_profiler_rules() -> Dict[str, Any]:
     rules = [asdict(r) for r in subtree_profiler_service.rules]
     return {
         "ok": True,
+        "node_id": subtree_profiler_service.current_node_id,
         "count": len(rules),
         "rules": rules,
     }
@@ -4464,6 +4468,7 @@ async def get_tree_diff() -> Dict[str, Any]:
     diff_nodes = subtree_profiler_service.generate_tree_diff()
     return {
         "ok": True,
+        "node_id": subtree_profiler_service.current_node_id,
         "count": len(diff_nodes),
         "tree_diff": [asdict(n) for n in diff_nodes],
     }

@@ -104,3 +104,59 @@ def test_cleaner_and_mesh_routes(client: TestClient, tmp_path: Path):
     res_triage = client.get("/mesh/root-triage")
     assert res_triage.status_code == 200
     assert "candidates" in res_triage.json()
+
+
+def test_profiler_remote_node_routes(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    from hermes_auto_organizer.domain.profiler_models import FolderProfile
+    from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+
+    fake_profile = FolderProfile(
+        path="/media/sdc2-2tb-work-privat-xchg",
+        name="sdc2-2tb-work-privat-xchg",
+        depth=0,
+        direct_files_count=10,
+        direct_bytes=1000,
+        total_files_count=100,
+        total_bytes=100000,
+        subfolders=[
+            FolderProfile(
+                path="/media/sdc2-2tb-work-privat-xchg/models_backup",
+                name="models_backup",
+                depth=1,
+                direct_files_count=1,
+                direct_bytes=5 * 1024 * 1024 * 1024,
+                total_files_count=1,
+                total_bytes=5 * 1024 * 1024 * 1024,
+            )
+        ]
+    )
+
+    monkeypatch.setattr(
+        SSHNodeInspector,
+        "profile_remote_subtree",
+        lambda self, node_id, remote_path, max_depth, include_hidden: fake_profile,
+    )
+
+    res = client.post("/profiler/scan", json={
+        "path": "/media/sdc2-2tb-work-privat-xchg",
+        "node_id": "debian1",
+        "max_depth": 2,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["data"]["node_id"] == "debian1"
+    assert data["data"]["root_path"] == "/media/sdc2-2tb-work-privat-xchg"
+
+    # Outliers should contain models_backup
+    res_out = client.get("/profiler/outliers")
+    assert res_out.status_code == 200
+    assert res_out.json()["node_id"] == "debian1"
+    outliers = res_out.json()["outliers"]
+    assert any("models_backup" in o["source_path"] for o in outliers)
+
+    # Tree-diff should reflect debian1 node
+    res_diff = client.get("/profiler/tree-diff")
+    assert res_diff.status_code == 200
+    assert res_diff.json()["node_id"] == "debian1"
+

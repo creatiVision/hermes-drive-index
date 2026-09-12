@@ -262,7 +262,8 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
 
     def detect_disruptions(self, profile: FolderProfile) -> List[DisruptionItem]:
         """Gathers all disruptions across the entire subtree."""
-        results: List[DisruptionItem] = list(profile.disruptions)
+        node_disruptions = profile.disruptions if profile.disruptions else self._detect_folder_disruptions(profile)
+        results: List[DisruptionItem] = list(node_disruptions)
         for sub in profile.subfolders:
             results.extend(self.detect_disruptions(sub))
         return results
@@ -290,7 +291,10 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
         has_code_dominant = any(ext in CODE_EXTENSIONS for ext in node.extension_counts.keys())
         has_git = False
         try:
-            has_git = (p_path / ".git").exists()
+            if p_path.exists():
+                has_git = (p_path / ".git").exists()
+            else:
+                has_git = any(sub.name == ".git" for sub in node.subfolders)
         except OSError:
             has_git = False
 
@@ -398,6 +402,42 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
                     status="pending",
                 )
             )
+
+        # Check 6: Redundant model weights or backup models (e.g. 'models_backup')
+        if any(k in name_lower for k in ["models_backup", "model_backup", "weights_bak"]) and node.total_bytes > 2 * 1024 * 1024 * 1024:
+            outliers.append(
+                OutlierItem(
+                    source_path=node.path,
+                    disruption_type=DisruptionType.DUPLICATE_CLUSTER,
+                    reason_de=f"Redundantes Modell-Backup ({round(node.total_bytes / (1024**3), 1)} GB) in '{node.name}'.",
+                    proposal=SolutionProposal(
+                        target_path=f"trash://{node.name}",
+                        confidence=0.88,
+                        reasoning_de="Nach Verifikation der aktiven Modelle redundante Modell-Backups bereinigen.",
+                        action_type="CLEAN",
+                    ),
+                    status="pending",
+                )
+            )
+
+        # Check 7: Large raw disk images (> 5 GB) sitting in general or root directories
+        has_disk_img = any(ext in [".img", ".raw", ".iso", ".qcow2", ".vmdk"] for ext in node.extension_counts)
+        if has_disk_img and node.total_bytes > 5 * 1024 * 1024 * 1024:
+            if not any(k in node.path.lower() for k in ["archiv", "archive", "iso-repo"]):
+                outliers.append(
+                    OutlierItem(
+                        source_path=node.path,
+                        disruption_type=DisruptionType.TYPE_OUTLIER,
+                        reason_de=f"Riesiges Disk-Image/Container ({round(node.total_bytes / (1024**3), 1)} GB) in '{node.name}'.",
+                        proposal=SolutionProposal(
+                            target_path=f"/media/ext10tb/archive_images/{node.name}",
+                            confidence=0.85,
+                            reasoning_de="Disk-Images in dedizierten Cold-Storage (z.B. ext10tb) archivieren.",
+                            action_type="MOVE",
+                        ),
+                        status="pending",
+                    )
+                )
 
         # Recurse down
         for child in node.subfolders:
