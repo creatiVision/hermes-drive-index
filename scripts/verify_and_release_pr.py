@@ -66,22 +66,20 @@ def check_conflicts(base_ref: str, head_ref: str) -> tuple[bool, list[str]]:
     """Check if head_ref can cleanly merge into base_ref without conflicts."""
     run_cmd(["git", "fetch", "origin", base_ref, head_ref])
 
-    # Find merge base
-    mb_res = run_cmd(["git", "merge-base", f"origin/{base_ref}", f"origin/{head_ref}"])
-    merge_base = mb_res.stdout.strip()
-
-    # Run git merge-tree
     tree_res = run_cmd(
-        ["git", "merge-tree", merge_base, f"origin/{head_ref}", f"origin/{base_ref}"],
+        ["git", "merge-tree", "--write-tree", f"origin/{base_ref}", f"origin/{head_ref}"],
         check=False,
     )
 
+    if tree_res.returncode == 0:
+        return True, []
+
     conflicts: list[str] = []
     for line in tree_res.stdout.splitlines():
-        if "<<<<<<<" in line or "CONFLICT" in line:
+        if "KONFLIKT" in line or "CONFLICT" in line or line.startswith("100644"):
             conflicts.append(line.strip())
 
-    return len(conflicts) == 0, conflicts
+    return False, conflicts
 
 
 def run_test_suite() -> dict:
