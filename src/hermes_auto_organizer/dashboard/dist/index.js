@@ -4997,6 +4997,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [cleanerLoading, setCleanerLoading] = useState(false);
     const [cleanerActiveTab, setCleanerActiveTab] = useState("cache"); // "cache" | "migration" | "lan"
 
+    // Remote SSH debian1 State
+    const [debian1SSH, setDebian1SSH] = useState(null);
+    const [debian1Loading, setDebian1Loading] = useState(false);
+
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
@@ -5030,6 +5034,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         if (pOutliers && pOutliers.outliers) setProfilerOutliers(pOutliers.outliers);
         if (pDiff && pDiff.tree_diff) setTreeDiffNodes(pDiff.tree_diff);
         if (cMounts && cMounts.mounts) setCleanerMounts(cMounts.mounts);
+        apiCall("/ssh/nodes").then(res => {
+          if (res && res.nodes) {
+            const d1 = res.nodes.find(n => n.node_id === "debian1");
+            if (d1) setDebian1SSH(d1);
+          }
+        }).catch(() => null);
         if (pscan) {
           setProactiveScan(pscan);
           if (pscan.drives && pscan.drives.length > 0) {
@@ -5211,6 +5221,23 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         if (candRes && candRes.candidates) setCleanerCandidates(candRes.candidates);
       } finally {
         setCleanerLoading(false);
+      }
+    };
+
+    const handleOpenDebian1SSH = async () => {
+      setActiveModal("ssh_debian1");
+      setDebian1Loading(true);
+      try {
+        const res = await apiCall("/ssh/debian1/overview");
+        if (res && res.ok) {
+          setDebian1SSH(res);
+        } else {
+          setNotice(`debian1 SSH nicht erreichbar: ${(res && res.error) || "Offline"}`);
+        }
+      } catch (err) {
+        setNotice(`SSH-Fehler: ${err.message}`);
+      } finally {
+        setDebian1Loading(false);
       }
     };
 
@@ -6027,6 +6054,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           },
             h("span", null, "🧹 Disk Cleaner (Sonderfunktion)"),
             h("span", { className: "auto-org-badge auto-org-badge-yellow" }, "Utility")
+          ),
+          h("button", {
+            className: `auto-org-config-btn ${activeModal === "ssh_debian1" ? "active" : ""}`,
+            onClick: handleOpenDebian1SSH,
+            title: debian1SSH && debian1SSH.is_online ? `SSH Online (${debian1SSH.host}, ${debian1SSH.latency_ms}ms)` : "debian1 SSH Verbindung prüfen"
+          },
+            h("span", null, "🖥️ debian1 (SSH)"),
+            h("span", {
+              className: `auto-org-badge ${debian1SSH && debian1SSH.is_online ? "auto-org-badge-green" : "auto-org-badge-red"}`
+            }, debian1SSH && debian1SSH.is_online ? `🟢 ${debian1SSH.host || "Online"}` : "🔴 Offline")
           ),
           h("button", {
             className: "auto-org-config-btn",
@@ -9163,6 +9200,133 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             )
           )
+        );
+      } else if (activeModal === "ssh_debian1") {
+        title = "🖥️ kimi-debian1: Remote Server Node & Compute Hub via SSH";
+        content = h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+          debian1Loading ?
+            h("div", { style: { textAlign: "center", padding: "2.5rem", color: "#94a3b8" } }, "Frage kimi-debian1 über SSH ab...") :
+            !debian1SSH || !debian1SSH.is_online ?
+              h("div", { style: { textAlign: "center", padding: "2.5rem", color: "#ef4444" } },
+                h("div", { style: { fontWeight: 700, fontSize: "1rem", marginBottom: "0.5rem" } }, "⚠️ SSH-Verbindung fehlgeschlagen"),
+                h("div", { style: { fontSize: "0.85rem", color: "#94a3b8" } }, (debian1SSH && debian1SSH.error) || "Host nicht erreichbar"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { marginTop: "1rem" },
+                  onClick: handleOpenDebian1SSH
+                }, "↻ Erneut versuchen")
+              ) :
+              [
+                // System Telemetry Strip
+                h("div", { key: "telem", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+                    h("div", null,
+                      h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, `🟢 Verbunden mit ${debian1SSH.hostname || "debian1"} (${debian1SSH.host})`),
+                      h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, `Latenz: ${debian1SSH.latency_ms} ms • Kernel: ${debian1SSH.kernel} • SSH-Key: ~/.ssh/id_ed25519_debian1`)
+                    ),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+                      onClick: handleOpenDebian1SSH
+                    }, "↻ Aktualisieren")
+                  ),
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" } },
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "⏱️ Uptime"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: "#ffffff", marginTop: "0.2rem", wordBreak: "break-all" } }, debian1SSH.uptime || "N/A")
+                    ),
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "📊 Load Average (1/5/15m)"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: "#60a5fa", marginTop: "0.2rem" } }, (debian1SSH.load_avg || []).join(" • ") || "0.8 • 1.2 • 1.6")
+                    ),
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "🧠 Arbeitsspeicher (RAM)"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: (debian1SSH.memory && debian1SSH.memory.used_pct > 80) ? "#ef4444" : "#4ade80", marginTop: "0.2rem" } },
+                        debian1SSH.memory ? `${debian1SSH.memory.used_pct}% belegt` : "N/A"
+                      )
+                    )
+                  )
+                ),
+
+                // Remote Storage Mounts Table
+                h("div", { key: "mounts", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginBottom: "0.5rem" } }, "💾 Remote Speicher-Partitionen & Mounts auf debian1"),
+                  h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0, marginBottom: "0.75rem" } }, "Einschließlich des gemeinsamen Syncthing-Pools und des 10 TB Kalt-Backup-Archivs."),
+                  h("table", { className: "auto-org-table" },
+                    h("thead", null,
+                      h("tr", null,
+                        h("th", null, "Einhängepunkt"),
+                        h("th", null, "Typ / Rolle"),
+                        h("th", null, "Belegt / Gesamt"),
+                        h("th", null, "Auslastung"),
+                        h("th", null, "Aktion")
+                      )
+                    ),
+                    h("tbody", null,
+                      (debian1SSH.mounts || []).map((m, idx) => {
+                        const isShared = m.is_shared_pool;
+                        const isCold = m.is_cold_backup;
+                        const roleLabel = isShared ? "🔄 Shared P2P Pool" : isCold ? "❄️ 10TB Kalt-Backup" : m.filesystem;
+                        const badgeColor = isShared ? "auto-org-badge-blue" : isCold ? "auto-org-badge-yellow" : "auto-org-badge-gray";
+                        return h("tr", { key: idx },
+                          h("td", { style: { fontFamily: "monospace", fontSize: "0.8rem", fontWeight: 600, color: "#ffffff" } }, m.mounted_on),
+                          h("td", null, h("span", { className: `auto-org-badge ${badgeColor}` }, roleLabel)),
+                          h("td", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, `${Math.round(m.used_bytes / (1024*1024*1024))} GB / ${Math.round(m.total_bytes / (1024*1024*1024))} GB`),
+                          h("td", null,
+                            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                              h("div", { style: { width: "60px", height: "6px", background: "#334155", borderRadius: "3px", overflow: "hidden" } },
+                                h("div", { style: { width: `${Math.min(100, m.used_percent)}%`, height: "100%", background: m.used_percent > 85 ? "#ef4444" : "#22c55e" } })
+                              ),
+                              h("span", { style: { fontSize: "0.75rem", color: "#cbd5e1" } }, `${m.used_percent}%`)
+                            )
+                          ),
+                          h("td", null,
+                            h("button", {
+                              type: "button",
+                              className: "auto-org-btn auto-org-btn-outline",
+                              style: { fontSize: "0.7rem", padding: "0.2rem 0.5rem" },
+                              onClick: () => {
+                                setScanPath(m.mounted_on);
+                                setActiveModal(null);
+                                setNotice(`Pfad '${m.mounted_on}' für Subtree-Analyse übernommen.`);
+                              }
+                            }, "🔍 Im Profiler laden")
+                          )
+                        );
+                      })
+                    )
+                  )
+                ),
+
+                // Docker Services List
+                h("div", { key: "docker", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginBottom: "0.5rem" } }, `🐳 Docker Services auf debian1 (${debian1SSH.active_containers_count || 0} aktiv)`),
+                  h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0, marginBottom: "0.75rem" } }, "PostgreSQL 16, Portainer und laufende MCP-Tools auf dem Debian-Server."),
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.6rem" } },
+                    (debian1SSH.docker_services || []).map((s, idx) => {
+                      const isUp = (s.status || "").toLowerCase().includes("up");
+                      return h("div", {
+                        key: idx,
+                        style: {
+                          background: "#0f172a",
+                          border: `1px solid ${isUp ? "#334155" : "#7f1d1d"}`,
+                          borderRadius: "0.375rem",
+                          padding: "0.6rem"
+                        }
+                      },
+                        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: isUp ? "#4ade80" : "#ef4444" } }, s.name),
+                          h("span", { className: `auto-org-badge ${isUp ? "auto-org-badge-green" : "auto-org-badge-red"}` }, isUp ? "Aktiv" : "Beendet")
+                        ),
+                        h("div", { style: { fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.2rem" } }, s.status),
+                        s.ports && h("div", { style: { fontSize: "0.68rem", color: "#60a5fa", marginTop: "0.15rem", fontFamily: "monospace" } }, s.ports)
+                      );
+                    })
+                  )
+                )
+              ]
         );
       }
 

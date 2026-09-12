@@ -53,6 +53,7 @@ from hermes_auto_organizer.application.use_cases.subtree_profiler_service import
 from hermes_auto_organizer.application.use_cases.disk_analyzer import DiskAnalyzerUseCase
 from hermes_auto_organizer.application.use_cases.symlink_migrator import SymlinkMigratorUseCase
 from hermes_auto_organizer.application.use_cases.lan_mesh_service import LanMeshUseCase
+from hermes_auto_organizer.application.use_cases.ssh_node_service import ssh_node_service
 from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import FastDiskScanner
 from hermes_auto_organizer.infrastructure.storage.migration_service import FilesystemMigrationService
 from hermes_auto_organizer.infrastructure.storage.lan_mesh_scanner import LanMeshScanner
@@ -4650,5 +4651,49 @@ async def get_mesh_overview() -> Dict[str, Any]:
 async def get_mesh_root_triage() -> Dict[str, Any]:
     """Returns classification of loose files in root partitions."""
     return {"ok": True, "candidates": _lan_mesh_use_case.get_root_triage_plan()}
+
+
+# =====================================================================
+# Remote SSH Node Telemetry & Profiling APIs
+# =====================================================================
+
+class SSHTestRequest(BaseModel):
+    node_id: str = "debian1"
+
+
+class SSHProfileRequest(BaseModel):
+    node_id: str = "debian1"
+    path: str = "/media/sdc2-2tb-work-privat-xchg"
+    max_depth: int = 2
+
+
+@router.get("/ssh/nodes")
+async def get_ssh_nodes() -> Dict[str, Any]:
+    """Returns overview of configured LAN SSH nodes with connectivity and latency."""
+    nodes = ssh_node_service.get_nodes_summary()
+    return {"ok": True, "nodes": nodes}
+
+
+@router.post("/ssh/test")
+async def test_ssh_node(req: SSHTestRequest) -> Dict[str, Any]:
+    """Tests SSH connectivity and measures latency to a specific remote node."""
+    res = ssh_node_service._inspector.test_connection(req.node_id)
+    return res
+
+
+@router.get("/ssh/debian1/overview")
+async def get_debian1_overview() -> Dict[str, Any]:
+    """Provides in-depth telemetry for debian1: mounts, Docker services, and system metrics."""
+    return ssh_node_service.get_node_overview("debian1")
+
+
+@router.post("/ssh/debian1/profile")
+async def profile_debian1_directory(req: SSHProfileRequest) -> Dict[str, Any]:
+    """Runs fast remote directory profiling over SSH on debian1."""
+    return ssh_node_service.profile_remote_directory(
+        node_id=req.node_id,
+        remote_path=req.path,
+        max_depth=req.max_depth,
+    )
 
 

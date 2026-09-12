@@ -29,30 +29,46 @@ class LanMeshScanner:
         )
 
     def get_devices(self) -> list[dict[str, Any]]:
-        """Returns detected machines in the LAN mesh."""
+        """Returns detected machines in the LAN mesh with dynamic IP and SSH status."""
+        debian_ip = "192.168.178.89"
+        debian_ssh_ok = False
+        try:
+            from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+            insp = SSHNodeInspector()
+            resolved = insp.resolve_active_host("debian1")
+            if resolved:
+                debian_ip = resolved
+                debian_ssh_ok = True
+        except Exception:
+            pass
+
         devices: list[dict[str, Any]] = [
             {
                 "id": "SOZIEIL",
                 "name": "laptop",
                 "role": "Orchestrator & Workstation",
+                "address": "192.168.178.173",
                 "is_current_host": True,
                 "is_online": True,
+                "ssh_available": True,
             },
             {
                 "id": "3Q4NBFG",
                 "name": "debian1",
-                "role": "Server Node & Compute Hub",
-                "address": "192.168.178.111",
+                "role": "Server Node & Compute Hub (SSH)",
+                "address": debian_ip,
                 "is_current_host": False,
-                "is_online": True,
+                "is_online": debian_ssh_ok,
+                "ssh_available": debian_ssh_ok,
             },
             {
                 "id": "7GX6H4S",
                 "name": "Note14new (xiaomi-mobile)",
                 "role": "Mobile Capture & Edge Device",
-                "address": "192.168.178.127",
+                "address": "192.168.178.151",
                 "is_current_host": False,
                 "is_online": True,
+                "ssh_available": False,
             },
         ]
         return devices
