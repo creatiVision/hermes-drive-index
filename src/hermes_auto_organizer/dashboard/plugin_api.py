@@ -49,6 +49,13 @@ from hermes_auto_organizer.infrastructure.storage.docker_mounts import (
 )
 from hermes_auto_organizer.infrastructure.storage.local_scanner import LocalFilesystemScanner
 from hermes_auto_organizer.application.use_cases.dry_run import DryRunEngine
+from hermes_auto_organizer.application.use_cases.disk_analyzer import DiskAnalyzerUseCase
+from hermes_auto_organizer.application.use_cases.lan_mesh_service import LanMeshUseCase
+from hermes_auto_organizer.application.use_cases.symlink_migrator import SymlinkMigratorUseCase
+from hermes_auto_organizer.domain.models import CleanupLevel, MigrationRecord, MigrationStatus
+from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import FastDiskScanner
+from hermes_auto_organizer.infrastructure.storage.lan_mesh_scanner import LanMeshScanner
+from hermes_auto_organizer.infrastructure.storage.migration_service import FilesystemMigrationService
 
 logger = logging.getLogger("hermes.plugins.auto_organizer")
 router = APIRouter()
@@ -232,6 +239,17 @@ class PreviewRequest(BaseModel):
 
 class ExecuteRequest(BaseModel):
     batch_id: Optional[str] = None
+
+
+class TrashCandidatesRequest(BaseModel):
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class MigrationRequest(BaseModel):
+    source_path: str
+    destination_dir: str
+    name: Optional[str] = None
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1492,9 +1510,272 @@ async def rollback_batch(batch_id: str) -> Dict[str, Any]:
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 16 — GET /disk/usages
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/disk/usages")
+async def get_disk_usages() -> Dict[str, Any]:
+    scanner = FastDiskScanner()
+    usages = scanner.get_mount_usages()
+    return {"ok": True, "mounts": usages}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 17 — GET /disk/analyze
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/disk/analyze")
+async def analyze_disk_path(
+    path: str = Query(..., description="Absolute directory path to analyze"),
+    format: str = Query("json", description="Output format: json or csv"),
+    max_entries: int = Query(200, description="Max entries to return"),
+) -> Any:
+    scanner = FastDiskScanner()
+    use_case = DiskAnalyzerUseCase(scanner)
+
+    try:
+        if format.lower() == "csv":
+            csv_data = use_case.analyze_directory_csv(path, max_entries=max_entries)
+            return {"ok": True, "format": "csv", "data": csv_data}
+        entries = use_case.analyze_directory(path, max_entries=max_entries)
+        return {
+            "ok": True,
+            "format": "json",
+            "path": path,
+            "entries_count": len(entries),
+            "entries": [
+                {
+                    "path": e.path,
+                    "total_size": e.total_size,
+                    "type": "directory" if e.type_id == 0 else "file",
+                    "type_id": e.type_id,
+                }
+                for e in entries
+            ],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 18 — POST /disk/candidates & GET /disk/candidates
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.post("/disk/candidates")
+async def add_trash_candidates(req: TrashCandidatesRequest) -> Dict[str, Any]:
+    scanner = FastDiskScanner()
+    use_case = DiskAnalyzerUseCase(scanner)
+    evaluated = use_case.evaluate_trash_candidates(req.candidates)
+
+    conn = await _get_connection()
+    if conn is not None:
+        try:
+            existing = await _get_state(conn, "disk_trash_candidates") or []
+            merged_raw = existing + [
+                {
+                    "path": c.path,
+                    "size_bytes": c.size_bytes,
+                    "level": c.level.value,
+                    "reason": c.reason,
+                    "name": c.name,
+                    "source_device": c.source_device,
+                }
+                for c in evaluated
+            ]
+            final_deduped = use_case.evaluate_trash_candidates(merged_raw)
+            final_dict = [
+                {
+                    "path": c.path,
+                    "size_bytes": c.size_bytes,
+                    "level": c.level.value,
+                    "reason": c.reason,
+                    "name": c.name,
+                    "source_device": c.source_device,
+                }
+                for c in final_deduped
+            ]
+            await _set_state(conn, "disk_trash_candidates", final_dict)
+        finally:
+            await _release_conn(conn)
+
+    return {
+        "ok": True,
+        "added_count": len(evaluated),
+        "candidates": [
+            {
+                "path": c.path,
+                "size_bytes": c.size_bytes,
+                "level": c.level.value,
+                "level_label": "A (Safe Cache)" if c.level == CleanupLevel.SAFE_CACHE else ("B (Migrate)" if c.level == CleanupLevel.MIGRATION else "C (Risky/Confirm)"),
+                "reason": c.reason,
+                "name": c.name,
+            }
+            for c in evaluated
+        ],
+    }
+
+
+@router.get("/disk/candidates")
+async def get_trash_candidates() -> Dict[str, Any]:
+    candidates = []
+    conn = await _get_connection()
+    if conn is not None:
+        try:
+            candidates = await _get_state(conn, "disk_trash_candidates") or []
+        finally:
+            await _release_conn(conn)
+
+    level_0 = [c for c in candidates if c.get("level") == 0]
+    level_1 = [c for c in candidates if c.get("level") == 1]
+    level_2 = [c for c in candidates if c.get("level") == 2]
+
+    return {
+        "ok": True,
+        "total_count": len(candidates),
+        "total_bytes": sum(c.get("size_bytes", 0) for c in candidates),
+        "level_0_safe_cache": level_0,
+        "level_1_migration": level_1,
+        "level_2_risky_confirm": level_2,
+        "candidates": candidates,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 19 — POST /disk/migrate & GET /disk/migrations & POST /rollback
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.post("/disk/migrate")
+async def migrate_directory(req: MigrationRequest) -> Dict[str, Any]:
+    service = FilesystemMigrationService()
+    use_case = SymlinkMigratorUseCase(service)
+
+    try:
+        record = use_case.migrate(req.source_path, req.destination_dir, name=req.name)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    record_dict = {
+        "id": str(record.id),
+        "source_path": record.source_path,
+        "destination_path": record.destination_path,
+        "size_bytes": record.size_bytes,
+        "symlink_created": record.symlink_created,
+        "status": record.status.value,
+        "created_at": record.created_at.isoformat(),
+    }
+
+    conn = await _get_connection()
+    if conn is not None:
+        try:
+            migrations = await _get_state(conn, "disk_migrations") or []
+            migrations.append(record_dict)
+            await _set_state(conn, "disk_migrations", migrations)
+        finally:
+            await _release_conn(conn)
+
+    return {"ok": True, "migration": record_dict}
+
+
+@router.get("/disk/migrations")
+async def list_migrations() -> Dict[str, Any]:
+    migrations = []
+    conn = await _get_connection()
+    if conn is not None:
+        try:
+            migrations = await _get_state(conn, "disk_migrations") or []
+        finally:
+            await _release_conn(conn)
+    return {"ok": True, "count": len(migrations), "migrations": migrations}
+
+
+@router.post("/disk/migrations/{migration_id}/rollback")
+async def rollback_migration_route(migration_id: str) -> Dict[str, Any]:
+    conn = await _get_connection()
+    if conn is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        migrations = await _get_state(conn, "disk_migrations") or []
+        target_dict = next((m for m in migrations if m["id"] == migration_id), None)
+        if not target_dict:
+            raise HTTPException(status_code=404, detail=f"Migration {migration_id} not found")
+
+        record = MigrationRecord(
+            id=UUID(target_dict["id"]),
+            source_path=target_dict["source_path"],
+            destination_path=target_dict["destination_path"],
+            size_bytes=target_dict["size_bytes"],
+            symlink_created=target_dict["symlink_created"],
+            status=MigrationStatus(target_dict["status"]),
+        )
+
+        service = FilesystemMigrationService()
+        use_case = SymlinkMigratorUseCase(service)
+        reverted = use_case.rollback(record)
+
+        target_dict["status"] = reverted.status.value
+        target_dict["symlink_created"] = reverted.symlink_created
+        await _set_state(conn, "disk_migrations", migrations)
+
+        return {"ok": True, "migration": target_dict}
+    finally:
+        await _release_conn(conn)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 20 — GET /lan/mesh & GET /lan/root-triage
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/lan/mesh")
+async def get_lan_mesh() -> Dict[str, Any]:
+    scanner = LanMeshScanner()
+    use_case = LanMeshUseCase(scanner)
+    return {"ok": True, **use_case.get_mesh_overview()}
+
+
+@router.get("/lan/root-triage")
+async def get_lan_root_triage() -> Dict[str, Any]:
+    scanner = LanMeshScanner()
+    use_case = LanMeshUseCase(scanner)
+    triage = use_case.get_root_triage_plan()
+    return {
+        "ok": True,
+        "loose_files_count": len(triage),
+        "total_bytes": sum(t.get("size_bytes", 0) for t in triage),
+        "candidates": triage,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Route 21 — GET /sync/mappings (GDrive selective sync pendants)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/sync/mappings")
+async def get_sync_mappings() -> Dict[str, Any]:
+    mappings = [
+        {
+            "name": "Peterstor WEG & Mieter 2024",
+            "drive_folder_path": "01_R_Peterstor_WEG.Mieter__5.1__2024_NK",
+            "local_path": "/media/privat-data/6_PrivatBüro/01_R_Peterstor_WEG+Mieter",
+            "direction": "bidirectional",
+            "status": "configured",
+            "rclone_remote": "gdrivemb__01_R_Peterstor_WEG.Mieter__5.1__2024_NK",
+        }
+    ]
+    return {"ok": True, "count": len(mappings), "mappings": mappings}
+
+
 # ── Re-exports for backward compatibility (tests) ────────────────────────────
 
 # These aliases exist so existing test imports do not break immediately.
 # They reference functions that are now route-handler closures above.
 health_check = health_check
 get_stats = get_stats
+

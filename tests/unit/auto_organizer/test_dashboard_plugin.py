@@ -374,4 +374,5 @@ def test_sources_complete_root():
 # --- Route count ---
 
 def test_route_count():
-    assert len(router.routes) == 16, f"Expected 16 routes, got {len(router.routes)}"
+    assert len(router.routes) == 26, f"Expected 26 routes, got {len(router.routes)}"
+
