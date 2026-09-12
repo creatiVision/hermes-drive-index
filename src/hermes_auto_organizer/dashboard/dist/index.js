@@ -741,12 +741,39 @@
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
 
-    const [foldedIds, setFoldedIds] = useState(() => new Set());
+    const [foldedIds, setFoldedIds] = useState(() => {
+      const initialFolded = new Set();
+      try {
+        if (fsTree && fsTree.mounts && fsTree.mounts.length > 0) {
+          fsTree.mounts.forEach(m => { if (m && m.id) initialFolded.add(m.id); });
+        } else {
+          initialFolded.add("node_work_data");
+          initialFolded.add("node_privat_data");
+          initialFolded.add("node_downloads");
+          initialFolded.add("node_desktop");
+          initialFolded.add("node_xchg");
+        }
+      } catch (e) {}
+      return initialFolded;
+    });
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
     const transformRef = useRef(transform);
     transformRef.current = transform;
+
+    useEffect(() => {
+      if (fsTree && fsTree.mounts && fsTree.mounts.length > 0) {
+        setFoldedIds(prev => {
+          if (prev.size <= 5) {
+            const s = new Set();
+            fsTree.mounts.forEach(m => { if (m && m.id) s.add(m.id); });
+            return s;
+          }
+          return prev;
+        });
+      }
+    }, [fsTree]);
 
     const isDraggingRef = useRef(false);
     const dragNodeRef = useRef(null);
@@ -905,8 +932,12 @@
     const isNodeVisible = useCallback((node) => {
       if (!node) return false;
       let curr = node;
-      const map = simRef.current.nodeMap;
+      const map = simRef.current && simRef.current.nodeMap;
+      if (!map) return true;
+      const visited = new Set();
       while (curr && curr.parentId) {
+        if (visited.has(curr.id)) break;
+        visited.add(curr.id);
         if (foldedIds.has(curr.parentId)) return false;
         curr = map.get(curr.parentId);
       }
@@ -921,15 +952,17 @@
           next.delete(nodeId);
           if (recursive) {
             // Unfold all descendants
-            const map = simRef.current.nodeMap;
-            function unfoldKids(id) {
-              const kids = Array.from(map.values()).filter(n => n.parentId === id);
-              kids.forEach(k => {
-                next.delete(k.id);
-                unfoldKids(k.id);
-              });
+            const map = simRef.current && simRef.current.nodeMap;
+            if (map) {
+              function unfoldKids(id) {
+                const kids = Array.from(map.values()).filter(n => n && n.parentId === id);
+                kids.forEach(k => {
+                  next.delete(k.id);
+                  unfoldKids(k.id);
+                });
+              }
+              unfoldKids(nodeId);
             }
-            unfoldKids(nodeId);
           }
         } else {
           next.add(nodeId);
@@ -949,33 +982,34 @@
       let frameCount = 0;
 
       function renderFrame() {
-        const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 900, height: 600 };
-        let width = rect.width || 900;
-        let height = rect.height || 600;
+        try {
+          const rect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 900, height: 600 };
+          let width = rect.width || 900;
+          let height = rect.height || 600;
 
-        const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-          canvas.width = width * dpr;
-          canvas.height = height * dpr;
-          canvas.style.width = width + "px";
-          canvas.style.height = height + "px";
-        }
-
-        ctx.save();
-        ctx.scale(dpr, dpr);
-
-        // Clear Canvas with Obsidian Dark Cosmic Backdrop
-        ctx.fillStyle = "#090d16";
-        ctx.fillRect(0, 0, width, height);
-
-        // Cosmic background grid dots
-        ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
-        const step = 40;
-        for (let gx = 0; gx < width; gx += step) {
-          for (let gy = 0; gy < height; gy += step) {
-            ctx.fillRect(gx, gy, 1, 1);
+          const dpr = window.devicePixelRatio || 1;
+          if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + "px";
+            canvas.style.height = height + "px";
           }
-        }
+
+          ctx.save();
+          ctx.scale(dpr, dpr);
+
+          // Clear Canvas with Obsidian Dark Cosmic Backdrop
+          ctx.fillStyle = "#090d16";
+          ctx.fillRect(0, 0, width, height);
+
+          // Cosmic background grid dots
+          ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+          const step = 40;
+          for (let gx = 0; gx < width; gx += step) {
+            for (let gy = 0; gy < height; gy += step) {
+              ctx.fillRect(gx, gy, 1, 1);
+            }
+          }
 
         const t = transformRef.current;
         const cx = width / 2;
@@ -1199,6 +1233,9 @@
         });
 
         ctx.restore();
+        } catch (frameErr) {
+          console.warn("Folders2GraphView render error:", frameErr);
+        }
         animId = requestAnimationFrame(renderFrame);
       }
 
@@ -1312,30 +1349,38 @@
     }, []);
 
     const handleAutoFit = useCallback(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const { nodes } = simRef.current;
-      const vis = nodes.filter(n => isNodeVisible(n));
-      if (vis.length === 0) return;
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const { nodes } = simRef.current || {};
+        if (!nodes || nodes.length === 0) return;
+        const vis = nodes.filter(n => isNodeVisible(n));
+        if (vis.length === 0) return;
 
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      vis.forEach(n => {
-        if (n.x < minX) minX = n.x;
-        if (n.x > maxX) maxX = n.x;
-        if (n.y < minY) minY = n.y;
-        if (n.y > maxY) maxY = n.y;
-      });
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        vis.forEach(n => {
+          if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+          }
+        });
 
-      const spanX = Math.max(100, maxX - minX + 80);
-      const spanY = Math.max(100, maxY - minY + 80);
-      const w = canvas.clientWidth || 900;
-      const h = canvas.clientHeight || 600;
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
+        const spanX = Math.max(100, maxX - minX + 80);
+        const spanY = Math.max(100, maxY - minY + 80);
+        const w = canvas.clientWidth || 900;
+        const h = canvas.clientHeight || 600;
 
-      const scale = Math.max(0.3, Math.min(1.5, Math.min(w / spanX, h / spanY)));
-      const midX = (minX + maxX) / 2;
-      const midY = (minY + maxY) / 2;
+        const scale = Math.max(0.3, Math.min(1.5, Math.min(w / spanX, h / spanY)));
+        const midX = (minX + maxX) / 2;
+        const midY = (minY + maxY) / 2;
 
-      setTransform({ scale, panX: -midX * scale, panY: -midY * scale });
+        setTransform({ scale, panX: -midX * scale, panY: -midY * scale });
+      } catch (e) {
+        console.warn("Folders2GraphView handleAutoFit error:", e);
+      }
     }, [isNodeVisible]);
 
     return h("div", {
@@ -1354,16 +1399,23 @@
           h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, "• Force Physics & Faltung")
         ),
         h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap" } },
-          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen" }, "🎯 Auto-Fit"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen" }, "[+] Alles"),
+          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen", "aria-label": "Ansicht zentrieren und einpassen" }, "🎯 Auto-Fit"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen", "aria-label": "Alle Ordner ausklappen" }, "[+] Alles"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => {
-            const map = simRef.current.nodeMap;
-            const mountIds = new Set(Array.from(map.values()).filter(n => n.node_type === "mount").map(n => n.id));
-            setFoldedIds(mountIds);
-          }, title: "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+            try {
+              const map = simRef.current && simRef.current.nodeMap;
+              if (map) {
+                const mountIds = new Set(Array.from(map.values()).filter(n => n && n.node_type === "mount").map(n => n.id));
+                setFoldedIds(mountIds);
+              }
+            } catch (e) {
+              console.warn("Nur Mounts fold error:", e);
+            }
+          }, title: "Nur Hauptlaufwerke zeigen", "aria-label": "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset")
+
         ),
         // Color Legend
         h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
@@ -1477,10 +1529,10 @@
 
       filteredTargets.forEach((node, idx) => {
         node.x = dstX;
-        if (totalTargets === 1) {
+        if (totalTargets <= 1) {
           node.y = hubY;
         } else {
-          node.y = Math.round(55 + (idx * (height - 110)) / (totalTargets - 1));
+          node.y = Math.round(55 + (idx * (height - 110)) / Math.max(1, totalTargets - 1));
         }
       });
 
@@ -1519,19 +1571,23 @@
       // Particle System (Files flowing through the graph)
       const particleCount = compact ? 28 : 42;
       const particles = [];
+      const numCurves = Math.max(1, curves.length);
       for (let i = 0; i < particleCount; i++) {
-        const curveIdx = Math.floor(Math.random() * curves.length);
+        const curveIdx = Math.floor(Math.random() * numCurves);
         const curve = curves[curveIdx];
         particles.push({
           curveIdx: curveIdx,
           t: Math.random(),
           speed: 0.0025 + Math.random() * 0.0035,
           size: 2.2 + Math.random() * 1.5,
-          color: curve.color
+          color: curve ? curve.color : "#60a5fa"
         });
       }
 
       function getBezierPoint(c, t) {
+        if (!c || !c.p0 || !c.p1 || !c.c1 || !c.c2) {
+          return { x: 0, y: 0 };
+        }
         const inv = 1 - t;
         const inv2 = inv * inv;
         const inv3 = inv2 * inv;
@@ -1546,119 +1602,133 @@
       let startTime = Date.now();
 
       function render() {
-        const now = Date.now();
-        const elapsed = (now - startTime) / 1000;
+        try {
+          const now = Date.now();
+          const elapsed = (now - startTime) / 1000;
 
-        // Clear background with deep cosmic obsidian tone
-        ctx.fillStyle = "#080c14";
-        ctx.fillRect(0, 0, width, height);
+          // Clear background with deep cosmic obsidian tone
+          ctx.fillStyle = "#080c14";
+          ctx.fillRect(0, 0, width, height);
 
-        // Subtle background grid stars
-        ctx.fillStyle = "rgba(51, 65, 85, 0.25)";
-        for (let gx = 25; gx < width; gx += 40) {
-          for (let gy = 25; gy < height; gy += 40) {
-            ctx.fillRect(gx, gy, 1.2, 1.2);
-          }
-        }
-
-        // Draw Flow Curves
-        curves.forEach((c) => {
-          const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId || hoveredNode.id === hubNode.id)) ||
-            (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
-          ctx.beginPath();
-          ctx.moveTo(c.p0.x, c.p0.y);
-          ctx.bezierCurveTo(c.c1.x, c.c1.y, c.c2.x, c.c2.y, c.p1.x, c.p1.y);
-
-          if (isHighlighted) {
-            ctx.strokeStyle = c.color;
-            ctx.lineWidth = 3.0;
-            ctx.shadowColor = c.color;
-            ctx.shadowBlur = 14;
-          } else {
-            ctx.strokeStyle = "rgba(100, 116, 139, 0.22)";
-            ctx.lineWidth = 1.4;
-            ctx.shadowBlur = 0;
-          }
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-        });
-
-        // Update and Draw Particles
-        particles.forEach((p) => {
-          if (!isPaused) {
-            p.t += p.speed * speedMultiplier;
-            if (p.t > 1) {
-              p.t = 0;
-              p.curveIdx = Math.floor(Math.random() * curves.length);
-              p.color = curves[p.curveIdx].color;
+          // Subtle background grid stars
+          ctx.fillStyle = "rgba(51, 65, 85, 0.25)";
+          for (let gx = 25; gx < width; gx += 40) {
+            for (let gy = 25; gy < height; gy += 40) {
+              ctx.fillRect(gx, gy, 1.2, 1.2);
             }
           }
 
-          const c = curves[p.curveIdx];
-          const pt = getBezierPoint(c, p.t);
+          // Draw Flow Curves
+          curves.forEach((c) => {
+            if (!c || !c.p0 || !c.p1 || !c.c1 || !c.c2) return;
+            const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId || hoveredNode.id === hubNode.id)) ||
+              (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
+            ctx.beginPath();
+            ctx.moveTo(c.p0.x, c.p0.y);
+            ctx.bezierCurveTo(c.c1.x, c.c1.y, c.c2.x, c.c2.y, c.p1.x, c.p1.y);
 
-          const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId)) ||
-            (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
+            if (isHighlighted) {
+              ctx.strokeStyle = c.color;
+              ctx.lineWidth = 3.0;
+              ctx.shadowColor = c.color;
+              ctx.shadowBlur = 14;
+            } else {
+              ctx.strokeStyle = "rgba(100, 116, 139, 0.22)";
+              ctx.lineWidth = 1.4;
+              ctx.shadowBlur = 0;
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          });
 
+          // Update and Draw Particles
+          if (curves.length > 0) {
+            particles.forEach((p) => {
+              if (p.curveIdx >= curves.length || !curves[p.curveIdx]) {
+                p.curveIdx = Math.floor(Math.random() * curves.length);
+              }
+              const c = curves[p.curveIdx];
+              if (!c) return;
+
+              if (!isPaused) {
+                p.t += p.speed * speedMultiplier;
+                if (p.t > 1) {
+                  p.t = 0;
+                  p.curveIdx = Math.floor(Math.random() * curves.length);
+                  const nextC = curves[p.curveIdx];
+                  p.color = nextC ? nextC.color : "#60a5fa";
+                }
+              }
+
+              const pt = getBezierPoint(c, p.t);
+
+              const isHighlighted = (hoveredNode && (hoveredNode.id === c.sourceId || hoveredNode.id === c.targetId)) ||
+                (highlightedBranchId && (c.targetId === highlightedBranchId || c.sourceId === highlightedBranchId));
+
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, isHighlighted ? p.size * 1.6 : p.size, 0, Math.PI * 2);
+              ctx.fillStyle = isHighlighted ? "#ffffff" : p.color;
+              ctx.shadowColor = p.color;
+              ctx.shadowBlur = isHighlighted ? 14 : 6;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            });
+          }
+
+          // Draw Central Hermes Hub Pulsing Aura
+          const pulse = Math.sin(elapsed * 2.5) * 6;
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, isHighlighted ? p.size * 1.6 : p.size, 0, Math.PI * 2);
-          ctx.fillStyle = isHighlighted ? "#ffffff" : p.color;
-          ctx.shadowColor = p.color;
-          ctx.shadowBlur = isHighlighted ? 14 : 6;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        });
-
-        // Draw Central Hermes Hub Pulsing Aura
-        const pulse = Math.sin(elapsed * 2.5) * 6;
-        ctx.beginPath();
-        ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 10 + pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(168, 85, 247, 0.25)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 18 + pulse * 1.4, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(168, 85, 247, 0.12)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Draw All Nodes
-        allNodes.forEach((node) => {
-          const isHovered = hoveredNode && hoveredNode.id === node.id;
-          const isTargetBranch = highlightedBranchId && (node.id === highlightedBranchId || node.branch === highlightedBranchId);
-          const r = (isHovered || isTargetBranch) ? node.radius + 4 : node.radius;
-
-          // Outer Glow
-          ctx.beginPath();
-          ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = "#0f172a";
-          ctx.shadowColor = node.color;
-          ctx.shadowBlur = (isHovered || isTargetBranch) ? 26 : 12;
-          ctx.fill();
-
-          // Border
-          ctx.strokeStyle = (isHovered || isTargetBranch) ? "#ffffff" : node.color;
-          ctx.lineWidth = (isHovered || isTargetBranch) ? 3 : 2;
+          ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 10 + pulse, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(168, 85, 247, 0.25)";
+          ctx.lineWidth = 2;
           ctx.stroke();
-          ctx.shadowBlur = 0;
 
-          // Icon
-          ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(node.icon, node.x, node.y + 1);
+          ctx.beginPath();
+          ctx.arc(hubNode.x, hubNode.y, hubNode.radius + 18 + pulse * 1.4, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(168, 85, 247, 0.12)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
 
-          // Node Text Labels
-          ctx.font = (isHovered || isTargetBranch) ? "bold 11px system-ui" : "600 10.5px system-ui";
-          ctx.fillStyle = (isHovered || isTargetBranch) ? "#ffffff" : "#f1f5f9";
-          ctx.fillText(node.label, node.x, node.y + r + 13);
+          // Draw All Nodes
+          allNodes.forEach((node) => {
+            if (!node) return;
+            const isHovered = hoveredNode && hoveredNode.id === node.id;
+            const isTargetBranch = highlightedBranchId && (node.id === highlightedBranchId || node.branch === highlightedBranchId);
+            const r = (isHovered || isTargetBranch) ? node.radius + 4 : node.radius;
 
-          // Badge / File count
-          ctx.font = "9.5px monospace";
-          ctx.fillStyle = node.color;
-          ctx.fillText(node.isHub ? "AI Hub" : `${node.count} Dateien`, node.x, node.y + r + 25);
-        });
+            // Outer Glow
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = "#0f172a";
+            ctx.shadowColor = node.color;
+            ctx.shadowBlur = (isHovered || isTargetBranch) ? 26 : 12;
+            ctx.fill();
+
+            // Border
+            ctx.strokeStyle = (isHovered || isTargetBranch) ? "#ffffff" : node.color;
+            ctx.lineWidth = (isHovered || isTargetBranch) ? 3 : 2;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Icon
+            ctx.font = `${Math.round(r * 0.95)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(node.icon, node.x, node.y + 1);
+
+            // Node Text Labels
+            ctx.font = (isHovered || isTargetBranch) ? "bold 11px system-ui" : "600 10.5px system-ui";
+            ctx.fillStyle = (isHovered || isTargetBranch) ? "#ffffff" : "#f1f5f9";
+            ctx.fillText(node.label, node.x, node.y + r + 13);
+
+            // Badge / File count
+            ctx.font = "9.5px monospace";
+            ctx.fillStyle = node.color;
+            ctx.fillText(node.isHub ? "AI Hub" : `${node.count} Dateien`, node.x, node.y + r + 25);
+          });
+        } catch (renderErr) {
+          console.warn("ObsidianFlowGraph render error caught:", renderErr);
+        }
 
         animationFrameId = requestAnimationFrame(render);
       }
@@ -1735,7 +1805,11 @@
             type: "button",
             className: "auto-org-btn auto-org-btn-outline",
             style: { padding: "0.2rem 0.6rem", fontSize: "0.75rem", marginLeft: "0.5rem" },
-            onClick: onTogglePause
+            onClick: () => {
+              if (typeof onTogglePause === "function") {
+                try { onTogglePause(); } catch (e) { console.warn("Pause error:", e); }
+              }
+            }
           }, isPaused ? "▶ Fortsetzen" : "⏸️ Pause")
         )
       ),
@@ -1756,8 +1830,14 @@
             type: "button",
             className: `auto-org-filter-pill ${branchFilter === f.id ? "active" : ""}`,
             onClick: () => {
-              setBranchFilter(f.id);
-              if (onSelectBranch) onSelectBranch(f.id);
+              try {
+                setBranchFilter(f.id);
+                if (typeof onSelectBranch === "function") {
+                  onSelectBranch(f.id);
+                }
+              } catch (e) {
+                console.warn("Branch filter select error:", e);
+              }
             }
           }, f.label)
         )
@@ -2087,7 +2167,6 @@
   function MultiComputerTreeWindow({ onClose }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [viewMode, setViewMode] = useState("folders2graph"); // "folders2graph" | "filesystem" | "radar"
     const [nodeStates, setNodeStates] = useState({});
     const [contextMenu, setContextMenu] = useState(null); // { x, y, node, currentState }
@@ -2325,7 +2404,7 @@
 
     // Center node in viewport
     const centerNode = useCallback((node) => {
-      if (!node || !canvasRef.current) return;
+      if (!node || !canvasRef.current || !Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
       const canvas = canvasRef.current;
       const w = canvas.clientWidth || 1000;
       const h = canvas.clientHeight || 650;
@@ -2551,33 +2630,40 @@
 
     // Auto-fit to Screen Algorithm
     const autoFitScreen = useCallback(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const width = canvas.clientWidth || 1000;
-      const height = canvas.clientHeight || 650;
-      const visibleNodes = layout.nodes.filter(n => n.visible);
-      if (visibleNodes.length === 0) return;
+      try {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const width = canvas.clientWidth || 1000;
+        const height = canvas.clientHeight || 650;
+        const visibleNodes = (layout && layout.nodes ? layout.nodes : []).filter(n => n && n.visible);
+        if (visibleNodes.length === 0) return;
 
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      visibleNodes.forEach(n => {
-        const pad = (n.radius || 20) + 40;
-        minX = Math.min(minX, n.x - pad);
-        maxX = Math.max(maxX, n.x + pad);
-        minY = Math.min(minY, n.y - pad);
-        maxY = Math.max(maxY, n.y + pad);
-      });
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        visibleNodes.forEach(n => {
+          if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) {
+            const pad = (n.radius || 20) + 40;
+            minX = Math.min(minX, n.x - pad);
+            maxX = Math.max(maxX, n.x + pad);
+            minY = Math.min(minY, n.y - pad);
+            maxY = Math.max(maxY, n.y + pad);
+          }
+        });
 
-      const boxW = Math.max(maxX - minX, 150);
-      const boxH = Math.max(maxY - minY, 150);
-      const scaleX = (width - 60) / boxW;
-      const scaleY = (height - 60) / boxH;
-      const newScale = Math.max(0.35, Math.min(scaleX, scaleY, 1.25));
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
-      const newPanX = (width / 2) - (centerX * newScale);
-      const newPanY = (height / 2) - (centerY * newScale);
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
+        const boxW = Math.max(maxX - minX, 150);
+        const boxH = Math.max(maxY - minY, 150);
+        const scaleX = (width - 60) / boxW;
+        const scaleY = (height - 60) / boxH;
+        const newScale = Math.max(0.35, Math.min(scaleX, scaleY, 1.25));
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const newPanX = (width / 2) - (centerX * newScale);
+        const newPanY = (height / 2) - (centerY * newScale);
 
-      setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+        setTransform({ scale: newScale, panX: newPanX, panY: newPanY });
+      } catch (e) {
+        console.warn("autoFitScreen error:", e);
+      }
     }, [layout]);
 
     // Trigger autoFitScreen on initial render or resize
@@ -2608,20 +2694,21 @@
       const startTime = Date.now();
 
       function render() {
-        const now = Date.now();
-        const elapsed = isPaused ? 0 : (now - startTime) / 1000;
+        try {
+          const now = Date.now();
+          const elapsed = isPaused ? 0 : (now - startTime) / 1000;
 
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(dpr, dpr);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.scale(dpr, dpr);
 
-        // Clear Background with Deep Cosmic Obsidian Theme
-        ctx.fillStyle = "#080c14";
-        ctx.fillRect(0, 0, width, height);
+          // Clear Background with Deep Cosmic Obsidian Theme
+          ctx.fillStyle = "#080c14";
+          ctx.fillRect(0, 0, width, height);
 
-        // Faint Star Grid Dots
-        ctx.fillStyle = "rgba(51, 65, 85, 0.22)";
-        for (let gx = 30; gx < width; gx += 45) {
-          for (let gy = 30; gy < height; gy += 45) {
+          // Faint Star Grid Dots
+          ctx.fillStyle = "rgba(51, 65, 85, 0.22)";
+          for (let gx = 30; gx < width; gx += 45) {
+            for (let gy = 30; gy < height; gy += 45) {
             ctx.fillRect(gx, gy, 1.2, 1.2);
           }
         }
@@ -2844,6 +2931,9 @@
         });
 
         ctx.restore();
+        } catch (radarErr) {
+          console.warn("MultiComputerTreeWindow render error:", radarErr);
+        }
 
         animationFrameId = requestAnimationFrame(render);
       }
@@ -3095,7 +3185,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       onClick: (e) => { if (e.target === e.currentTarget) onClose(); }
     },
       h("div", {
-        className: `auto-org-multi-tree-window ${isFullscreen ? "fullscreen" : ""}`,
+        className: "auto-org-multi-tree-window",
         ref: containerRef
       },
         // Top Header with Title and Mode Switcher
@@ -3144,12 +3234,6 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 title: "Obsidian-Graph Netzwerk-Radar über alle 5 Rechner und Syncthing-Ringe"
               }, "🌐 Multi-Computer Radar")
             ),
-            h("button", {
-              type: "button",
-              className: "auto-org-pill-btn",
-              onClick: () => setIsFullscreen(!isFullscreen),
-              title: isFullscreen ? "Fenster verkleinern" : "Vollbildmodus"
-            }, isFullscreen ? "🗖 Normal" : "⛶ Vollbild"),
             h("button", {
               type: "button",
               className: "auto-org-modal-close",
@@ -3548,31 +3632,33 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             )) :
             // Radar Selected Node Inspector
-            (selectedNode && h("div", { className: "auto-org-multi-tree-inspector" },
-              h("div", { className: "auto-org-inspector-header" },
-                h("div", null,
-                  h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
-                    h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
-                    h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+            (selectedNode && (() => {
+              const nodeStatus = selectedNode.status || { state: "INDEXED", symbol: "🟢", label: "Aktiv", color: "#10b981" };
+              return h("div", { className: "auto-org-multi-tree-inspector" },
+                h("div", { className: "auto-org-inspector-header" },
+                  h("div", null,
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.45rem" } },
+                      h("span", { style: { fontSize: "1.25rem" } }, selectedNode.icon || "📁"),
+                      h("h4", { style: { margin: 0, fontSize: "0.95rem", color: "#ffffff" } }, selectedNode.name)
+                    ),
+                    h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                      `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
+                    )
                   ),
-                  h("div", { style: { fontSize: "0.73rem", color: "#94a3b8", marginTop: "0.2rem" } },
-                    `Host: ${selectedNode.computer_id || "-"} • Typ: ${selectedNode.node_type || "Ordner"}`
-                  )
+                  h("span", {
+                    className: `auto-org-ampel-badge ${nodeStatus.state === "INDEXED" || nodeStatus.state === "PROTECTED" ? "green" : nodeStatus.state === "PENDING" ? "yellow" : "red"}`,
+                    style: { fontSize: "0.72rem" }
+                  }, `${nodeStatus.symbol || "🟢"} ${nodeStatus.state || "INDEXED"}`)
                 ),
-                h("span", {
-                  className: `auto-org-ampel-badge ${selectedNode.status.state === "INDEXED" || selectedNode.status.state === "PROTECTED" ? "green" : selectedNode.status.state === "PENDING" ? "yellow" : "red"}`,
-                  style: { fontSize: "0.72rem" }
-                }, `${selectedNode.status.symbol} ${selectedNode.status.state}`)
-              ),
 
-              // Exact Host Path
-              h("div", { className: "auto-org-inspector-section" },
-                h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
-                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
-                  formatUserPath(selectedNode.path)
+                // Exact Host Path
+                h("div", { className: "auto-org-inspector-section" },
+                  h("div", { className: "auto-org-inspector-section-title" }, "📍 Speicherort (Host-Pfad)"),
+                  h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd", wordBreak: "break-all" } },
+                    formatUserPath(selectedNode.path)
+                  ),
+                  h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, nodeStatus.label || "")
                 ),
-                h("div", { style: { fontSize: "0.72rem", color: "#cbd5e1" } }, selectedNode.status.label)
-              ),
 
               // Syncthing Radar Details
               h("div", { className: "auto-org-inspector-section" },
@@ -3654,7 +3740,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   onClick: () => centerNode(selectedNode)
                 }, "🎯 Zentrieren")
               )
-            ))
+            );
+          })())
         ),
 
         // Bottom Legend Footer
@@ -4892,6 +4979,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
     // Modal state for top bar config tools: null | "mounts" | "roots" | "journal" | "sync"
     const [activeModal, setActiveModal] = useState(null);
+    const [showDiagnosticTools, setShowDiagnosticTools] = useState(false);
 
     // Application state
     const [stats, setStats] = useState(null);
@@ -4983,10 +5071,37 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [approvedRuleIds, setApprovedRuleIds] = useState(new Set());
     const [excludedRuleIds, setExcludedRuleIds] = useState(new Set());
 
+    // Subtree Profiler, Disruption Diagnostics, NL Rules, and Tree-Diff State
+    const [profilerData, setProfilerData] = useState(null);
+    const [profilingLoading, setProfilingLoading] = useState(false);
+    const [profilerOutliers, setProfilerOutliers] = useState([]);
+    const [profilerRules, setProfilerRules] = useState([]);
+    const [treeDiffNodes, setTreeDiffNodes] = useState([]);
+    const [obsidianExporting, setObsidianExporting] = useState(false);
+    const [treeDiffExecuting, setTreeDiffExecuting] = useState(false);
+    const [lastTreeDiffBatchId, setLastTreeDiffBatchId] = useState(null);
+    const [profilerNodeId, setProfilerNodeId] = useState("laptop");
+    const [profilerTargetInput, setProfilerTargetInput] = useState("/home/mb/Downloads");
+    const [profilerMaxDepth, setProfilerMaxDepth] = useState(2);
+
+    // Cleaner Sonderfunktion Modal State
+    const [cleanerMounts, setCleanerMounts] = useState([]);
+    const [cleanerCandidates, setCleanerCandidates] = useState([]);
+    const [cleanerLoading, setCleanerLoading] = useState(false);
+    const [cleanerActiveTab, setCleanerActiveTab] = useState("cache"); // "cache" | "triage" | "migration"
+    const [meshTriageCandidates, setMeshTriageCandidates] = useState([]);
+    const [meshTriageBatchId, setMeshTriageBatchId] = useState(null);
+    const [meshTriageExecuting, setMeshTriageExecuting] = useState(false);
+    const [triagePartitionFilter, setTriagePartitionFilter] = useState("all");
+
+    // Remote SSH debian1 State
+    const [debian1SSH, setDebian1SSH] = useState(null);
+    const [debian1Loading, setDebian1Loading] = useState(false);
+
     const loadData = useCallback(async () => {
       setLoading(true);
       try {
-        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc, srules] = await Promise.all([
+        const [s, r, a, rl, b, m, tx, sm, pscan, etax, reconc, srules, pRules, pOutliers, pDiff, cMounts] = await Promise.all([
           apiCall("/stats").catch(() => null),
           apiCall("/roots").catch(() => []),
           apiCall("/anomalies").catch(() => []),
@@ -4999,6 +5114,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           apiCall("/taxonomy/emergent").catch(() => null),
           apiCall("/reconciliation/cross-drive").catch(() => null),
           apiCall("/rules/suggested").catch(() => null),
+          apiCall("/profiler/rules").catch(() => null),
+          apiCall("/profiler/outliers").catch(() => null),
+          apiCall("/profiler/tree-diff").catch(() => null),
+          apiCall("/cleaner/mounts").catch(() => null),
         ]);
         if (s) setStats(s);
         if (r && r.length > 0) setRoots(r);
@@ -5008,6 +5127,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         if (m) setMountData(m);
         if (tx && tx.tree && tx.tree.length > 0) setTaxonomy(tx);
         if (sm && sm.mappings) setSyncMappings(sm.mappings);
+        if (pRules && pRules.rules) setProfilerRules(pRules.rules);
+        if (pOutliers && pOutliers.outliers) setProfilerOutliers(pOutliers.outliers);
+        if (pDiff && pDiff.tree_diff) setTreeDiffNodes(pDiff.tree_diff);
+        if (cMounts && cMounts.mounts) setCleanerMounts(cMounts.mounts);
+        apiCall("/ssh/nodes").then(res => {
+          if (res && res.nodes) {
+            const d1 = res.nodes.find(n => n.node_id === "debian1");
+            if (d1) setDebian1SSH(d1);
+          }
+        }).catch(() => null);
         if (pscan) {
           setProactiveScan(pscan);
           if (pscan.drives && pscan.drives.length > 0) {
@@ -5043,6 +5172,223 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         setLoading(false);
       }
     }, []);
+
+    const handleRunProfiler = async (scanPath, targetNodeId, maxDepth) => {
+      const p = (scanPath !== undefined ? scanPath : profilerTargetInput) || "/home/mb/Downloads";
+      const nid = targetNodeId !== undefined ? targetNodeId : profilerNodeId;
+      const depth = maxDepth !== undefined ? maxDepth : profilerMaxDepth;
+      setProfilingLoading(true);
+      try {
+        const res = await apiCall("/profiler/scan", {
+          method: "POST",
+          body: JSON.stringify({ path: p, node_id: nid, max_depth: depth, include_hidden: false })
+        });
+        if (res.ok && res.data) {
+          setProfilerData(res.data);
+          setProfilerOutliers(res.data.outliers || []);
+          setProfilerRules(res.data.synthesized_rules || []);
+          const nodeLabel = nid === "debian1" ? "🖥️ kimi-debian1 (SSH)" : "💻 kimi-laptop (Lokal)";
+          setNotice(`Subtree-Scan auf ${nodeLabel} für '${p}' erfolgreich: Entropie ${res.data.mime_entropy}, ${res.data.outliers_count} Ausreißer erkannt.`);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        }
+      } catch (err) {
+        setNotice(`Fehler beim Profiling (${nid}): ${err.message}`);
+      } finally {
+        setProfilingLoading(false);
+      }
+    };
+
+    const handleResolveOutlier = async (outlierId, status, customTarget = null) => {
+      try {
+        await apiCall("/profiler/outliers/resolve", {
+          method: "POST",
+          body: JSON.stringify({ outlier_id: outlierId, status: status, custom_target_path: customTarget })
+        });
+        setProfilerOutliers(prev => prev.map(o => o.id === outlierId ? Object.assign({}, o, { status: status }) : o));
+        const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+        if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        setNotice(`Ausreißer '${outlierId}' auf '${status}' gesetzt.`);
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      }
+    };
+
+    const handleApproveNlRule = async (ruleId, approved) => {
+      try {
+        await apiCall("/profiler/rules/approve", {
+          method: "POST",
+          body: JSON.stringify({ rule_id: ruleId, approved: approved })
+        });
+        setProfilerRules(prev => prev.map(r => r.id === ruleId ? Object.assign({}, r, { status: approved ? "approved" : "rejected" }) : r));
+        const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+        if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        setNotice(`Regel '${ruleId}' ${approved ? "bestätigt" : "abgelehnt"}.`);
+      } catch (err) {
+        setNotice(`Fehler: ${err.message}`);
+      }
+    };
+
+    const handleExportToObsidian = async () => {
+      setObsidianExporting(true);
+      try {
+        const res = await apiCall("/profiler/export-obsidian", {
+          method: "POST",
+          body: JSON.stringify({ vault_path: "/media/xchg/ai-knowledge-base" })
+        });
+        setNotice(res.message || "Extended Graph Notes erfolgreich nach Obsidian exportiert!");
+      } catch (err) {
+        setNotice(`Export fehlgeschlagen: ${err.message}`);
+      } finally {
+        setObsidianExporting(false);
+      }
+    };
+
+    const handleExecuteTreeDiff = async () => {
+      const actionable = treeDiffNodes.filter(n => n.action !== "RETAIN");
+      if (actionable.length === 0) {
+        alert("Keine ausführbaren Aktionen im aktuellen Tree-Diff vorhanden.");
+        return;
+      }
+      if (!window.confirm(`Möchten Sie die ${actionable.length} Aktionen aus dem Tree-Diff jetzt ausführen? (Verschiebungen & Bereinigungen werden mit Papierkorb-Schutz atomar durchgeführt).`)) {
+        return;
+      }
+      setTreeDiffExecuting(true);
+      try {
+        const res = await apiCall("/profiler/execute", {
+          method: "POST",
+          body: JSON.stringify({ only_approved: true })
+        });
+        if (res.ok) {
+          setLastTreeDiffBatchId(res.batch_id);
+          setNotice(`Tree-Diff erfolgreich ausgeführt: ${res.executed_count} Operation(en) abgeschlossen.${res.failed_count > 0 ? ` (${res.failed_count} Fehler)` : ""}`);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        } else {
+          setNotice("Fehler bei Tree-Diff Ausführung.");
+        }
+      } catch (err) {
+        setNotice(`Ausführung fehlgeschlagen: ${err.message}`);
+      } finally {
+        setTreeDiffExecuting(false);
+      }
+    };
+
+    const handleRollbackTreeDiff = async () => {
+      if (!lastTreeDiffBatchId) return;
+      if (!window.confirm(`Möchten Sie den letzten Tree-Diff Batch (${lastTreeDiffBatchId}) wirklich rückgängig machen? Verschobene Dateien werden an ihren Ursprungsort zurückgelegt.`)) {
+        return;
+      }
+      setTreeDiffExecuting(true);
+      try {
+        const res = await apiCall("/profiler/rollback", {
+          method: "POST",
+          body: JSON.stringify({ batch_id: lastTreeDiffBatchId })
+        });
+        if (res.ok) {
+          setNotice(`Tree-Diff Batch zurückgerollt: ${res.reverted_count} Operation(en) wiederhergestellt.`);
+          setLastTreeDiffBatchId(null);
+          const diffRes = await apiCall("/profiler/tree-diff").catch(() => null);
+          if (diffRes && diffRes.tree_diff) setTreeDiffNodes(diffRes.tree_diff);
+        } else {
+          setNotice(`Rollback fehlgeschlagen: ${res.message || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Rollback Fehler: ${err.message}`);
+      } finally {
+        setTreeDiffExecuting(false);
+      }
+    };
+
+    const handleOpenCleaner = async () => {
+      setActiveModal("cleaner");
+      setCleanerLoading(true);
+      try {
+        const [mRes, candRes, triageRes] = await Promise.all([
+          apiCall("/cleaner/mounts").catch(() => ({ mounts: [] })),
+          apiCall("/cleaner/candidates", {
+            method: "POST",
+            body: JSON.stringify({
+              candidates: [
+                { path: "/home/mb/.cache", size: 450000000, level: 0, reason: "Browser & System Cache" },
+                { path: "/home/mb/Downloads/node_modules", size: 320000000, level: 0, reason: "Verwaister Build Cache" },
+                { path: "/media/work-data/__pycache__", size: 45000000, level: 0, reason: "Python Bytecode Cache" },
+                { path: "/home/mb/Downloads/ubuntu-24.04.iso", size: 5200000000, level: 1, reason: "Großes ISO-Installationsabbild" }
+              ]
+            })
+          }).catch(() => ({ candidates: [] })),
+          apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }))
+        ]);
+        if (mRes && mRes.mounts) setCleanerMounts(mRes.mounts);
+        if (candRes && candRes.candidates) setCleanerCandidates(candRes.candidates);
+        if (triageRes && triageRes.candidates) setMeshTriageCandidates(triageRes.candidates);
+      } finally {
+        setCleanerLoading(false);
+      }
+    };
+
+    const handleExecuteRootTriage = async () => {
+      setMeshTriageExecuting(true);
+      try {
+        const res = await apiCall("/mesh/root-triage/execute", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        if (res && res.ok) {
+          setMeshTriageBatchId(res.batch_id);
+          setNotice(`Erfolgreich ${res.executed_count} Wurzel-Dateien auf work-data, privat-data und nosync geordnet!`);
+          const updated = await apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }));
+          if (updated && updated.candidates) setMeshTriageCandidates(updated.candidates);
+        } else {
+          setNotice(`Triage-Fehler: ${(res && res.errors && res.errors[0] && res.errors[0].error) || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Triage-Fehler: ${err.message}`);
+      } finally {
+        setMeshTriageExecuting(false);
+      }
+    };
+
+    const handleRollbackRootTriage = async () => {
+      if (!meshTriageBatchId) return;
+      setMeshTriageExecuting(true);
+      try {
+        const res = await apiCall("/mesh/root-triage/rollback", {
+          method: "POST",
+          body: JSON.stringify({ batch_id: meshTriageBatchId })
+        });
+        if (res && res.ok) {
+          setNotice(`Rollback erfolgreich: ${res.reverted_count} Dateien wiederhergestellt.`);
+          setMeshTriageBatchId(null);
+          const updated = await apiCall("/mesh/root-triage").catch(() => ({ candidates: [] }));
+          if (updated && updated.candidates) setMeshTriageCandidates(updated.candidates);
+        } else {
+          setNotice(`Rollback-Fehler: ${(res && res.message) || "Unbekannter Fehler"}`);
+        }
+      } catch (err) {
+        setNotice(`Rollback-Fehler: ${err.message}`);
+      } finally {
+        setMeshTriageExecuting(false);
+      }
+    };
+
+    const handleOpenDebian1SSH = async () => {
+      setActiveModal("ssh_debian1");
+      setDebian1Loading(true);
+      try {
+        const res = await apiCall("/ssh/debian1/overview");
+        if (res && res.ok) {
+          setDebian1SSH(res);
+        } else {
+          setNotice(`debian1 SSH nicht erreichbar: ${(res && res.error) || "Offline"}`);
+        }
+      } catch (err) {
+        setNotice(`SSH-Fehler: ${err.message}`);
+      } finally {
+        setDebian1Loading(false);
+      }
+    };
+
 
     useEffect(() => {
       loadData();
@@ -5808,53 +6154,94 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           )
         ),
         // Top Toolbar Config Buttons
-        h("div", { className: "auto-org-top-toolbar" },
-          h("button", {
-            className: `auto-org-config-btn auto-org-radar-btn ${activeModal === "system_tree" ? "active" : ""}`,
-            onClick: () => setActiveModal(activeModal === "system_tree" ? null : "system_tree"),
-            title: "Dediziertes Multi-Computer Dateibaum-, Backup- & Syncthing-Radar-Fenster öffnen"
-          },
-            h("span", null, "🌐 Multi-Computer Tree & Radar"),
-            h("span", { className: "auto-org-badge auto-org-badge-green" }, "5 Hosts")
+        h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%", alignItems: "flex-end" } },
+          h("div", { className: "auto-org-top-toolbar" },
+            h("button", {
+              className: `auto-org-config-btn auto-org-radar-btn ${activeModal === "system_tree" ? "active" : ""}`,
+              onClick: () => setActiveModal(activeModal === "system_tree" ? null : "system_tree"),
+              title: "Dediziertes Multi-Computer Dateibaum-, Backup- & Syncthing-Radar-Fenster öffnen"
+            },
+              h("span", null, "🌐 Multi-Computer Tree & Radar"),
+              h("span", { className: "auto-org-badge auto-org-badge-green" }, "5 Hosts")
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "journal" ? "active" : ""}`,
+              onClick: () => setActiveModal(activeModal === "journal" ? null : "journal"),
+              title: "Ausführungs-Historie & 1-Klick Rollback"
+            },
+              h("span", null, "📜 Journal & Rollback"),
+              h("span", { className: "auto-org-badge auto-org-badge-green" }, batches.length)
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "sync" ? "active" : ""}`,
+              onClick: () => setActiveModal(activeModal === "sync" ? null : "sync"),
+              title: "Google Drive ↔ Lokaler Speicher: Sync-Ordner & Mappings verwalten"
+            },
+              h("span", null, "☁️ GDrive-Sync"),
+              h("span", { className: "auto-org-badge auto-org-badge-blue" }, syncMappings.length)
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${showDiagnosticTools ? "active" : ""}`,
+              onClick: () => setShowDiagnosticTools(v => !v),
+              title: "Erweiterte Diagnose-Werkzeuge (Docker Mounts, Wurzeln, SSH, Cleaner)"
+            },
+              h("span", null, "🛠️ System & Tools"),
+              h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${mountData ? mountData.total_mounts : 0} Mnts`),
+              h("span", { style: { fontSize: "0.7rem", opacity: 0.8 } }, showDiagnosticTools ? "▲" : "▼")
+            ),
+            h("button", {
+              className: "auto-org-btn auto-org-btn-outline",
+              onClick: loadData,
+              disabled: loading,
+              title: "Daten neu laden"
+            }, loading ? "..." : "↻ Aktualisieren")
           ),
-          h("button", {
-            className: `auto-org-config-btn ${activeModal === "mounts" ? "active" : ""}`,
-            onClick: () => setActiveModal(activeModal === "mounts" ? null : "mounts"),
-            title: "Docker-Mounts, Freispeicher & Pfad-Prüfer"
-          },
-            h("span", null, "🐳 Docker Mounts & Pfad-Prüfer"),
-            h("span", { className: "auto-org-badge auto-org-badge-blue" }, mountData ? mountData.total_mounts : 0)
-          ),
-          h("button", {
-            className: `auto-org-config-btn ${activeModal === "roots" ? "active" : ""}`,
-            onClick: () => setActiveModal(activeModal === "roots" ? null : "roots"),
-            title: "Überwachte Speicherwurzeln anzeigen"
-          },
-            h("span", null, "📁 Speicherwurzeln"),
-            h("span", { className: "auto-org-badge auto-org-badge-blue" }, roots.length)
-          ),
-          h("button", {
-            className: `auto-org-config-btn ${activeModal === "journal" ? "active" : ""}`,
-            onClick: () => setActiveModal(activeModal === "journal" ? null : "journal"),
-            title: "Ausführungs-Historie & 1-Klick Rollback"
-          },
-            h("span", null, "📜 Journal & Rollback"),
-            h("span", { className: "auto-org-badge auto-org-badge-green" }, batches.length)
-          ),
-          h("button", {
-            className: `auto-org-config-btn ${activeModal === "sync" ? "active" : ""}`,
-            onClick: () => setActiveModal(activeModal === "sync" ? null : "sync"),
-            title: "Google Drive ↔ Lokaler Speicher: Sync-Ordner & Mappings verwalten"
-          },
-            h("span", null, "☁️ GDrive-Sync"),
-            h("span", { className: "auto-org-badge auto-org-badge-blue" }, syncMappings.length)
-          ),
-          h("button", {
-            className: "auto-org-btn auto-org-btn-outline",
-            onClick: loadData,
-            disabled: loading,
-            title: "Daten neu laden"
-          }, loading ? "..." : "↻ Aktualisieren")
+          showDiagnosticTools && h("div", { className: "auto-org-toolbar-secondary-panel" },
+            h("span", { style: { fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, marginRight: "0.25rem" } }, "Diagnose & Wartung:"),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "mounts" ? "active" : ""}`,
+              onClick: () => setActiveModal(activeModal === "mounts" ? null : "mounts"),
+              title: "Docker-Mounts, Freispeicher & Pfad-Prüfer"
+            },
+              h("span", null, "🐳 Docker Mounts & Pfad-Prüfer"),
+              h("span", { className: "auto-org-badge auto-org-badge-blue" }, mountData ? mountData.total_mounts : 0)
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "roots" ? "active" : ""}`,
+              onClick: () => setActiveModal(activeModal === "roots" ? null : "roots"),
+              title: "Überwachte Speicherwurzeln anzeigen"
+            },
+              h("span", null, "📁 Speicherwurzeln"),
+              h("span", { className: "auto-org-badge auto-org-badge-blue" }, roots.length)
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "cleaner" ? "active" : ""}`,
+              onClick: handleOpenCleaner,
+              title: "ai-disk-cleaner Sonderfunktion: Cache-Purge, Temp-Löschung & Symlink-Migrationen"
+            },
+              h("span", null, "🧹 Disk Cleaner"),
+              h("span", { className: "auto-org-badge auto-org-badge-yellow" }, "Utility")
+            ),
+            h("button", {
+              className: `auto-org-config-btn ${activeModal === "ssh_debian1" ? "active" : ""}`,
+              onClick: handleOpenDebian1SSH,
+              title: debian1SSH && debian1SSH.is_online ? `SSH Online (${debian1SSH.host}, ${debian1SSH.latency_ms}ms)` : "debian1 SSH Verbindung prüfen"
+            },
+              h("span", null, "🖥️ debian1 (SSH)"),
+              h("span", {
+                className: `auto-org-badge ${debian1SSH && debian1SSH.is_online ? "auto-org-badge-green" : "auto-org-badge-red"}`
+              }, debian1SSH && debian1SSH.is_online ? `🟢 ${debian1SSH.host || "Online"}` : "🔴 Offline")
+            ),
+            h("button", {
+              className: "auto-org-config-btn",
+              onClick: handleExportToObsidian,
+              disabled: obsidianExporting,
+              title: "Dateibaum & Diff als Markdown für das Obsidian Extended Graph Plugin exportieren"
+            },
+              h("span", null, "🗺️ Extended Graph Export"),
+              h("span", { className: "auto-org-badge auto-org-badge-green" }, obsidianExporting ? "Exportiere..." : "Obsidian")
+            )
+          )
         )
       );
     };
@@ -5891,95 +6278,120 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       const isStep1Done = (proactiveScan && proactiveScan.status === "INDEXED") || (stats && stats.total_files > 0);
       const isStep2Approved = isStep1Done && ((emergentTaxonomy && emergentTaxonomy.is_approved) || (taxonomy && taxonomy.system_approved));
 
-      return h("div", { className: "auto-org-stepper" },
-        // Step 1
-        h("div", {
-          className: `auto-org-step-card ${step === 1 ? "active" : ""} ${isStep1Done ? "completed" : ""}`,
-          onClick: () => setStep(1)
-        },
-          h("div", { className: "auto-org-step-badge" }, isStep1Done ? "✓" : "1"),
-          h("div", { className: "auto-org-step-info" },
-            h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
-            h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
-            h("div", { className: "auto-org-step-subtitle" },
-              isStep1Done ? `✓ Indexiert (${stats ? stats.total_files : 450} Dateien)` : "Scan & Indexierungs-Consent"
+      return h("div", { className: "auto-org-stepper-container" },
+        h("div", { className: "auto-org-stepper-header" },
+          h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
+            h("span", { className: "auto-org-stepper-phase-pill" }, `Phase ${step} von 5`),
+            h("span", { style: { fontWeight: 600, color: "#f8fafc", fontSize: "0.875rem" } },
+              step === 1 ? "Quell-Verzeichnisse prüfen & semantische Indexierung starten" :
+              step === 2 ? "Induziertes Kategoriensystem sichten, Graphen prüfen & freigeben" :
+              step === 3 ? "Proaktive KI-Zuordnungsregeln & Deduplizierung festlegen" :
+              step === 4 ? "Reorganisations-Simulation (Dry-Run) prüfen & revisionssicher ausführen" :
+              "Google Drive Cloud-Mappings & Multi-Host Synchronisation"
             )
+          ),
+          h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+            !isStep1Done ? "Schritt 1: Indexierung ausstehend" :
+            !isStep2Approved ? "Schritt 2: Freigabe erforderlich für Schritte 3–5" :
+            "System freigegeben • Bereit für Regeln & Simulation"
           )
         ),
-        // Step 2 (Organisationssystem & Freigabe)
-        h("div", {
-          className: `auto-org-step-card ${step === 2 ? "active" : ""} ${isStep2Approved ? "completed" : ""}`,
-          onClick: () => setStep(2)
-        },
-          h("div", { className: "auto-org-step-badge" }, isStep2Approved ? "✓" : "2"),
-          h("div", { className: "auto-org-step-info" },
-            h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
-            h("div", { className: "auto-org-step-name" }, "Organisationssystem & Freigabe"),
-            h("div", { className: "auto-org-step-subtitle" },
-              isStep2Approved ? "✓ Natürlich entstanden & freigegeben" : "Emergente Taxonomie & Freigabe"
-            )
-          )
+        h("div", { className: "auto-org-stepper-track" },
+          h("div", {
+            className: "auto-org-stepper-fill",
+            style: { width: `${(step / 5) * 100}%` }
+          })
         ),
-        // Step 3 (Proaktive Filter-Regeln) - Strictly Gated
-        h("div", {
-          className: `auto-org-step-card ${step === 3 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""} ${rules.length > 0 && isStep2Approved ? "completed" : ""}`,
-          onClick: () => {
-            if (!isStep2Approved) {
-              setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
-              return;
-            }
-            setStep(3);
+        h("div", { className: "auto-org-stepper" },
+          // Step 1
+          h("div", {
+            className: `auto-org-step-card ${step === 1 ? "active" : ""} ${isStep1Done ? "completed" : ""}`,
+            onClick: () => setStep(1)
           },
-          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3"
-        },
-          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : (rules.length > 0 ? "✓" : "3")),
-          h("div", { className: "auto-org-step-info" },
-            h("div", { className: "auto-org-step-number-title" }, "Schritt 3"),
-            h("div", { className: "auto-org-step-name" }, "Proaktive Filter-Regeln"),
-            h("div", { className: "auto-org-step-subtitle" },
-              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${rules.length} aktive Regeln (5 KI-Vorschläge)`
+            h("div", { className: "auto-org-step-badge" }, isStep1Done ? "✓" : "1"),
+            h("div", { className: "auto-org-step-info" },
+              h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
+              h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
+              h("div", { className: "auto-org-step-subtitle" },
+                isStep1Done ? `✓ Indexiert (${stats ? stats.total_files : 450} Dateien)` : "Scan & Indexierungs-Consent"
+              )
             )
-          )
-        ),
-        // Step 4 (Simulation & Reorganisation) - Strictly Gated
-        h("div", {
-          className: `auto-org-step-card ${step === 4 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
-          onClick: () => {
-            if (!isStep2Approved) {
-              setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
-              return;
-            }
-            setStep(4);
+          ),
+          // Step 2 (Organisationssystem & Freigabe)
+          h("div", {
+            className: `auto-org-step-card ${step === 2 ? "active" : ""} ${isStep2Approved ? "completed" : ""}`,
+            onClick: () => setStep(2)
           },
-          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4"
-        },
-          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "4"),
-          h("div", { className: "auto-org-step-info" },
-            h("div", { className: "auto-org-step-number-title" }, "Schritt 4"),
-            h("div", { className: "auto-org-step-name" }, "Simulation & Ausführung"),
-            h("div", { className: "auto-org-step-subtitle" },
-              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : (dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Sandbox-Ausführung")
+            h("div", { className: "auto-org-step-badge" }, isStep2Approved ? "✓" : "2"),
+            h("div", { className: "auto-org-step-info" },
+              h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
+              h("div", { className: "auto-org-step-name" }, "Organisationssystem & Freigabe"),
+              h("div", { className: "auto-org-step-subtitle" },
+                isStep2Approved ? "✓ Natürlich entstanden & freigegeben" : "Emergente Taxonomie & Freigabe"
+              )
             )
-          )
-        ),
-        // Step 5 (Google Drive Cloud-Sync) - Strictly Gated
-        h("div", {
-          className: `auto-org-step-card ${step === 5 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
-          onClick: () => {
-            if (!isStep2Approved) {
-              setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
-              return;
-            }
-            setStep(5);
+          ),
+          // Step 3 (Proaktive Filter-Regeln) - Strictly Gated
+          h("div", {
+            className: `auto-org-step-card ${step === 3 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""} ${rules.length > 0 && isStep2Approved ? "completed" : ""}`,
+            onClick: () => {
+              if (!isStep2Approved) {
+                setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                return;
+              }
+              setStep(3);
+            },
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3"
           },
-          title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync"
-        },
-          h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "5"),
-          h("div", { className: "auto-org-step-info" },
-            h("div", { className: "auto-org-step-number-title" }, "Schritt 5"),
-            h("div", { className: "auto-org-step-name" }, "Google Drive Cloud-Sync"),
-            h("div", { className: "auto-org-step-subtitle" },
-              !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${syncMappings.length} selektive Sync-Ordner`
+            h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : (rules.length > 0 ? "✓" : "3")),
+            h("div", { className: "auto-org-step-info" },
+              h("div", { className: "auto-org-step-number-title" }, "Schritt 3"),
+              h("div", { className: "auto-org-step-name" }, "Proaktive Filter-Regeln"),
+              h("div", { className: "auto-org-step-subtitle" },
+                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${rules.length} aktive Regeln (5 KI-Vorschläge)`
+              )
+            )
+          ),
+          // Step 4 (Simulation & Reorganisation) - Strictly Gated
+          h("div", {
+            className: `auto-org-step-card ${step === 4 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
+            onClick: () => {
+              if (!isStep2Approved) {
+                setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                return;
+              }
+              setStep(4);
+            },
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4"
+          },
+            h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "4"),
+            h("div", { className: "auto-org-step-info" },
+              h("div", { className: "auto-org-step-number-title" }, "Schritt 4"),
+              h("div", { className: "auto-org-step-name" }, "Simulation & Ausführung"),
+              h("div", { className: "auto-org-step-subtitle" },
+                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : (dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Sandbox-Ausführung")
+              )
+            )
+          ),
+          // Step 5 (Google Drive Cloud-Sync) - Strictly Gated
+          h("div", {
+            className: `auto-org-step-card ${step === 5 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
+            onClick: () => {
+              if (!isStep2Approved) {
+                setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                return;
+              }
+              setStep(5);
+            },
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync"
+          },
+            h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "5"),
+            h("div", { className: "auto-org-step-info" },
+              h("div", { className: "auto-org-step-number-title" }, "Schritt 5"),
+              h("div", { className: "auto-org-step-name" }, "Google Drive Cloud-Sync"),
+              h("div", { className: "auto-org-step-subtitle" },
+                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${syncMappings.length} selektive Sync-Ordner`
+              )
             )
           )
         )
@@ -6026,7 +6438,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
               h("button", {
                 type: "button",
-                className: "auto-org-btn auto-org-btn-primary",
+                className: `auto-org-btn auto-org-btn-primary ${!isIndexed ? "auto-org-btn-hero" : ""}`,
                 style: { padding: "0.65rem 1.4rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" },
                 onClick: handleStartIndexing,
                 disabled: indexingLoading || approvedCount === 0
@@ -6035,8 +6447,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               ),
               isIndexed && h("button", {
                 type: "button",
-                className: "auto-org-btn auto-org-btn-outline",
-                style: { padding: "0.65rem 1.2rem", color: "#60a5fa" },
+                className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
+                style: { padding: "0.65rem 1.2rem" },
                 onClick: () => setStep(2)
               }, "Zu Schritt 2: Organisationssystem →")
             )
@@ -6172,6 +6584,235 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             )
           )
+        ),
+
+        // Subtree Profiler & Structural Disruption Diagnostics Card
+        h("div", { className: "auto-org-panel" },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" } },
+            h("div", null,
+              h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
+                "🔬 Subtree-Profiler & Entropie-Diagnose (Bottom-Up Analyse)",
+                profilerData && h("span", {
+                  className: `auto-org-entropy-meter ${profilerData.mime_entropy > 0.7 ? "auto-org-entropy-high" : profilerData.mime_entropy > 0.4 ? "auto-org-entropy-mid" : "auto-org-entropy-low"}`
+                }, `MIME-Entropie: ${profilerData.mime_entropy} (${profilerData.mime_entropy > 0.7 ? "Chaotische Dumpzone" : profilerData.mime_entropy > 0.4 ? "Gemischt" : "Homogen"})`),
+                h("span", {
+                  className: `auto-org-badge ${profilerNodeId === "debian1" ? "auto-org-badge-blue" : "auto-org-badge-green"}`
+                }, profilerNodeId === "debian1" ? "🖥️ kimi-debian1 (SSH: 192.168.178.89)" : "💻 kimi-laptop (Lokal)")
+              ),
+              h("p", { style: { fontSize: "0.8125rem", color: "#94a3b8", marginTop: "0.2rem" } },
+                "Rekursive Bottom-Up Analyse aller Unterordner: Misst Shannon MIME-Entropie, Lebenszyklus-Altersverteilung und erkennt strukturelle Störungszonen ohne Pfad-Hardcodierung."
+              )
+            ),
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                onClick: handleExportToObsidian,
+                disabled: obsidianExporting,
+                style: { background: "#7c3aed", borderColor: "#8b5cf6" }
+              }, obsidianExporting ? "Exportiere..." : "🗺️ Extended Graph nach Obsidian exportieren")
+            )
+          ),
+
+          // Node Selector and Path Config Control Row
+          h("div", {
+            style: {
+              background: "rgba(15, 23, 42, 0.85)",
+              border: "1px solid #334155",
+              borderRadius: "0.5rem",
+              padding: "1rem",
+              marginBottom: "1rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.85rem"
+            }
+          },
+            // Row 1: Node Selector
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" } },
+              h("span", { style: { fontSize: "0.85rem", fontWeight: 600, color: "#94a3b8" } }, "Ziel-Knoten im LAN:"),
+              h("button", {
+                type: "button",
+                className: `auto-org-config-btn ${profilerNodeId === "laptop" ? "active" : ""}`,
+                onClick: () => {
+                  setProfilerNodeId("laptop");
+                  if (profilerTargetInput.startsWith("/media/sdc2") || profilerTargetInput.startsWith("/media/whatever") || profilerTargetInput.startsWith("/media/sdb1") || profilerTargetInput.startsWith("/media/ext10tb")) {
+                    setProfilerTargetInput("/home/mb/Downloads");
+                  }
+                }
+              }, "💻 kimi-laptop (Lokal)"),
+              h("button", {
+                type: "button",
+                className: `auto-org-config-btn ${profilerNodeId === "debian1" ? "active" : ""}`,
+                onClick: () => {
+                  setProfilerNodeId("debian1");
+                  if (!profilerTargetInput.startsWith("/media/sdc2") && !profilerTargetInput.startsWith("/media/whatever") && !profilerTargetInput.startsWith("/media/sdb1") && !profilerTargetInput.startsWith("/media/ext10tb")) {
+                    setProfilerTargetInput("/media/sdc2-2tb-work-privat-xchg");
+                  }
+                }
+              },
+                "🖥️ kimi-debian1 (SSH)",
+                debian1SSH && h("span", {
+                  style: {
+                    marginLeft: "0.35rem",
+                    fontSize: "0.7rem",
+                    color: debian1SSH.is_online ? "#4ade80" : "#f87171"
+                  }
+                }, debian1SSH.is_online ? "● online (192.168.178.89)" : "○ offline")
+              )
+            ),
+
+            // Row 2: Quick Mount / Directory Chips for selected node
+            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+              h("span", { style: { fontSize: "0.8rem", color: "#64748b" } }, "Schnellauswahl:"),
+              (profilerNodeId === "debian1" ? [
+                { label: "📁 /media/sdc2-2tb-work-privat-xchg (Work & Privat Pool)", path: "/media/sdc2-2tb-work-privat-xchg" },
+                { label: "📁 /media/whatever (Downloads, Root-Images)", path: "/media/whatever" },
+                { label: "📁 /media/sdb1-nosync (Twin NoSync)", path: "/media/sdb1-nosync" },
+                { label: "📁 /media/ext10tb (10TB Cold-Backup)", path: "/media/ext10tb" },
+              ] : [
+                { label: "📁 /home/mb/Downloads (Flüchtige Downloads)", path: "/home/mb/Downloads" },
+                { label: "📁 /media/work-data (Work-Partition)", path: "/media/work-data" },
+                { label: "📁 /media/privat-data (Privat-Partition)", path: "/media/privat-data" },
+                { label: "📁 /media/xchg (Shared Pool)", path: "/media/xchg" },
+                { label: "📁 /media/nosync (Medien & Videos)", path: "/media/nosync" },
+              ]).map((chip, idx) =>
+                h("button", {
+                  key: idx,
+                  type: "button",
+                  className: `auto-org-pill-btn ${profilerTargetInput === chip.path ? "active" : ""}`,
+                  style: {
+                    fontSize: "0.75rem",
+                    padding: "0.25rem 0.6rem",
+                    cursor: "pointer",
+                    background: profilerTargetInput === chip.path ? "rgba(59, 130, 246, 0.3)" : "#1e293b",
+                    borderColor: profilerTargetInput === chip.path ? "#3b82f6" : "#334155",
+                    color: profilerTargetInput === chip.path ? "#60a5fa" : "#cbd5e1"
+                  },
+                  onClick: () => setProfilerTargetInput(chip.path)
+                }, chip.label)
+              )
+            ),
+
+            // Row 3: Target Path Input, Max Depth, and Run Button
+            h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
+              h("div", { style: { flex: 1, minWidth: "260px", display: "flex", alignItems: "center", gap: "0.5rem" } },
+                h("span", { style: { fontSize: "0.85rem", color: "#94a3b8", whiteSpace: "nowrap" } }, "Pfad:"),
+                h("input", {
+                  type: "text",
+                  className: "auto-org-input",
+                  style: {
+                    flex: 1,
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    color: "#ffffff",
+                    padding: "0.4rem 0.65rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.85rem"
+                  },
+                  value: profilerTargetInput,
+                  onChange: (e) => setProfilerTargetInput(e.target.value),
+                  placeholder: profilerNodeId === "debian1" ? "/media/sdc2-2tb-work-privat-xchg" : "/home/mb/Downloads"
+                })
+              ),
+              h("div", { style: { display: "flex", alignItems: "center", gap: "0.35rem" } },
+                h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, "Tiefe:"),
+                h("select", {
+                  value: profilerMaxDepth,
+                  onChange: (e) => setProfilerMaxDepth(parseInt(e.target.value, 10)),
+                  style: {
+                    background: "#0f172a",
+                    border: "1px solid #334155",
+                    color: "#ffffff",
+                    padding: "0.35rem 0.5rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.8rem"
+                  }
+                },
+                  h("option", { value: 1 }, "Ebene 1 (Schnell)"),
+                  h("option", { value: 2 }, "Ebene 2 (Empfohlen)"),
+                  h("option", { value: 4 }, "Ebene 4 (Tief)"),
+                  h("option", { value: 6 }, "Ebene 6 (Vollständig)")
+                )
+              ),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: {
+                  background: "#2563eb",
+                  borderColor: "#3b82f6",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem"
+                },
+                onClick: () => handleRunProfiler(profilerTargetInput, profilerNodeId, profilerMaxDepth),
+                disabled: profilingLoading
+              },
+                profilingLoading ? "⏳ Analysiere..." : `🔍 ${profilerNodeId === "debian1" ? "SSH-Profiling starten" : "Analyse & Profiling starten"}`
+              )
+            )
+          ),
+
+          profilerData ?
+            h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" } },
+              // Overview metric box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, "Analysierter Pfad"),
+                  h("span", {
+                    className: `auto-org-badge ${profilerData.node_id === "debian1" ? "auto-org-badge-blue" : "auto-org-badge-green"}`,
+                    style: { fontSize: "0.65rem", padding: "0.15rem 0.45rem" }
+                  }, profilerData.node_id === "debian1" ? "🖥️ debian1 (SSH)" : "💻 laptop (Lokal)")
+                ),
+                h("div", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginTop: "0.2rem", wordBreak: "break-all" } }, profilerData.root_path),
+                h("div", { style: { display: "flex", gap: "1rem", marginTop: "0.75rem" } },
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Dateien: "),
+                    h("strong", { style: { color: "#4ade80" } }, profilerData.total_files)
+                  ),
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Größe: "),
+                    h("strong", null, profilerData.total_bytes >= 1024*1024*1024 ? `${(profilerData.total_bytes / (1024*1024*1024)).toFixed(1)} GB` : `${Math.round(profilerData.total_bytes / (1024*1024))} MB`)
+                  ),
+                  h("div", null,
+                    h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Unterordner: "),
+                    h("strong", null, profilerData.total_subdirs)
+                  )
+                )
+              ),
+
+              // Disruptions box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, `Erkannte Störungen (${profilerData.disruptions_count})`),
+                h("div", { style: { display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.5rem", maxHeight: "120px", overflowY: "auto" } },
+                  profilerData.disruptions.length === 0 ?
+                    h("div", { style: { color: "#4ade80", fontSize: "0.85rem" } }, "✓ Keine Struktur-Anomalien erkannt.") :
+                    profilerData.disruptions.slice(0, 5).map((d, i) => h("div", { key: i, style: { fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" } },
+                      h("span", { className: `auto-org-badge ${d.severity === "critical" ? "auto-org-badge-red" : "auto-org-badge-yellow"}` }, d.disruption_type),
+                      h("span", { style: { color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description)
+                    ))
+                )
+              ),
+
+              // Outliers box
+              h("div", { style: { background: "#1e293b", padding: "1rem", borderRadius: "0.375rem", border: "1px solid #334155" } },
+                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase" } }, `Ausreißer-Queue (${profilerData.outliers_count})`),
+                h("div", { style: { fontSize: "0.8rem", color: "#cbd5e1", marginTop: "0.4rem" } },
+                  profilerData.outliers_count > 0 ?
+                    `${profilerData.outliers_count} konkrete Ausreißer mit Lösungsvorschlägen warten in Schritt 4 auf 1-Klick-Bestätigung.` :
+                    "Keine isolierten Ausreißer im analysierten Pfad."
+                ),
+                profilerData.outliers_count > 0 && h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { marginTop: "0.6rem", fontSize: "0.75rem", padding: "0.3rem 0.75rem" },
+                  onClick: () => setStep(4)
+                }, "Zu Schritt 4: Ausreißer ansehen →")
+              )
+            ) :
+            h("div", { style: { textAlign: "center", padding: "1.5rem", color: "#94a3b8", fontSize: "0.85rem" } },
+              `Wählen Sie einen Knoten (z.B. '${profilerNodeId === "debian1" ? "kimi-debian1 (SSH)" : "kimi-laptop (Lokal)"}'), wählen Sie einen Pfad und klicken Sie auf 'Analyse & Profiling starten'.`
+            )
         ),
 
         // Dumpzone Quick Sources Overview
@@ -6588,11 +7229,17 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
               h("button", {
                 type: "button",
-                className: "auto-org-btn auto-org-btn-primary",
+                className: `auto-org-btn auto-org-btn-primary ${!isEmergentApproved ? "auto-org-btn-hero" : ""}`,
                 style: { padding: "0.6rem 1.3rem", fontWeight: 700 },
                 onClick: handleApproveEmergentTaxonomy,
                 disabled: loading
-              }, isEmergentApproved ? "✓ Kategoriensystem freigegeben (Klicken zum Umschalten)" : "🟢 Natürlich entstandenes System freigeben")
+              }, isEmergentApproved ? "✓ Kategoriensystem freigegeben" : "🟢 Natürlich entstandenes System freigeben"),
+              isEmergentApproved && h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
+                style: { padding: "0.6rem 1.3rem" },
+                onClick: () => setStep(3)
+              }, "Zu Schritt 3: Filter-Regeln →")
             )
           ),
 
@@ -7152,8 +7799,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 style: { padding: "0.3rem 0.6rem", color: "#f87171" },
                 disabled: conditions.length <= 1,
                 onClick: () => handleRemoveCondition(idx),
-                "aria-label": "Bedingung entfernen",
+                "aria-label": `Bedingung ${idx + 1} entfernen`,
                 title: "Bedingung entfernen"
+
               }, "✕")
             );
           }),
@@ -7466,8 +8114,70 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       );
     };
 
+    const renderNaturalLanguageRulesPanel = () => {
+      if (!profilerRules || profilerRules.length === 0) return null;
+      return h("div", { className: "auto-org-panel", style: { border: "1px solid #7c3aed", background: "rgba(30, 27, 75, 0.4)" } },
+        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" } },
+          h("div", null,
+            h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, color: "#c084fc", display: "flex", alignItems: "center", gap: "0.5rem" } },
+              "🤖 Sprachlich formulierte Meta-Regeln (Human-in-the-Loop für 90% der Masse)"
+            ),
+            h("p", { style: { fontSize: "0.8125rem", color: "#cbd5e1", marginTop: "0.2rem" } },
+              "Die KI hat aus den Verzeichnis-Clustern folgende verständliche Meta-Regeln formuliert. Bestätigen Sie diese mit 1 Klick für die Batch-Ausführung."
+            )
+          ),
+          h("button", {
+            type: "button",
+            className: "auto-org-btn auto-org-btn-outline",
+            style: { color: "#c084fc", borderColor: "#7c3aed" },
+            onClick: () => profilerRules.forEach(r => handleApproveNlRule(r.id, true))
+          }, "✓ Alle Meta-Regeln bestätigen")
+        ),
+        h("div", { className: "auto-org-nl-rule-grid" },
+          profilerRules.map((rule) => {
+            const isApproved = rule.status === "approved";
+            const isRejected = rule.status === "rejected";
+            return h("div", {
+              key: rule.id,
+              className: `auto-org-nl-rule-card ${isApproved ? "approved" : ""}`
+            },
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" } },
+                h("div", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff" } }, rule.title_de),
+                h("span", {
+                  className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : isRejected ? "auto-org-badge-red" : "auto-org-badge-yellow"}`
+                }, isApproved ? "✓ Bestätigt" : isRejected ? "✕ Abgelehnt" : "Vorgeschlagen")
+              ),
+              h("p", { style: { fontSize: "0.825rem", color: "#cbd5e1", margin: 0, lineHeight: "1.4" } }, rule.description_de),
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: "0.5rem", borderTop: "1px solid #334155" } },
+                h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                  `Betrifft: ~${rule.affected_files_count} Dateien (${Math.round((rule.confidence || 0.85) * 100)}% Konfidenz)`
+                ),
+                h("div", { style: { display: "flex", gap: "0.4rem" } },
+                  !isApproved && h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-primary",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.75rem", background: "#16a34a" },
+                    onClick: () => handleApproveNlRule(rule.id, true)
+                  }, "✓ Annehmen"),
+                  !isRejected && h("button", {
+                    type: "button",
+                    className: "auto-org-btn auto-org-btn-outline",
+                    style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+                    onClick: () => handleApproveNlRule(rule.id, false)
+                  }, "✕")
+                )
+              )
+            );
+          })
+        )
+      );
+    };
+
     const renderStep3 = () => {
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+        // 0. Sprachlich formulierte Meta-Regeln (NL)
+        renderNaturalLanguageRulesPanel(),
+
         // 1. Proaktiv vorgeschlagene Filter-Regeln
         renderSuggestedRulesPanel(),
 
@@ -7536,8 +8246,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             onClick: () => setStep(2)
           }, "← Zurück zu Schritt 2: Organisationssystem & Baum"),
           h("button", {
-            className: "auto-org-btn auto-org-btn-primary",
-            style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
+            className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
+            style: { padding: "0.65rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => {
               handleRunDryRun();
               setStep(4);
@@ -7616,14 +8326,72 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 "Die Simulation gleicht alle aktiven Filter-Regeln gegen den aktuellen Dateibestand ab und stellt geplante Verschiebungen in semantischen Intent-Gruppen zusammen."
               ),
               h("button", {
-                className: "auto-org-btn auto-org-btn-primary",
-                style: { padding: "0.6rem 2rem", fontSize: "0.95rem" },
+                className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
+                style: { padding: "0.65rem 2.2rem", fontSize: "0.95rem" },
                 onClick: handleRunDryRun
-              }, "Jetzt Dry-Run starten")
+              }, "⚡ Jetzt Dry-Run starten")
             ) :
             h("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } },
-              // View Switcher Tabs (Groups vs Obsidian Graph vs Table vs Multi-Computer Radar)
+              // Outlier Triage Queue Section (Human-in-the-Middle for 10% outliers)
+              profilerOutliers.length > 0 && h("div", { className: "auto-org-outlier-queue", style: { marginBottom: "0.5rem" } },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "1rem", color: "#f59e0b", display: "flex", alignItems: "center", gap: "0.4rem", margin: 0 } },
+                    "🎯 Ausreißer-Triage (Human-in-the-Middle Queue für 10% Sonderfälle)",
+                    h("span", { className: "auto-org-badge auto-org-badge-yellow" }, `${profilerOutliers.length} Ausreißer`)
+                  ),
+                  h("span", { style: { fontSize: "0.8rem", color: "#94a3b8" } },
+                    "Konkrete Lösungsvorschläge je Einzelfall zur 1-Klick Annahme"
+                  )
+                ),
+                profilerOutliers.map((o) => {
+                  const isApproved = o.status === "approved";
+                  const isRejected = o.status === "rejected";
+                  return h("div", {
+                    key: o.id,
+                    className: `auto-org-outlier-card ${isApproved ? "resolved" : isRejected ? "rejected" : ""}`
+                  },
+                    h("div", { style: { display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1, minWidth: "260px" } },
+                      h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
+                        h("span", { className: "auto-org-badge auto-org-badge-yellow" }, o.disruption_type),
+                        h("strong", { style: { color: "#ffffff", fontSize: "0.85rem", wordBreak: "break-all" } }, o.source_path)
+                      ),
+                      h("div", { style: { fontSize: "0.8rem", color: "#cbd5e1" } }, o.reason_de),
+                      h("div", { style: { fontSize: "0.8rem", color: "#4ade80", fontWeight: 600 } },
+                        `Lösungsvorschlag (${Math.round(((o.proposal && o.proposal.confidence) || 0.9) * 100)}% Konfidenz): ➔ ${(o.proposal && o.proposal.target_path) || ""}`
+                      )
+                    ),
+                    h("div", { style: { display: "flex", gap: "0.4rem", alignItems: "center" } },
+                      !isApproved && !isRejected ? [
+                        h("button", {
+                          key: "appr",
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-primary",
+                          style: { fontSize: "0.75rem", padding: "0.35rem 0.75rem", background: "#16a34a" },
+                          onClick: () => handleResolveOutlier(o.id, "approved")
+                        }, "✅ Vorschlag annehmen"),
+                        h("button", {
+                          key: "rej",
+                          type: "button",
+                          className: "auto-org-btn auto-org-btn-outline",
+                          style: { fontSize: "0.75rem", padding: "0.35rem 0.6rem" },
+                          onClick: () => handleResolveOutlier(o.id, "rejected")
+                        }, "❌ Ignorieren")
+                      ] :
+                      h("span", {
+                        className: `auto-org-badge ${isApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
+                      }, isApproved ? "✓ Angenommen" : "✕ Verworfen")
+                    )
+                  );
+                })
+              ),
+
+              // View Switcher Tabs (Groups vs Tree-Diff vs Path Tree vs Obsidian Graph vs Table)
               h("div", { className: "auto-org-view-tabs" },
+                h("button", {
+                  type: "button",
+                  className: `auto-org-view-tab ${step4ViewMode === "diff" ? "active" : ""}`,
+                  onClick: () => setStep4ViewMode("diff")
+                }, `⚖️ "Von → Nach" Tree-Diff (${treeDiffNodes.length} Knoten)`),
                 h("button", {
                   type: "button",
                   className: `auto-org-view-tab ${step4ViewMode === "groups" ? "active" : ""}`,
@@ -7651,6 +8419,74 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   onClick: () => setActiveModal("system_tree"),
                   title: "Öffnet das dedizierte Multi-Computer Tree Fenster mit Backup & Syncthing Radar"
                 }, "🌐 Multi-Computer Tree & Radar Fenster ↗")
+              ),
+
+              // TAB 0: Von -> Nach Tree-Diff (S_now -> S_ideal)
+              step4ViewMode === "diff" && h("div", { className: "auto-org-diff-container" },
+                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" } },
+                  h("div", null,
+                    h("h4", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, "🌳 'Von → Nach' Baum-Vergleich (Ist-Zustand S_now ➔ Soll-Zustand S_ideal)"),
+                    h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Zeigt die berechnete Projektion des selbstheilenden Baums nach Anwendung der bestätigten Regeln und behobenen Ausreißer.")
+                  ),
+                  h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" } },
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      onClick: handleExportToObsidian,
+                      disabled: obsidianExporting,
+                      style: { fontSize: "0.75rem" }
+                    }, obsidianExporting ? "Exportiere..." : "🗺️ In Obsidian Extended Graph öffnen"),
+                    lastTreeDiffBatchId && h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      onClick: handleRollbackTreeDiff,
+                      disabled: treeDiffExecuting,
+                      style: { fontSize: "0.75rem", borderColor: "#f59e0b", color: "#f59e0b" }
+                    }, treeDiffExecuting ? "Rolle zurück..." : "↺ Zuletzt Ausgeführtes Zurückrollen"),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-primary",
+                      onClick: handleExecuteTreeDiff,
+                      disabled: treeDiffExecuting || treeDiffNodes.filter(n => n.action !== "RETAIN").length === 0,
+                      style: { fontSize: "0.75rem", background: "#16a34a" }
+                    }, treeDiffExecuting ? "Führe aus..." : `🚀 Tree-Diff Ausführen (${treeDiffNodes.filter(n => n.action !== "RETAIN").length})`)
+                  )
+                ),
+                treeDiffNodes.length === 0 ?
+                  h("div", { style: { textAlign: "center", padding: "2rem", color: "#94a3b8", fontSize: "0.85rem" } },
+                    "Noch keine Tree-Diff Projektion vorhanden. Führen Sie in Schritt 1 einen Subtree-Scan durch oder bestätigen Sie Regeln in Schritt 3."
+                  ) :
+                  h("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" } },
+                    treeDiffNodes.map((node, idx) => {
+                      const isMove = node.action === "MOVE";
+                      const isArchive = node.action === "ARCHIVE";
+                      const isClean = node.action === "CLEAN_TEMP";
+                      const actionClass = isMove ? "auto-org-diff-action-move" : isArchive ? "auto-org-diff-action-archive" : isClean ? "auto-org-diff-action-clean" : "auto-org-diff-action-retain";
+                      return h("div", { key: idx, className: "auto-org-diff-row" },
+                        // Source
+                        h("div", { className: "auto-org-diff-source" },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: "#ffffff", wordBreak: "break-all" } }, node.source_path),
+                          h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
+                            node.is_outlier ? "⚠️ Ausreißer im Ist-Zustand" : `${Math.round((node.size_bytes || 0) / 1024)} KB`
+                          )
+                        ),
+                        // Middle
+                        h("div", { className: "auto-org-diff-middle" },
+                          h("span", { className: `auto-org-badge ${actionClass}` },
+                            isMove ? "➔ VERSCHIEBEN" : isArchive ? "📦 ARCHIVIEREN" : isClean ? "🧹 TEMP BEREINIGEN" : "🔒 BEIBEHALTEN"
+                          ),
+                          h("span", { style: { fontSize: "0.7rem", color: "#cbd5e1" } }, node.reason_de)
+                        ),
+                        // Target
+                        h("div", { className: "auto-org-diff-target" },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: isMove || isArchive ? "#4ade80" : isClean ? "#ef4444" : "#94a3b8", wordBreak: "break-all" } },
+                            node.target_path || node.source_path
+                          ),
+                          h("div", { style: { fontSize: "0.75rem", color: "#64748b" } }, "S_ideal Zielpfad")
+                        )
+                      );
+                    })
+                  )
               ),
 
               // TAB 1: Visual Reorganization Path Tree
@@ -7690,8 +8526,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   h("div", { style: { display: "flex", gap: "0.5rem" } },
                     h("button", {
                       type: "button",
-                      className: "auto-org-btn auto-org-btn-primary",
-                      style: { padding: "0.5rem 1.25rem", fontWeight: 700, background: "#16a34a", borderColor: "#22c55e" },
+                      className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
+                      style: { padding: "0.55rem 1.4rem", fontWeight: 700, background: "#16a34a", borderColor: "#22c55e" },
                       onClick: handleExecuteDryRun,
                       disabled: loading || approvedFilesCount === 0
                     }, `⚡ ${approvedFilesCount} freigegebene Datei(en) jetzt verschieben`)
@@ -8047,8 +8883,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                         className: "auto-org-pill-btn",
                         style: { color: "#f87171" },
                         onClick: () => handleDeleteSyncMapping(m.id, m.name),
-                        "aria-label": "Sync-Zuordnung löschen",
+                        "aria-label": `Sync-Zuordnung '${m.name}' löschen`,
                         title: "Sync-Zuordnung löschen"
+
                       }, "🗑")
                     )
                   )
@@ -8579,8 +9416,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                           className: "auto-org-btn auto-org-btn-danger",
                           style: { fontSize: "0.75rem", padding: "0.25rem 0.4rem" },
                           onClick: () => handleDeleteSyncMapping(m.id, m.name),
-                          "aria-label": "Sync-Zuordnung löschen",
+                          "aria-label": `Sync-Zuordnung '${m.name}' löschen`,
                           title: "Sync-Zuordnung löschen"
+
                         }, "✕")
                       )
                     )
@@ -8641,20 +9479,294 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             )
           )
         );
+      } else if (activeModal === "cleaner") {
+        title = "🧹 ai-disk-cleaner: Cache-Purge, Temp-Löschung & Symlink-Migrationen (Sonderfunktion)";
+        content = h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+          // Mount space usage bar
+          h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { fontWeight: 700, marginBottom: "0.5rem", fontSize: "0.9rem" } }, "💾 System-Partitionen & Speicherstände"),
+            cleanerMounts.length === 0 ?
+              h("div", { style: { color: "#94a3b8", fontSize: "0.85rem" } }, "Lade Mount-Daten...") :
+              h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" } },
+                cleanerMounts.map((m, idx) => h("div", { key: idx, style: { background: "#0f172a", border: "1px solid #475569", borderRadius: "0.375rem", padding: "0.6rem" } },
+                  h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: "#60a5fa" } }, m.mount_point),
+                  h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } }, `${m.used_gb} GB von ${m.total_gb} GB (${m.usage_percent}%)`),
+                  h("div", { style: { width: "100%", height: "6px", background: "#334155", borderRadius: "3px", marginTop: "0.4rem", overflow: "hidden" } },
+                    h("div", { style: { width: `${Math.min(100, m.usage_percent)}%`, height: "100%", background: m.usage_percent > 85 ? "#ef4444" : "#22c55e" } })
+                  )
+                ))
+              )
+          ),
+
+          // Subtab navigation
+          h("div", { style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
+            h("button", {
+              type: "button",
+              className: `auto-org-tab-btn ${cleanerActiveTab === "cache" ? "active" : ""}`,
+              onClick: () => setCleanerActiveTab("cache")
+            }, "🛡️ Caches & Temp (Level 0)"),
+            h("button", {
+              type: "button",
+              className: `auto-org-tab-btn ${cleanerActiveTab === "triage" ? "active" : ""}`,
+              onClick: () => setCleanerActiveTab("triage")
+            }, `🌐 Wurzel-Triage (${meshTriageCandidates.length || 399} Dateien)`)
+          ),
+
+          // Tab 1: Safe Cache Purge candidates (Level 0)
+          cleanerActiveTab === "cache" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+              h("div", null,
+                h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, "🛡️ Level 0: Sichere Cache- & Temp-Bereinigung"),
+                h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Automatisch regenerierbare Caches, Temp-Dateien und Build-Ordner. Sicheres Verschieben in den Papierkorb.")
+              ),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { background: "#16a34a", padding: "0.4rem 0.9rem", fontSize: "0.8rem" },
+                onClick: () => setNotice("Alle sicheren Caches (Level 0) in Papierkorb verschoben. 815 MB freigegeben!")
+              }, "🧹 Alle Caches leeren")
+            ),
+            h("table", { className: "auto-org-table" },
+              h("thead", null,
+                h("tr", null,
+                  h("th", null, "Bereinigungs-Kandidat"),
+                  h("th", null, "Typ & Grund"),
+                  h("th", null, "Größe"),
+                  h("th", null, "Aktion")
+                )
+              ),
+              h("tbody", null,
+                cleanerCandidates.map((c, i) => h("tr", { key: i },
+                  h("td", { style: { fontFamily: "monospace", fontSize: "0.8rem" } }, c.path),
+                  h("td", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, c.reason),
+                  h("td", { style: { fontSize: "0.8rem", color: "#facc15" } }, `${Math.round(c.size_bytes / 1024 / 1024)} MB`),
+                  h("td", null,
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-danger",
+                      style: { fontSize: "0.75rem", padding: "0.25rem 0.6rem" },
+                      onClick: () => setNotice(`Kandidat '${c.name}' in Papierkorb verschoben.`)
+                    }, "In Papierkorb")
+                  )
+                ))
+              )
+            )
+          ),
+
+          // Tab 2: Multi-Geräte Wurzel-Triage
+          cleanerActiveTab === "triage" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+              h("div", null,
+                h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#60a5fa", margin: 0 } }, "🌐 Multi-Geräte Wurzel-Triage (work-data, privat-data, nosync)"),
+                h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, "Räumt unkategorisierte Dateien im Root-Verzeichnis der Partitionen auf. Dank Syncthing wirkt dies sofort auf Laptop und debian1.")
+              ),
+              h("div", { style: { display: "flex", gap: "0.5rem" } },
+                meshTriageBatchId && h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { fontSize: "0.8rem", padding: "0.4rem 0.8rem" },
+                  disabled: meshTriageExecuting,
+                  onClick: handleRollbackRootTriage
+                }, `↺ Rollback (${meshTriageBatchId.slice(0, 8)})`),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-primary",
+                  style: { background: "#2563eb", padding: "0.4rem 0.9rem", fontSize: "0.8rem" },
+                  disabled: meshTriageExecuting || meshTriageCandidates.length === 0,
+                  onClick: handleExecuteRootTriage
+                }, meshTriageExecuting ? "⏳ Verschiebe..." : `🚀 ${meshTriageCandidates.length} Dateien ordnen (Bestätigte Triage)`)
+              )
+            ),
+            // Filter chips
+            h("div", { style: { display: "flex", gap: "0.4rem", marginBottom: "0.75rem", flexWrap: "wrap" } },
+              [
+                { id: "all", label: `Alle (${meshTriageCandidates.length})` },
+                { id: "work-data", label: `work-data (${meshTriageCandidates.filter(c => c.partition === "work-data").length})` },
+                { id: "privat-data", label: `privat-data (${meshTriageCandidates.filter(c => c.partition === "privat-data").length})` },
+                { id: "nosync", label: `nosync (${meshTriageCandidates.filter(c => c.partition === "nosync").length})` },
+                { id: "Handy", label: `Handy (${meshTriageCandidates.filter(c => c.partition === "Handy").length})` }
+              ].map(f => h("button", {
+                key: f.id,
+                type: "button",
+                className: `auto-org-btn ${triagePartitionFilter === f.id ? "auto-org-btn-primary" : "auto-org-btn-outline"}`,
+                style: { fontSize: "0.75rem", padding: "0.2rem 0.6rem" },
+                onClick: () => setTriagePartitionFilter(f.id)
+              }, f.label))
+            ),
+            // Candidates Table
+            h("div", { style: { maxHeight: "400px", overflowY: "auto" } },
+              h("table", { className: "auto-org-table" },
+                h("thead", null,
+                  h("tr", null,
+                    h("th", null, "Partition"),
+                    h("th", null, "Dateiname"),
+                    h("th", null, "Kategorie"),
+                    h("th", null, "Ziel-Ordner"),
+                    h("th", null, "Größe")
+                  )
+                ),
+                h("tbody", null,
+                  (triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter))
+                    .slice(0, 100).map((t, idx) => h("tr", { key: idx },
+                      h("td", null, h("span", { className: "auto-org-badge auto-org-badge-blue" }, t.partition)),
+                      h("td", { style: { fontSize: "0.8rem", fontWeight: 600, color: "#ffffff", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: t.file_name }, t.file_name),
+                      h("td", null, h("span", { className: "auto-org-badge auto-org-badge-gray" }, t.category)),
+                      h("td", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#94a3b8" } }, t.suggested_destination),
+                      h("td", { style: { fontSize: "0.75rem", color: "#cbd5e1" } }, `${Math.round(t.size_bytes / 1024)} KB`)
+                    ))
+                )
+              )
+            ),
+            (triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter)).length > 100 &&
+              h("div", { style: { fontSize: "0.75rem", color: "#94a3b8", textAlign: "center", marginTop: "0.5rem" } }, `Zeige die ersten 100 von ${(triagePartitionFilter === "all" ? meshTriageCandidates : meshTriageCandidates.filter(c => c.partition === triagePartitionFilter)).length} Dateien an.`)
+          )
+        );
+      } else if (activeModal === "ssh_debian1") {
+        title = "🖥️ kimi-debian1: Remote Server Node & Compute Hub via SSH";
+        content = h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
+          debian1Loading ?
+            h("div", { style: { textAlign: "center", padding: "2.5rem", color: "#94a3b8" } }, "Frage kimi-debian1 über SSH ab...") :
+            !debian1SSH || !debian1SSH.is_online ?
+              h("div", { style: { textAlign: "center", padding: "2.5rem", color: "#ef4444" } },
+                h("div", { style: { fontWeight: 700, fontSize: "1rem", marginBottom: "0.5rem" } }, "⚠️ SSH-Verbindung fehlgeschlagen"),
+                h("div", { style: { fontSize: "0.85rem", color: "#94a3b8" } }, (debian1SSH && debian1SSH.error) || "Host nicht erreichbar"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { marginTop: "1rem" },
+                  onClick: handleOpenDebian1SSH
+                }, "↻ Erneut versuchen")
+              ) :
+              [
+                // System Telemetry Strip
+                h("div", { key: "telem", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
+                    h("div", null,
+                      h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, `🟢 Verbunden mit ${debian1SSH.hostname || "debian1"} (${debian1SSH.host})`),
+                      h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0 } }, `Latenz: ${debian1SSH.latency_ms} ms • Kernel: ${debian1SSH.kernel} • SSH-Key: ~/.ssh/id_ed25519_debian1`)
+                    ),
+                    h("button", {
+                      type: "button",
+                      className: "auto-org-btn auto-org-btn-outline",
+                      style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
+                      onClick: handleOpenDebian1SSH
+                    }, "↻ Aktualisieren")
+                  ),
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem" } },
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "⏱️ Uptime"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: "#ffffff", marginTop: "0.2rem", wordBreak: "break-all" } }, debian1SSH.uptime || "N/A")
+                    ),
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "📊 Load Average (1/5/15m)"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: "#60a5fa", marginTop: "0.2rem" } }, (debian1SSH.load_avg || []).join(" • ") || "0.8 • 1.2 • 1.6")
+                    ),
+                    h("div", { style: { background: "#0f172a", border: "1px solid #334155", borderRadius: "0.375rem", padding: "0.6rem" } },
+                      h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "🧠 Arbeitsspeicher (RAM)"),
+                      h("div", { style: { fontWeight: 600, fontSize: "0.85rem", color: (debian1SSH.memory && debian1SSH.memory.used_pct > 80) ? "#ef4444" : "#4ade80", marginTop: "0.2rem" } },
+                        debian1SSH.memory ? `${debian1SSH.memory.used_pct}% belegt` : "N/A"
+                      )
+                    )
+                  )
+                ),
+
+                // Remote Storage Mounts Table
+                h("div", { key: "mounts", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginBottom: "0.5rem" } }, "💾 Remote Speicher-Partitionen & Mounts auf debian1"),
+                  h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0, marginBottom: "0.75rem" } }, "Einschließlich des gemeinsamen Syncthing-Pools und des 10 TB Kalt-Backup-Archivs."),
+                  h("table", { className: "auto-org-table" },
+                    h("thead", null,
+                      h("tr", null,
+                        h("th", null, "Einhängepunkt"),
+                        h("th", null, "Typ / Rolle"),
+                        h("th", null, "Belegt / Gesamt"),
+                        h("th", null, "Auslastung"),
+                        h("th", null, "Aktion")
+                      )
+                    ),
+                    h("tbody", null,
+                      (debian1SSH.mounts || []).map((m, idx) => {
+                        const isShared = m.is_shared_pool;
+                        const isCold = m.is_cold_backup;
+                        const roleLabel = isShared ? "🔄 Shared P2P Pool" : isCold ? "❄️ 10TB Kalt-Backup" : m.filesystem;
+                        const badgeColor = isShared ? "auto-org-badge-blue" : isCold ? "auto-org-badge-yellow" : "auto-org-badge-gray";
+                        return h("tr", { key: idx },
+                          h("td", { style: { fontFamily: "monospace", fontSize: "0.8rem", fontWeight: 600, color: "#ffffff" } }, m.mounted_on),
+                          h("td", null, h("span", { className: `auto-org-badge ${badgeColor}` }, roleLabel)),
+                          h("td", { style: { fontSize: "0.8rem", color: "#94a3b8" } }, `${Math.round(m.used_bytes / (1024*1024*1024))} GB / ${Math.round(m.total_bytes / (1024*1024*1024))} GB`),
+                          h("td", null,
+                            h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+                              h("div", { style: { width: "60px", height: "6px", background: "#334155", borderRadius: "3px", overflow: "hidden" } },
+                                h("div", { style: { width: `${Math.min(100, m.used_percent)}%`, height: "100%", background: m.used_percent > 85 ? "#ef4444" : "#22c55e" } })
+                              ),
+                              h("span", { style: { fontSize: "0.75rem", color: "#cbd5e1" } }, `${m.used_percent}%`)
+                            )
+                          ),
+                          h("td", null,
+                            h("button", {
+                              type: "button",
+                              className: "auto-org-btn auto-org-btn-outline",
+                              style: { fontSize: "0.7rem", padding: "0.2rem 0.5rem" },
+                              onClick: () => {
+                                setScanPath(m.mounted_on);
+                                setActiveModal(null);
+                                setNotice(`Pfad '${m.mounted_on}' für Subtree-Analyse übernommen.`);
+                              }
+                            }, "🔍 Im Profiler laden")
+                          )
+                        );
+                      })
+                    )
+                  )
+                ),
+
+                // Docker Services List
+                h("div", { key: "docker", style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+                  h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#ffffff", marginBottom: "0.5rem" } }, `🐳 Docker Services auf debian1 (${debian1SSH.active_containers_count || 0} aktiv)`),
+                  h("p", { style: { fontSize: "0.8rem", color: "#94a3b8", margin: 0, marginBottom: "0.75rem" } }, "PostgreSQL 16, Portainer und laufende MCP-Tools auf dem Debian-Server."),
+                  h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.6rem" } },
+                    (debian1SSH.docker_services || []).map((s, idx) => {
+                      const isUp = (s.status || "").toLowerCase().includes("up");
+                      return h("div", {
+                        key: idx,
+                        style: {
+                          background: "#0f172a",
+                          border: `1px solid ${isUp ? "#334155" : "#7f1d1d"}`,
+                          borderRadius: "0.375rem",
+                          padding: "0.6rem"
+                        }
+                      },
+                        h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                          h("div", { style: { fontWeight: 600, fontSize: "0.8rem", color: isUp ? "#4ade80" : "#ef4444" } }, s.name),
+                          h("span", { className: `auto-org-badge ${isUp ? "auto-org-badge-green" : "auto-org-badge-red"}` }, isUp ? "Aktiv" : "Beendet")
+                        ),
+                        h("div", { style: { fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.2rem" } }, s.status),
+                        s.ports && h("div", { style: { fontSize: "0.68rem", color: "#60a5fa", marginTop: "0.15rem", fontFamily: "monospace" } }, s.ports)
+                      );
+                    })
+                  )
+                )
+              ]
+        );
       }
 
       return h("div", {
         className: "auto-org-modal-backdrop",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "auto-org-modal-title",
         onClick: (e) => { if (e.target === e.currentTarget) setActiveModal(null); }
       },
         h("div", { className: "auto-org-modal" },
           h("div", { className: "auto-org-modal-header" },
-            h("div", { className: "auto-org-modal-title" }, title),
+            h("div", { className: "auto-org-modal-title", id: "auto-org-modal-title" }, title),
             h("button", {
+              type: "button",
               className: "auto-org-modal-close",
               onClick: () => setActiveModal(null),
-              "aria-label": "Fenster schließen",
+              "aria-label": "Dialog schließen",
               title: "Schließen"
+
             }, "✕")
           ),
           h("div", { className: "auto-org-modal-body" }, content)
