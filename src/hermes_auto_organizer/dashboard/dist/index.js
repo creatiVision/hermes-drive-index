@@ -671,9 +671,17 @@
 
     const nodeName = node.name || node.label || node.file_name || node.id || "Element";
     const nodePath = formatUserPath(node.path || node.uri_path || node.physical_path || node.relative_path || "");
-    let icon = node.node_type === "mount" ? "💽" :
+    const isDest = Boolean(node.is_destination || node.isDestinationFolder || node.node_type === "destination_folder");
+    let icon = isDest ? "🎯" :
+               node.node_type === "mount" ? "💽" :
                node.node_type === "file" ? "📄" :
                node.node_type === "drive" ? "💽" : "📁";
+
+    const depthLabel = isDest ? "🎯 Ziel-Ordner" :
+                       node.depth === 0 ? "L0: Hauptlaufwerk / Mount" :
+                       node.depth === 1 ? "L1: Hauptkategorie" :
+                       node.depth === 2 ? "L2: Unterordner" :
+                       node.depth !== undefined ? `L${node.depth}: Detailordner` : null;
 
     return h("div", {
       className: "auto-org-rollover-card",
@@ -690,11 +698,11 @@
       nodePath && h("div", { className: "auto-org-rollover-path" }, nodePath),
 
       // Proposed Sync / Move Section
-      hasProposedSync ?
+      hasProposedSync || isDest ?
         h("div", { className: "auto-org-rollover-sync-box" },
           h("div", { className: "auto-org-rollover-sync-title" },
-            h("span", null, "🔄"),
-            h("span", null, "Vorgeschlagener Sync & Reorganisation:")
+            h("span", null, isDest ? "🎯" : "🔄"),
+            h("span", null, isDest ? "Ziel-Ordner (Destination) für Reorganisation:" : "Vorgeschlagener Sync & Reorganisation:")
           ),
           hasSyncthing && h("div", { className: "auto-org-rollover-sync-detail" },
             `• Syncthing: ${node.syncthing.label || node.syncthing.folder_id || "P2P Mesh Synchron"}` +
@@ -713,6 +721,7 @@
 
       // Meta grid
       h("div", { className: "auto-org-rollover-meta-grid" },
+        depthLabel && h("div", { style: { color: "#93c5fd", fontWeight: 600 } }, `Hierarchie: ${depthLabel}`),
         node.indexing && h("div", null, `Index: ${node.indexing.symbol} ${node.indexing.count || 0} Dateien`),
         node.size_mb !== undefined && h("div", null, `Größe: ${node.size_mb >= 1024 ? (node.size_mb/1024).toFixed(1) + " GB" : node.size_mb.toFixed(1) + " MB"}`),
         node.backup && node.backup.protected && h("div", null, `Backup: 🛡️ ${node.backup.program || "Aktiv"}`),
@@ -741,46 +750,22 @@
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
 
-    const [foldedIds, setFoldedIds] = useState(() => {
-      const initialFolded = new Set();
-      try {
-        if (fsTree && fsTree.mounts && fsTree.mounts.length > 0) {
-          fsTree.mounts.forEach(m => { if (m && m.id) initialFolded.add(m.id); });
-        } else {
-          initialFolded.add("node_work_data");
-          initialFolded.add("node_privat_data");
-          initialFolded.add("node_downloads");
-          initialFolded.add("node_desktop");
-          initialFolded.add("node_xchg");
-        }
-      } catch (e) {}
-      return initialFolded;
-    });
+    // Default: all user hierarchy levels (L0, L1, L2) are visible, while raw Linux OS internals are collapsed
+    const [foldedIds, setFoldedIds] = useState(() => new Set(["node_"]));
+    const [showDestinationArrows, setShowDestinationArrows] = useState(true);
+    const [maxHierarchyLevel, setMaxHierarchyLevel] = useState("2"); // default to Level 2 (Mounts, Categories, Subfolders)
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [transform, setTransform] = useState({ scale: 1, panX: 0, panY: 0 });
     const transformRef = useRef(transform);
     transformRef.current = transform;
 
-    useEffect(() => {
-      if (fsTree && fsTree.mounts && fsTree.mounts.length > 0) {
-        setFoldedIds(prev => {
-          if (prev.size <= 5) {
-            const s = new Set();
-            fsTree.mounts.forEach(m => { if (m && m.id) s.add(m.id); });
-            return s;
-          }
-          return prev;
-        });
-      }
-    }, [fsTree]);
-
     const isDraggingRef = useRef(false);
     const dragNodeRef = useRef(null);
     const dragStartRef = useRef({ x: 0, y: 0 });
     const hasDraggedRef = useRef(false);
 
-    // Build graph hierarchy from fsTree mounts
+    // Build graph hierarchy & destination targets from fsTree
     const graphData = useMemo(() => {
       const nodes = [];
       const links = [];
@@ -790,20 +775,32 @@
         { id: "node_work_data", name: "work-data", path: "/media/work-data", node_type: "mount", children: [
           { id: "node_work_001", name: "001_cv-bookaccount", path: "/media/work-data/001_cv-bookaccount", node_type: "folder", children: [
             { id: "node_work_2025", name: "2025", path: "/media/work-data/001_cv-bookaccount/2025", node_type: "folder", children: [
-              { id: "node_file_invoices", name: "Rechnungen_2025.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Rechnungen_2025.pdf", node_type: "file", size_mb: 2.4, targetPath: "/media/privat-data/10_PrivatBüro/Archiv/2025/" }
+              { id: "node_file_invoices", name: "Rechnungen_2025.pdf", path: "/media/work-data/001_cv-bookaccount/2025/Rechnungen_2025.pdf", node_type: "file", size_mb: 2.4, targetPath: "/media/privat-data/10_PrivatBüro/Steuern/2025/" }
             ]}
           ]},
-          { id: "node_work_002", name: "002_cv-projects", path: "/media/work-data/002_cv-projects", node_type: "folder", children: [] }
+          { id: "node_work_002", name: "002_cv-projects", path: "/media/work-data/002_cv-projects", node_type: "folder", children: [
+            { id: "node_work_code", name: "Codebasen", path: "/media/work-data/002_cv-projects/Codebasen", node_type: "folder", children: [] }
+          ]}
         ]},
         { id: "node_privat_data", name: "privat-data", path: "/media/privat-data/10_PrivatBüro", node_type: "mount", children: [
-          { id: "node_privat_steuern", name: "Steuern", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", children: [] },
-          { id: "node_privat_archiv", name: "Archiv", path: "/media/privat-data/10_PrivatBüro/Archiv", node_type: "folder", children: [] }
+          { id: "node_privat_steuern", name: "Steuern", path: "/media/privat-data/10_PrivatBüro/Steuern", node_type: "folder", children: [
+            { id: "node_privat_steuern_2025", name: "2025", path: "/media/privat-data/10_PrivatBüro/Steuern/2025", node_type: "folder", children: [] }
+          ]},
+          { id: "node_privat_vertraege", name: "Verträge", path: "/media/privat-data/10_PrivatBüro/Verträge", node_type: "folder", children: [] },
+          { id: "node_privat_archiv", name: "Archiv", path: "/media/privat-data/10_PrivatBüro/Archiv", node_type: "folder", children: [
+            { id: "node_privat_archiv_2025", name: "2025", path: "/media/privat-data/10_PrivatBüro/Archiv/2025", node_type: "folder", children: [] }
+          ]}
         ]},
         { id: "node_xchg", name: "xchg", path: "/media/xchg", node_type: "mount", syncthing: { synced: true, label: "xchg-mesh", peers: ["laptop", "debian1", "Note14new"] }, children: [
           { id: "node_xchg_kb", name: "ai-knowledge-base", path: "/media/xchg/ai-knowledge-base", node_type: "folder", syncthing: { synced: true }, children: [] },
-          { id: "node_xchg_workspaces", name: "ai-agents-workspaces", path: "/media/xchg/ai-agents-workspaces", node_type: "folder", children: [] }
+          { id: "node_xchg_workspaces", name: "ai-agents-workspaces", path: "/media/xchg/ai-agents-workspaces", node_type: "folder", children: [
+            { id: "node_xchg_skills", name: "skills", path: "/media/xchg/ai-agents-workspaces/skills", node_type: "folder", children: [] }
+          ]}
         ]},
-        { id: "node_downloads", name: "Downloads", path: "/home/mb/Downloads", node_type: "mount", reorganization: { is_source: true, pending_moves: 45 }, children: [] }
+        { id: "node_downloads", name: "Downloads", path: "/home/mb/Downloads", node_type: "mount", reorganization: { is_source: true, pending_moves: 45, source_rules: [
+          { name: "Downloads in Steuern sortieren", target_template: "/media/privat-data/10_PrivatBüro/Steuern/2025/", pending_moves: 30 },
+          { name: "Projektdownloads konsolidieren", target_template: "/media/work-data/002_cv-projects/Codebasen/", pending_moves: 15 }
+        ]}, children: [] }
       ];
 
       function countDescendants(n) {
@@ -820,10 +817,12 @@
         processed.add(nid);
 
         const descCount = countDescendants(n);
-        // folders2graph: weight node radius by descendants
-        const radius = n.node_type === "mount" ? 26 :
+        // Weight radius by hierarchy level and descendant count
+        const radius = depth === 0 ? 26 :
                        n.node_type === "file" ? 8 :
-                       Math.max(12, Math.min(22, 11 + Math.log2(descCount + 1) * 3));
+                       depth === 1 ? Math.max(16, Math.min(22, 15 + Math.log2(descCount + 1) * 2.5)) :
+                       depth === 2 ? Math.max(13, Math.min(18, 12 + Math.log2(descCount + 1) * 2)) :
+                       Math.max(10, Math.min(15, 10 + Math.log2(descCount + 1) * 1.5));
 
         const st = nodeStates[n.path] || nodeStates[nid] || n.switch_state ||
                    (n.indexing && n.indexing.state === "FULL" ? "approved" : "proposed");
@@ -835,28 +834,26 @@
           n.targetPath || n.proposed_target
         );
 
-        // Initial coordinates (radial organic layout)
+        // Initial coordinates (radial hierarchical layout)
         let initX = 0;
         let initY = 0;
         if (!parentNode) {
           const mIdx = mounts.indexOf(n);
-          const totalM = mounts.length;
+          const totalM = Math.max(1, mounts.length);
           const a = (mIdx / totalM) * Math.PI * 2 - Math.PI / 2;
-          initX = Math.cos(a) * 220;
-          initY = Math.sin(a) * 200;
+          initX = Math.cos(a) * 240;
+          initY = Math.sin(a) * 220;
         } else {
-          const spread = Math.PI * 0.45;
-          const a = angleHint;
-          const dist = 75 + Math.min(60, descCount * 4);
-          initX = parentNode.x + Math.cos(a) * dist;
-          initY = parentNode.y + Math.sin(a) * dist;
+          const dist = 75 + Math.min(60, descCount * 3) - Math.min(30, depth * 6);
+          initX = parentNode.x + Math.cos(angleHint) * dist;
+          initY = parentNode.y + Math.sin(angleHint) * dist;
         }
 
         const gNode = {
           id: nid,
           name: n.name || (n.path ? n.path.split("/").filter(Boolean).pop() : nid),
           path: n.path || "",
-          node_type: n.node_type || (n.disk ? "mount" : "folder"),
+          node_type: n.node_type || (depth === 0 ? "mount" : "folder"),
           raw: n,
           radius: radius,
           descendantCount: descCount,
@@ -873,29 +870,19 @@
 
         if (parentNode) {
           links.push({
+            id: `hier_${parentNode.id}_${gNode.id}`,
             sourceId: parentNode.id,
             targetId: gNode.id,
-            type: "hierarchy"
+            type: "hierarchy",
+            depth: depth
           });
-        }
-
-        // Proposed sync / move edge
-        if (n.targetPath || (n.reorganization && n.reorganization.target_rules && n.reorganization.target_rules.length > 0)) {
-          const tgtPath = n.targetPath || (n.reorganization.target_rules[0] && n.reorganization.target_rules[0].match_path);
-          if (tgtPath) {
-            links.push({
-              sourceId: gNode.id,
-              targetPath: tgtPath,
-              type: "proposed_sync",
-              label: "Move / Sync"
-            });
-          }
         }
 
         if (n.children && n.children.length > 0) {
           const childCount = n.children.length;
           n.children.forEach((ch, cidx) => {
-            const childAngle = childCount === 1 ? angleHint : (angleHint - Math.PI * 0.3 + (cidx * (Math.PI * 0.6)) / (childCount - 1));
+            const spread = childCount === 1 ? 0 : Math.PI * 0.55;
+            const childAngle = childCount === 1 ? angleHint : (angleHint - spread / 2 + (cidx * spread) / (childCount - 1));
             traverse(ch, gNode, depth + 1, childAngle);
           });
         }
@@ -904,6 +891,219 @@
       mounts.forEach((m, idx) => {
         const a = (idx / mounts.length) * Math.PI * 2 - Math.PI / 2;
         traverse(m, null, 0, a);
+      });
+
+      // Index all nodes by cleaned path for fast target resolution
+      const pathToNode = new Map();
+      const nodeMapTemp = new Map();
+      nodes.forEach(n => {
+        nodeMapTemp.set(n.id, n);
+        if (n.path) {
+          const norm = n.path.replace(/\/+$/, "");
+          pathToNode.set(norm, n);
+        }
+      });
+
+      // Gather all destination folder move/organize targets
+      const targetCandidates = [];
+
+      nodes.forEach(gNode => {
+        const raw = gNode.raw || {};
+        // 1. Direct targetPath / proposed_target
+        if (raw.targetPath) {
+          targetCandidates.push({
+            srcNode: gNode,
+            targetPath: raw.targetPath,
+            label: "➔ Reorganisieren",
+            moves: 1
+          });
+        }
+        if (raw.proposed_target) {
+          targetCandidates.push({
+            srcNode: gNode,
+            targetPath: raw.proposed_target,
+            label: "➔ Verschieben",
+            moves: 1
+          });
+        }
+        // 2. Reorganization source_rules
+        if (raw.reorganization && raw.reorganization.source_rules && raw.reorganization.source_rules.length > 0) {
+          raw.reorganization.source_rules.forEach(r => {
+            const tPath = r.target_template || r.match_path || r.target_path;
+            if (tPath) {
+              targetCandidates.push({
+                srcNode: gNode,
+                targetPath: tPath,
+                label: r.name ? `➔ ${r.name}` : (r.pending_moves ? `➔ ${r.pending_moves} Moves` : "➔ Ziel-Ordner"),
+                moves: r.pending_moves || 1
+              });
+            }
+          });
+        }
+      });
+
+      // 3. Global organization rules from backend
+      const globalRules = (fsTree && (fsTree.organization_rules || fsTree.rules_src)) || [];
+      globalRules.forEach(r => {
+        const srcPath = (r.match_path || "").replace(/\/+$/, "");
+        const tgtTemplate = r.target_template || r.match_path || "";
+        if (srcPath && tgtTemplate) {
+          let srcNode = pathToNode.get(srcPath);
+          if (!srcNode) {
+            for (const [p, nd] of pathToNode.entries()) {
+              if (srcPath.startsWith(p) || p.startsWith(srcPath)) {
+                srcNode = nd;
+                break;
+              }
+            }
+          }
+          if (srcNode) {
+            targetCandidates.push({
+              srcNode: srcNode,
+              targetPath: tgtTemplate,
+              label: r.name ? `➔ ${r.name}` : (r.pending_moves ? `➔ ${r.pending_moves} Moves` : "➔ Ziel-Ordner"),
+              moves: r.pending_moves || 1
+            });
+          }
+        }
+      });
+
+      // 4. Default taxonomy & organization rules fallback
+      if (typeof DEFAULT_TREE_NODES !== "undefined" && Array.isArray(DEFAULT_TREE_NODES)) {
+        DEFAULT_TREE_NODES.forEach(tn => {
+          const tgtTemplate = tn.target_path_template || tn.container_path || "";
+          if (!tgtTemplate) return;
+
+          let srcNode = null;
+          if (tn.id === "finanzen-steuern") {
+            srcNode = pathToNode.get("/media/work-data/001_cv-bookaccount") ||
+                      pathToNode.get("/home/mb/Downloads") ||
+                      pathToNode.get("/media/work-data");
+          } else if (tn.id === "finanzen-ausgangsrechnungen") {
+            srcNode = pathToNode.get("/home/mb/Downloads") ||
+                      pathToNode.get("/media/work-data/001_cv-bookaccount") ||
+                      pathToNode.get("/media/work-data");
+          } else if (tn.id === "work-ai-agents") {
+            srcNode = pathToNode.get("/media/xchg/ai-agents-workspaces") ||
+                      pathToNode.get("/home/mb/Downloads") ||
+                      pathToNode.get("/media/xchg");
+          } else if (tn.id === "work-projekte") {
+            srcNode = pathToNode.get("/home/mb/Downloads") ||
+                      pathToNode.get("/media/work-data/002_cv-projects") ||
+                      pathToNode.get("/media/work-data");
+          } else {
+            srcNode = pathToNode.get("/home/mb/Downloads") ||
+                      pathToNode.get("/media/work-data") ||
+                      pathToNode.get("/media/privat-data");
+          }
+
+          if (srcNode) {
+            targetCandidates.push({
+              srcNode: srcNode,
+              targetPath: tgtTemplate,
+              label: tn.name ? `➔ ${tn.name.split("/").pop().trim()}` : "➔ Ziel-Ordner",
+              moves: tn.matched_files_count || 12
+            });
+          }
+        });
+      }
+
+      // Materialize destination folder nodes and construct directional arrow links
+      const seenDestPairs = new Set();
+      targetCandidates.forEach(({ srcNode, targetPath, label, moves }) => {
+        if (!srcNode || !targetPath) return;
+
+        // Clean target path: resolve placeholders
+        const cleanTgt = targetPath
+          .replace(/\{year\}/g, "2025")
+          .replace(/\{stem\}/g, "CV")
+          .replace(/\{[^}]+\}/g, "")
+          .replace(/\/+$/, "");
+
+        if (!cleanTgt) return;
+
+        // Try exact match or closest matching directory in the tree
+        let targetNode = pathToNode.get(cleanTgt);
+        if (!targetNode) {
+          for (const [p, nd] of pathToNode.entries()) {
+            if (p === cleanTgt || cleanTgt.startsWith(p + "/") || p.startsWith(cleanTgt + "/")) {
+              targetNode = nd;
+              break;
+            }
+          }
+        }
+
+        // If no matching destination node exists in the tree, create a dedicated Destination Folder node!
+        if (!targetNode) {
+          const destId = `dest_${cleanTgt.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+          if (nodeMapTemp.has(destId)) {
+            targetNode = nodeMapTemp.get(destId);
+          } else {
+            const destParts = cleanTgt.split("/").filter(Boolean);
+            const destName = destParts[destParts.length - 1] || "Ziel-Ordner";
+            const parentPath = cleanTgt.substring(0, cleanTgt.lastIndexOf("/"));
+            const parentNode = pathToNode.get(parentPath);
+
+            const destNode = {
+              id: destId,
+              name: `🎯 ${destName}`,
+              path: cleanTgt,
+              node_type: "destination_folder",
+              isDestinationFolder: true,
+              raw: {
+                id: destId,
+                name: destName,
+                path: cleanTgt,
+                node_type: "destination_folder",
+                is_destination: true,
+                status: { state: "INDEXED", color: "#f59e0b", symbol: "🎯", label: "Ziel-Ordner" }
+              },
+              radius: 20,
+              descendantCount: 0,
+              state: "approved",
+              hasProposedSync: true,
+              parentId: parentNode ? parentNode.id : null,
+              depth: destParts.length,
+              x: srcNode.x + 190 + (Math.random() - 0.5) * 50,
+              y: srcNode.y + (Math.random() - 0.5) * 80,
+              vx: 0,
+              vy: 0
+            };
+            nodes.push(destNode);
+            nodeMapTemp.set(destId, destNode);
+            pathToNode.set(cleanTgt, destNode);
+            targetNode = destNode;
+
+            if (parentNode) {
+              links.push({
+                id: `hier_${parentNode.id}_${destNode.id}`,
+                sourceId: parentNode.id,
+                targetId: destNode.id,
+                type: "hierarchy",
+                depth: destNode.depth
+              });
+            }
+          }
+        }
+
+        if (targetNode && targetNode.id !== srcNode.id) {
+          const pairKey = `${srcNode.id}->${targetNode.id}`;
+          if (!seenDestPairs.has(pairKey)) {
+            seenDestPairs.add(pairKey);
+            targetNode.hasIncomingDestination = true;
+            srcNode.hasOutgoingDestination = true;
+
+            links.push({
+              id: `dest_link_${links.length}`,
+              sourceId: srcNode.id,
+              targetId: targetNode.id,
+              type: "destination",
+              label: label || "➔ Ziel-Ordner",
+              moves: moves || 1,
+              color: "#fbbf24"
+            });
+          }
+        }
       });
 
       return { nodes, links };
@@ -928,9 +1128,22 @@
       simRef.current = { nodes: simNodes, links: graphData.links, nodeMap };
     }, [graphData]);
 
-    // Check which nodes are visible based on foldedIds
+    // Check which nodes are visible based on folding, hierarchy depth, and destination links
     const isNodeVisible = useCallback((node) => {
       if (!node) return false;
+
+      // Destination folders remain visible whenever destination arrows are active
+      if ((node.isDestinationFolder || node.hasIncomingDestination) && showDestinationArrows) {
+        return true;
+      }
+
+      // Hierarchy level filter
+      if (maxHierarchyLevel !== "all" && node.depth > Number(maxHierarchyLevel)) {
+        if (!node.isDestinationFolder && !node.hasIncomingDestination) {
+          return false;
+        }
+      }
+
       let curr = node;
       const map = simRef.current && simRef.current.nodeMap;
       if (!map) return true;
@@ -942,7 +1155,7 @@
         curr = map.get(curr.parentId);
       }
       return true;
-    }, [foldedIds]);
+    }, [foldedIds, maxHierarchyLevel, showDestinationArrows]);
 
     // Fold / Unfold toggle
     const toggleFold = useCallback((nodeId, recursive = false) => {
@@ -951,7 +1164,6 @@
         if (next.has(nodeId)) {
           next.delete(nodeId);
           if (recursive) {
-            // Unfold all descendants
             const map = simRef.current && simRef.current.nodeMap;
             if (map) {
               function unfoldKids(id) {
@@ -1011,228 +1223,395 @@
             }
           }
 
-        const t = transformRef.current;
-        const cx = width / 2;
-        const cy = height / 2;
+          const t = transformRef.current;
+          const cx = width / 2;
+          const cy = height / 2;
 
-        ctx.translate(cx + t.panX, cy + t.panY);
-        ctx.scale(t.scale, t.scale);
+          ctx.translate(cx + t.panX, cy + t.panY);
+          ctx.scale(t.scale, t.scale);
 
-        const { nodes, links, nodeMap } = simRef.current;
-        const visibleNodes = nodes.filter(n => isNodeVisible(n));
-        const visNodeSet = new Set(visibleNodes.map(n => n.id));
+          const { nodes, links, nodeMap } = simRef.current;
+          const visibleNodes = nodes.filter(n => isNodeVisible(n));
+          const visNodeSet = new Set(visibleNodes.map(n => n.id));
 
-        // Physics Simulation Step
-        if (!isPaused) {
-          frameCount++;
-          const damp = 0.86;
-          const kSpring = 0.045;
-          const centerG = 0.0025;
+          // Physics Simulation Step
+          if (!isPaused) {
+            frameCount++;
+            const damp = 0.86;
+            const kSpring = 0.045;
+            const centerG = 0.0025;
 
-          // Center gravity
-          visibleNodes.forEach(n => {
-            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
-            n.vx -= n.x * centerG;
-            n.vy -= n.y * centerG;
-          });
+            // Center gravity
+            visibleNodes.forEach(n => {
+              if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+              n.vx -= n.x * centerG;
+              n.vy -= n.y * centerG;
+            });
 
-          // Node-to-node repulsion
-          const vLen = visibleNodes.length;
-          for (let i = 0; i < vLen; i++) {
-            const n1 = visibleNodes[i];
-            for (let j = i + 1; j < vLen; j++) {
-              const n2 = visibleNodes[j];
-              const dx = n2.x - n1.x;
-              const dy = n2.y - n1.y;
-              const dist = Math.hypot(dx, dy) || 1;
-              if (dist < 320) {
-                const rep = 1400 / (dist * dist);
-                const rx = (dx / dist) * rep;
-                const ry = (dy / dist) * rep;
-                if (!dragNodeRef.current || dragNodeRef.current.id !== n1.id) {
-                  n1.vx -= rx;
-                  n1.vy -= ry;
-                }
-                if (!dragNodeRef.current || dragNodeRef.current.id !== n2.id) {
-                  n2.vx += rx;
-                  n2.vy += ry;
+            // Node-to-node repulsion
+            const vLen = visibleNodes.length;
+            for (let i = 0; i < vLen; i++) {
+              const n1 = visibleNodes[i];
+              for (let j = i + 1; j < vLen; j++) {
+                const n2 = visibleNodes[j];
+                const dx = n2.x - n1.x;
+                const dy = n2.y - n1.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                if (dist < 320) {
+                  const rep = 1400 / (dist * dist);
+                  const rx = (dx / dist) * rep;
+                  const ry = (dy / dist) * rep;
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== n1.id) {
+                    n1.vx -= rx;
+                    n1.vy -= ry;
+                  }
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== n2.id) {
+                    n2.vx += rx;
+                    n2.vy += ry;
+                  }
                 }
               }
             }
+
+            // Link spring forces
+            links.forEach(l => {
+              const s = nodeMap.get(l.sourceId);
+              const tNode = nodeMap.get(l.targetId);
+              if (s && tNode && visNodeSet.has(s.id) && visNodeSet.has(tNode.id)) {
+                const dx = tNode.x - s.x;
+                const dy = tNode.y - s.y;
+                const dist = Math.hypot(dx, dy) || 1;
+
+                if (l.type === "hierarchy") {
+                  const ideal = (s.radius + tNode.radius + Math.max(38, 70 - (tNode.depth || 1) * 8));
+                  const force = (dist - ideal) * kSpring;
+                  const fx = (dx / dist) * force;
+                  const fy = (dy / dist) * force;
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
+                    s.vx += fx;
+                    s.vy += fy;
+                  }
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== tNode.id) {
+                    tNode.vx -= fx;
+                    tNode.vy -= fy;
+                  }
+                } else if (l.type === "destination") {
+                  // Gentle spring pulling destination folder towards source
+                  const ideal = 170;
+                  const force = (dist - ideal) * 0.012;
+                  const fx = (dx / dist) * force;
+                  const fy = (dy / dist) * force;
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
+                    s.vx += fx;
+                    s.vy += fy;
+                  }
+                  if (!dragNodeRef.current || dragNodeRef.current.id !== tNode.id) {
+                    tNode.vx -= fx;
+                    tNode.vy -= fy;
+                  }
+                }
+              }
+            });
+
+            // Update positions with velocities
+            visibleNodes.forEach(n => {
+              if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
+              n.vx *= damp;
+              n.vy *= damp;
+              n.x += n.vx;
+              n.y += n.vy;
+            });
           }
 
-          // Link spring forces
+          // 1. Draw Hierarchy Links
           links.forEach(l => {
+            if (l.type !== "hierarchy") return;
             const s = nodeMap.get(l.sourceId);
             const tNode = nodeMap.get(l.targetId);
-            if (s && tNode && visNodeSet.has(s.id) && visNodeSet.has(tNode.id)) {
-              const dx = tNode.x - s.x;
-              const dy = tNode.y - s.y;
-              const dist = Math.hypot(dx, dy) || 1;
-              const ideal = (s.radius + tNode.radius + 60);
-              const force = (dist - ideal) * kSpring;
-              const fx = (dx / dist) * force;
-              const fy = (dy / dist) * force;
-              if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
-                s.vx += fx;
-                s.vy += fy;
-              }
-              if (!dragNodeRef.current || dragNodeRef.current.id !== tNode.id) {
-                tNode.vx -= fx;
-                tNode.vy -= fy;
-              }
-            }
-          });
+            if (!s || !tNode || !visNodeSet.has(s.id) || !visNodeSet.has(tNode.id)) return;
 
-          // Update positions with velocities
-          visibleNodes.forEach(n => {
-            if (dragNodeRef.current && dragNodeRef.current.id === n.id) return;
-            n.vx *= damp;
-            n.vy *= damp;
-            n.x += n.vx;
-            n.y += n.vy;
-          });
-        }
+            const isHighlighted = (hoveredNodeId && (hoveredNodeId === s.id || hoveredNodeId === tNode.id)) ||
+                                  (selectedNodeId && (selectedNodeId === s.id || selectedNodeId === tNode.id));
 
-        // Draw Links
-        links.forEach(l => {
-          const s = nodeMap.get(l.sourceId);
-          const tNode = nodeMap.get(l.targetId);
-          if (!s || !tNode || !visNodeSet.has(s.id) || !visNodeSet.has(tNode.id)) return;
-
-          const isHighlighted = (hoveredNodeId && (hoveredNodeId === s.id || hoveredNodeId === tNode.id));
-
-          if (l.type === "hierarchy") {
+            ctx.save();
             ctx.beginPath();
             ctx.moveTo(s.x, s.y);
             ctx.lineTo(tNode.x, tNode.y);
-            ctx.strokeStyle = isHighlighted ? "rgba(96, 165, 250, 0.75)" : "rgba(255, 255, 255, 0.12)";
-            ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
-            ctx.stroke();
-          } else if (l.type === "proposed_sync") {
-            // Proposed sync / move curved glowing edge
-            ctx.save();
-            ctx.setLineDash([5, 4]);
-            const midX = (s.x + tNode.x) / 2 + (tNode.y - s.y) * 0.2;
-            const midY = (s.y + tNode.y) / 2 - (tNode.x - s.x) * 0.2;
-            ctx.beginPath();
-            ctx.moveTo(s.x, s.y);
-            ctx.quadraticCurveTo(midX, midY, tNode.x, tNode.y);
-            ctx.strokeStyle = "#facc15";
-            ctx.lineWidth = 2.2;
+
+            const depth = tNode.depth || 1;
+            const alpha = depth === 1 ? 0.35 : depth === 2 ? 0.24 : 0.16;
+            const strokeW = depth === 1 ? 1.8 : depth === 2 ? 1.3 : 0.9;
+
+            ctx.strokeStyle = isHighlighted ? "rgba(96, 165, 250, 0.9)" : `rgba(203, 213, 225, ${alpha})`;
+            ctx.lineWidth = isHighlighted ? 2.6 : strokeW;
+            if (isHighlighted) {
+              ctx.shadowColor = "#3b82f6";
+              ctx.shadowBlur = 8;
+            }
             ctx.stroke();
 
-            // Flowing particle
-            const flowT = (frameCount * 0.02) % 1;
-            const px = (1 - flowT) * (1 - flowT) * s.x + 2 * (1 - flowT) * flowT * midX + flowT * flowT * tNode.x;
-            const py = (1 - flowT) * (1 - flowT) * s.y + 2 * (1 - flowT) * flowT * midY + flowT * flowT * tNode.y;
-            ctx.beginPath();
-            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-            ctx.fillStyle = "#ffffff";
-            ctx.shadowColor = "#facc15";
-            ctx.shadowBlur = 8;
-            ctx.fill();
+            // Subtle flow particle down hierarchy
+            if (isHighlighted || depth <= 2) {
+              const flowH = ((frameCount * 0.008 + (Math.abs(s.x) % 10) * 0.1) % 1);
+              const hx = s.x + (tNode.x - s.x) * flowH;
+              const hy = s.y + (tNode.y - s.y) * flowH;
+              ctx.beginPath();
+              ctx.arc(hx, hy, depth === 1 ? 2.0 : 1.4, 0, Math.PI * 2);
+              ctx.fillStyle = isHighlighted ? "#60a5fa" : "rgba(255, 255, 255, 0.28)";
+              ctx.fill();
+            }
+
             ctx.restore();
+          });
+
+          // 2. Draw Destination Arrows (mit Pfeilen die destination folders)
+          if (showDestinationArrows) {
+            links.forEach(l => {
+              if (l.type !== "destination") return;
+              const s = nodeMap.get(l.sourceId);
+              const tNode = nodeMap.get(l.targetId);
+              if (!s || !tNode || !visNodeSet.has(s.id) || !visNodeSet.has(tNode.id)) return;
+
+              const isHighlighted = (hoveredNodeId && (hoveredNodeId === s.id || hoveredNodeId === tNode.id)) ||
+                                    (selectedNodeId && (selectedNodeId === s.id || selectedNodeId === tNode.id));
+
+              ctx.save();
+
+              // Curved Bezier connecting line
+              const curveFactor = 0.22;
+              const midX = (s.x + tNode.x) / 2 + (tNode.y - s.y) * curveFactor;
+              const midY = (s.y + tNode.y) / 2 - (tNode.x - s.x) * curveFactor;
+
+              // Animated dashed line
+              ctx.setLineDash([7, 5]);
+              ctx.lineDashOffset = -frameCount * 0.55;
+              ctx.strokeStyle = isHighlighted ? "#38bdf8" : "#fbbf24";
+              ctx.lineWidth = isHighlighted ? 3.0 : 2.0;
+              ctx.shadowColor = isHighlighted ? "#0284c7" : "#d97706";
+              ctx.shadowBlur = isHighlighted ? 14 : 7;
+
+              ctx.beginPath();
+              ctx.moveTo(s.x, s.y);
+              ctx.quadraticCurveTo(midX, midY, tNode.x, tNode.y);
+              ctx.stroke();
+
+              // PROMINENT DIRECTIONAL ARROWHEAD (▲) pointing INTO the destination folder
+              const tdx = tNode.x - midX;
+              const tdy = tNode.y - midY;
+              const tdist = Math.hypot(tdx, tdy) || 1;
+              const ux = tdx / tdist;
+              const uy = tdy / tdist;
+
+              // Tip touches outer border of destination folder
+              const tipDist = tNode.radius + 3;
+              const tipX = tNode.x - ux * tipDist;
+              const tipY = tNode.y - uy * tipDist;
+
+              const arrowLen = 14;
+              const arrowWidth = 8;
+              const baseCenterX = tipX - ux * arrowLen;
+              const baseCenterY = tipY - uy * arrowLen;
+
+              const perpX = -uy;
+              const perpY = ux;
+
+              const corner1X = baseCenterX + perpX * arrowWidth;
+              const corner1Y = baseCenterY + perpY * arrowWidth;
+              const corner2X = baseCenterX - perpX * arrowWidth;
+              const corner2Y = baseCenterY - perpY * arrowWidth;
+
+              // Chevron notch for sleek arrow
+              const notchX = tipX - ux * (arrowLen * 0.72);
+              const notchY = tipY - uy * (arrowLen * 0.72);
+
+              ctx.setLineDash([]); // solid arrowhead
+              ctx.fillStyle = isHighlighted ? "#38bdf8" : "#fbbf24";
+              ctx.strokeStyle = isHighlighted ? "#ffffff" : "#fef08a";
+              ctx.lineWidth = 1.2;
+
+              ctx.beginPath();
+              ctx.moveTo(tipX, tipY);
+              ctx.lineTo(corner1X, corner1Y);
+              ctx.lineTo(notchX, notchY);
+              ctx.lineTo(corner2X, corner2Y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+
+              // Animated Flow Particle moving along arrow curve
+              const flowT = (frameCount * 0.018) % 1;
+              const px = (1 - flowT) * (1 - flowT) * s.x + 2 * (1 - flowT) * flowT * midX + flowT * flowT * tNode.x;
+              const py = (1 - flowT) * (1 - flowT) * s.y + 2 * (1 - flowT) * flowT * midY + flowT * flowT * tNode.y;
+
+              ctx.beginPath();
+              ctx.arc(px, py, isHighlighted ? 4.5 : 3.5, 0, Math.PI * 2);
+              ctx.fillStyle = "#ffffff";
+              ctx.shadowColor = isHighlighted ? "#38bdf8" : "#fde047";
+              ctx.shadowBlur = 10;
+              ctx.fill();
+
+              // Label Pill at Midpoint
+              if (l.label) {
+                const labelT = 0.48;
+                const lx = (1 - labelT) * (1 - labelT) * s.x + 2 * (1 - labelT) * labelT * midX + labelT * labelT * tNode.x;
+                const ly = (1 - labelT) * (1 - labelT) * s.y + 2 * (1 - labelT) * labelT * midY + labelT * labelT * tNode.y;
+
+                ctx.font = isHighlighted ? "bold 10px sans-serif" : "9px sans-serif";
+                const lw = ctx.measureText(l.label).width;
+                ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+                ctx.strokeStyle = isHighlighted ? "rgba(56, 189, 248, 0.8)" : "rgba(251, 191, 36, 0.6)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.roundRect(lx - lw / 2 - 5, ly - 8, lw + 10, 16, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = isHighlighted ? "#7dd3fc" : "#fef08a";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(l.label, lx, ly);
+              }
+
+              ctx.restore();
+            });
           }
-        });
 
-        // Draw Nodes
-        const q = (searchQuery || "").trim().toLowerCase();
+          // 3. Draw Nodes
+          const q = (searchQuery || "").trim().toLowerCase();
 
-        visibleNodes.forEach(n => {
-          const isSelected = selectedNodeId === n.id;
-          const isHovered = hoveredNodeId === n.id;
-          const isFolded = foldedIds.has(n.id) && n.descendantCount > 0;
-          const matchesQ = q && (n.name.toLowerCase().includes(q) || n.path.toLowerCase().includes(q));
+          visibleNodes.forEach(n => {
+            const isSelected = selectedNodeId === n.id;
+            const isHovered = hoveredNodeId === n.id;
+            const isFolded = foldedIds.has(n.id) && n.descendantCount > 0;
+            const matchesQ = q && (n.name.toLowerCase().includes(q) || n.path.toLowerCase().includes(q));
 
-          // Color based on user rule:
-          // green: approved
-          // yellow: otherwise (proposed)
-          // grey: not included (excluded)
-          const nodeColor = n.state === "approved" ? "#22c55e" :
-                            n.state === "excluded" ? "#6b7280" : "#facc15";
+            const isTarget = n.isDestinationFolder || n.hasIncomingDestination;
 
-          ctx.save();
+            // Color based on user rule:
+            // green: approved
+            // yellow: otherwise (proposed)
+            // grey: not included (excluded)
+            const nodeColor = isTarget ? "#f59e0b" :
+                              n.state === "approved" ? "#22c55e" :
+                              n.state === "excluded" ? "#6b7280" : "#facc15";
 
-          // Proposed sync beacon ring (pulsating)
-          if (n.hasProposedSync) {
-            const pulse = (Math.sin(frameCount * 0.06) + 1) * 0.5;
-            ctx.beginPath();
-            ctx.arc(n.x, n.y, n.radius + 4 + pulse * 4, 0, Math.PI * 2);
-            ctx.strokeStyle = n.state === "approved" ? "rgba(34, 197, 94, 0.4)" : "rgba(250, 204, 21, 0.5)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          }
-
-          // Node Glow
-          ctx.shadowColor = isHovered || isSelected ? "#ffffff" : nodeColor;
-          ctx.shadowBlur = isHovered ? 18 : isSelected ? 14 : 8;
-
-          // Node Circle Fill
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-          const grad = ctx.createRadialGradient(n.x - n.radius * 0.3, n.y - n.radius * 0.3, 1, n.x, n.y, n.radius);
-          grad.addColorStop(0, isHovered ? "#ffffff" : (n.state === "excluded" ? "#4b5563" : nodeColor));
-          grad.addColorStop(1, n.state === "approved" ? "#15803d" : n.state === "excluded" ? "#1f2937" : "#b45309");
-          ctx.fillStyle = grad;
-          ctx.fill();
-
-          // Node Border
-          ctx.strokeStyle = isHovered ? "#ffffff" : isSelected ? "#60a5fa" : (n.state === "approved" ? "#4ade80" : n.state === "excluded" ? "#9ca3af" : "#fde047");
-          ctx.lineWidth = isHovered ? 3 : 1.8;
-          ctx.stroke();
-
-          // Folded Half-Disc / Ring Indicator (like folders2graph)
-          if (isFolded) {
             ctx.save();
-            ctx.beginPath();
-            ctx.arc(n.x, n.y, n.radius + 3, 0, Math.PI * 2);
-            ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = "#60a5fa";
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
 
-            // Folded badge "+N"
-            ctx.fillStyle = "#2563eb";
+            // Destination Folder / Proposed sync beacon ring (pulsating)
+            if (isTarget || n.hasProposedSync) {
+              const pulse = (Math.sin(frameCount * 0.07) + 1) * 0.5;
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.radius + 4 + pulse * 4, 0, Math.PI * 2);
+              ctx.strokeStyle = isTarget ? "rgba(245, 158, 11, 0.6)" : (n.state === "approved" ? "rgba(34, 197, 94, 0.4)" : "rgba(250, 204, 21, 0.5)");
+              ctx.lineWidth = isTarget ? 2.2 : 1.8;
+              ctx.stroke();
+            }
+
+            // Concentric target ring for destination folder
+            if (isTarget) {
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.radius + 2, 0, Math.PI * 2);
+              ctx.strokeStyle = "#facc15";
+              ctx.setLineDash([3, 2]);
+              ctx.lineWidth = 1.4;
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+
+            // Node Glow
+            ctx.shadowColor = isHovered || isSelected ? "#ffffff" : isTarget ? "#f59e0b" : nodeColor;
+            ctx.shadowBlur = isHovered ? 18 : isSelected ? 14 : isTarget ? 12 : 8;
+
+            // Node Circle Fill
             ctx.beginPath();
-            ctx.roundRect(n.x + n.radius - 2, n.y - n.radius - 8, 26, 14, 4);
+            ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+            const grad = ctx.createRadialGradient(n.x - n.radius * 0.3, n.y - n.radius * 0.3, 1, n.x, n.y, n.radius);
+            if (isTarget) {
+              grad.addColorStop(0, isHovered ? "#ffffff" : "#fef08a");
+              grad.addColorStop(1, "#b45309");
+            } else {
+              grad.addColorStop(0, isHovered ? "#ffffff" : (n.state === "excluded" ? "#4b5563" : nodeColor));
+              grad.addColorStop(1, n.state === "approved" ? "#15803d" : n.state === "excluded" ? "#1f2937" : "#b45309");
+            }
+            ctx.fillStyle = grad;
             ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 9px sans-serif";
+
+            // Node Border
+            ctx.strokeStyle = isHovered ? "#ffffff" : isSelected ? "#60a5fa" : isTarget ? "#fde047" : (n.state === "approved" ? "#4ade80" : n.state === "excluded" ? "#9ca3af" : "#fde047");
+            ctx.lineWidth = isHovered ? 3 : isTarget ? 2.4 : 1.8;
+            ctx.stroke();
+
+            // Folded Indicator (+N badge)
+            if (isFolded) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.radius + 3, 0, Math.PI * 2);
+              ctx.setLineDash([3, 3]);
+              ctx.strokeStyle = "#60a5fa";
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              ctx.restore();
+
+              ctx.fillStyle = "#2563eb";
+              ctx.beginPath();
+              ctx.roundRect(n.x + n.radius - 2, n.y - n.radius - 8, 26, 14, 4);
+              ctx.fill();
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 9px sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(`+${n.descendantCount}`, n.x + n.radius + 11, n.y - n.radius - 1);
+            }
+
+            // Hierarchy Level Badge above Node
+            const levelLabel = isTarget ? "🎯 Ziel" :
+                               n.depth === 0 ? "L0: Mount" :
+                               `L${n.depth}`;
+            ctx.font = "bold 8px sans-serif";
+            const levelW = ctx.measureText(levelLabel).width;
+            const levelY = n.y - n.radius - 10;
+            ctx.fillStyle = isTarget ? "rgba(180, 83, 9, 0.85)" :
+                            n.depth === 0 ? "rgba(30, 58, 138, 0.85)" : "rgba(30, 41, 59, 0.85)";
+            ctx.strokeStyle = isTarget ? "#f59e0b" : n.depth === 0 ? "#60a5fa" : "rgba(255, 255, 255, 0.15)";
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.roundRect(n.x - levelW / 2 - 3, levelY - 5, levelW + 6, 11, 3);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = isTarget ? "#fef08a" : n.depth === 0 ? "#93c5fd" : "#cbd5e1";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(`+${n.descendantCount}`, n.x + n.radius + 11, n.y - n.radius - 1);
-          }
+            ctx.fillText(levelLabel, n.x, levelY);
 
-          // Inner Icon
-          let icon = n.node_type === "mount" ? "💽" :
-                     n.node_type === "file" ? "📄" : "📁";
-          ctx.font = `${Math.round(n.radius * 0.95)}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(icon, n.x, n.y);
+            // Inner Icon
+            let icon = isTarget ? "🎯" :
+                       n.node_type === "mount" ? "💽" :
+                       n.node_type === "file" ? "📄" : "📁";
+            ctx.font = `${Math.round(n.radius * 0.92)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(icon, n.x, n.y);
 
-          // Name Label below node
-          ctx.font = matchesQ ? "bold 12px sans-serif" : "11px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "top";
-          const labelY = n.y + n.radius + 4;
-          const textW = ctx.measureText(n.name).width;
+            // Name Label below node
+            ctx.font = matchesQ ? "bold 12px sans-serif" : "11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+            const labelY = n.y + n.radius + 4;
+            const textW = ctx.measureText(n.name).width;
 
-          // Label backdrop pill
-          ctx.fillStyle = matchesQ ? "rgba(234, 179, 8, 0.3)" : isHovered ? "rgba(15, 23, 42, 0.95)" : "rgba(15, 23, 42, 0.75)";
-          ctx.beginPath();
-          ctx.roundRect(n.x - textW / 2 - 4, labelY - 1, textW + 8, 16, 4);
-          ctx.fill();
+            // Label backdrop pill
+            ctx.fillStyle = matchesQ ? "rgba(234, 179, 8, 0.3)" : isHovered ? "rgba(15, 23, 42, 0.95)" : "rgba(15, 23, 42, 0.78)";
+            ctx.beginPath();
+            ctx.roundRect(n.x - textW / 2 - 4, labelY - 1, textW + 8, 16, 4);
+            ctx.fill();
 
-          ctx.fillStyle = matchesQ ? "#fde047" : isHovered ? "#ffffff" : "#cbd5e1";
-          ctx.fillText(n.name, n.x, labelY + 1);
+            ctx.fillStyle = matchesQ ? "#fde047" : isHovered ? "#ffffff" : isTarget ? "#fde047" : "#cbd5e1";
+            ctx.fillText(n.name, n.x, labelY + 1);
+
+            ctx.restore();
+          });
 
           ctx.restore();
-        });
-
-        ctx.restore();
         } catch (frameErr) {
           console.warn("Folders2GraphView render error:", frameErr);
         }
@@ -1241,7 +1620,7 @@
 
       animId = requestAnimationFrame(renderFrame);
       return () => cancelAnimationFrame(animId);
-    }, [isPaused, isNodeVisible, foldedIds, hoveredNodeId, selectedNodeId, searchQuery]);
+    }, [isPaused, isNodeVisible, foldedIds, hoveredNodeId, selectedNodeId, searchQuery, showDestinationArrows, maxHierarchyLevel]);
 
     // Canvas Mouse Interaction Handlers
     const getNodeAtScreen = useCallback((clientX, clientY) => {
@@ -1323,7 +1702,6 @@
         if (hit) {
           setSelectedNodeId(hit.id);
           if (hit.descendantCount > 0) {
-            // Fold / Unfold on click!
             toggleFold(hit.id, e.shiftKey);
           }
         }
@@ -1383,6 +1761,18 @@
       }
     }, [isNodeVisible]);
 
+    // Automatically fit view on initial mount and when hierarchy level filter changes
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        handleAutoFit();
+      }, 350);
+      return () => clearTimeout(timer);
+    }, [handleAutoFit, maxHierarchyLevel]);
+
+    const destArrowCount = useMemo(() => {
+      return graphData.links.filter(l => l.type === "destination").length;
+    }, [graphData.links]);
+
     return h("div", {
       className: "auto-org-f2g-container",
       ref: containerRef,
@@ -1391,16 +1781,16 @@
         setHoveredNodeId(null);
       }
     },
-      // HUD Overlay with Tools
+      // HUD Overlay with Multi-level Hierarchy & Destination Arrow Controls
       h("div", { className: "auto-org-f2g-hud" },
         h("div", { className: "auto-org-f2g-badge" },
           h("span", { style: { fontSize: "1.1rem" } }, "🕸️"),
-          h("strong", null, "Obsidian folders2graph Struktur-Graph"),
-          h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, "• Force Physics & Faltung")
+          h("strong", null, "Folders2Graph: Hierarchie- & Zielordner-Graph"),
+          h("span", { style: { color: "#94a3b8", fontSize: "0.72rem" } }, `• ${graphData.nodes.length} Ordner • ${destArrowCount} Ziel-Pfeile`)
         ),
-        h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap" } },
-          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Zentrieren und einpassen", "aria-label": "Ansicht zentrieren und einpassen" }, "🎯 Auto-Fit"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Ordner ausklappen", "aria-label": "Alle Ordner ausklappen" }, "[+] Alles"),
+        h("div", { style: { display: "flex", gap: "0.35rem", pointerEvents: "auto", flexWrap: "wrap", alignItems: "center" } },
+          h("button", { type: "button", className: "auto-org-pill-btn fit", onClick: handleAutoFit, title: "Ansicht zentrieren und einpassen", "aria-label": "Ansicht zentrieren und einpassen" }, "🎯 Auto-Fit"),
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFoldedIds(new Set()), title: "Alle Hierarchieebenen ausklappen", "aria-label": "Alle Hierarchieebenen ausklappen" }, "[+] Alles"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => {
             try {
               const map = simRef.current && simRef.current.nodeMap;
@@ -1411,20 +1801,45 @@
             } catch (e) {
               console.warn("Nur Mounts fold error:", e);
             }
-          }, title: "Nur Hauptlaufwerke zeigen", "aria-label": "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+          }, title: "Nur Hauptlaufwerke (Ebene 0) zeigen", "aria-label": "Nur Hauptlaufwerke zeigen" }, "[-] Nur Mounts"),
+          h("button", {
+            type: "button",
+            className: `auto-org-pill-btn target-btn ${showDestinationArrows ? "active" : ""}`,
+            onClick: () => setShowDestinationArrows(v => !v),
+            title: "Pfeile zu den Ziel-Ordnern (Destinations) ein- oder ausblenden",
+            "aria-label": "Ziel-Pfeile umschalten"
+          }, showDestinationArrows ? "🎯 Ziel-Pfeile: AN" : "🎯 Ziel-Pfeile: AUS"),
+          h("div", { style: { display: "inline-flex", gap: "0.2rem", alignItems: "center", marginLeft: "0.2rem" } },
+            h("span", { style: { fontSize: "0.7rem", color: "#94a3b8" } }, "Ebene:"),
+            ["all", "1", "2", "3"].map(lvl => h("button", {
+              key: lvl,
+              type: "button",
+              className: `auto-org-pill-btn ${maxHierarchyLevel === lvl ? "active" : ""}`,
+              onClick: () => setMaxHierarchyLevel(lvl),
+              title: lvl === "all" ? "Alle Hierarchieebenen anzeigen" : `Bis Hierarchieebene ${lvl} anzeigen`,
+              "aria-label": lvl === "all" ? "Alle Hierarchieebenen anzeigen" : `Bis Hierarchieebene ${lvl} anzeigen`
+            }, lvl === "all" ? "Alle" : `L${lvl}`))
+          ),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset")
-
         ),
-        // Color Legend
-        h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem" } },
+        // Color & Arrow Legend
+        h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem", flexWrap: "wrap", alignItems: "center" } },
           h("span", { className: "auto-org-rollover-badge-state approved", style: { fontSize: "0.68rem" } }, "🟢 Freigegeben"),
           h("span", { className: "auto-org-rollover-badge-state proposed", style: { fontSize: "0.68rem" } }, "🟡 Vorschlag"),
           h("span", { className: "auto-org-rollover-badge-state excluded", style: { fontSize: "0.68rem" } }, "⚪ Nicht einbezogen"),
-          h("span", { style: { color: "#60a5fa", fontSize: "0.68rem", display: "flex", alignItems: "center", gap: "0.2rem" } },
+          h("span", { style: { color: "#facc15", fontSize: "0.68rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" } },
+            h("span", null, "🎯"),
+            h("strong", null, "Ziel-Ordner")
+          ),
+          h("span", { style: { color: "#fbbf24", fontSize: "0.68rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" } },
+            h("span", null, "➔"),
+            h("span", null, "Reorganisations-Pfeil")
+          ),
+          h("span", { style: { color: "#60a5fa", fontSize: "0.68rem", display: "inline-flex", alignItems: "center", gap: "0.2rem" } },
             h("span", null, "💡"),
-            h("span", null, "Rechtsklick zum Ändern")
+            h("span", null, "Klick: Falten • Rechtsklick: Menü")
           )
         )
       ),

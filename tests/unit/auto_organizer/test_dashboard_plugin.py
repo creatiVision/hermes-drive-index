@@ -456,6 +456,12 @@ def test_filesystem_tree_full_endpoint():
     assert "syncthing" in first_mount
     assert "backup" in first_mount
 
+    # Verify destination rules for Folders2Graph
+    assert "organization_rules" in data
+    assert "rules_src" in data
+    assert "rules_tgt" in data
+    assert isinstance(data["organization_rules"], list)
+
 
 def test_filesystem_tree_browse_endpoint():
     from unittest.mock import MagicMock

@@ -547,7 +547,7 @@ def collect_filesystem_tree(max_depth: int = 2) -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect complete system filesystem tree and synchronization status.")
-    parser.add_argument("--depth", type=int, default=2, help="Directory scan recursion depth (default: 2)")
+    parser.add_argument("--depth", type=int, default=3, help="Directory scan recursion depth (default: 3)")
     parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT_PATH), help="Output JSON path")
     parser.add_argument("--quiet", action="store_true", help="Suppress logging")
     args = parser.parse_args()

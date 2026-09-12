@@ -4148,7 +4148,7 @@ async def get_full_filesystem_tree() -> Dict[str, Any]:
     if not tree_data:
         try:
             from scripts.collect_system_filesystem_tree import collect_filesystem_tree
-            tree_data = collect_filesystem_tree(max_depth=2)
+            tree_data = collect_filesystem_tree(max_depth=3)
         except Exception as exc:
             logger.warning("Direct collection fallback failed: %s", exc)
             tree_data = {"mounts": [], "scanned_at": datetime.now(timezone.utc).isoformat()}
@@ -4197,6 +4197,20 @@ async def get_full_filesystem_tree() -> Dict[str, Any]:
         },
         "node_states": _NODE_SWITCH_STATES,
         "mounts": tree_data.get("mounts", []),
+        "rules_src": rules_src,
+        "rules_tgt": rules_tgt,
+        "organization_rules": [
+            {
+                "rule_id": r.get("rule_id"),
+                "name": r.get("name"),
+                "description": r.get("description"),
+                "pattern": r.get("pattern"),
+                "pending_moves": r.get("pending_moves", 0),
+                "target_template": r.get("target_template"),
+                "match_path": r.get("match_path"),
+            }
+            for r in rules_src
+        ],
     }
 
 
