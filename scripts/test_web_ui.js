@@ -173,7 +173,7 @@ async function run() {
   // Switch back to tree view or trigger on tree line
   await send('Runtime.evaluate', {
     expression: `(() => {
-      const treeTab = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Dateibaum') || b.innerText.includes('Tree'));
+      const treeTab = Array.from(document.querySelectorAll('.auto-org-view-switcher-btn')).find(b => b.innerText.includes('Dateibaum'));
       if (treeTab) treeTab.click();
       return true;
     })()`
@@ -182,7 +182,7 @@ async function run() {
 
   await send('Runtime.evaluate', {
     expression: `(() => {
-      const row = document.querySelector('.auto-org-fs-row') || document.querySelector('.auto-org-tree-branch-line');
+      const row = document.querySelector('.auto-org-fs-tree-row') || document.querySelector('.auto-org-tree-branch-line');
       if (row) {
         const rect = row.getBoundingClientRect();
         const ev = new MouseEvent('contextmenu', {

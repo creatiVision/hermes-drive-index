@@ -4495,8 +4495,24 @@ async def export_obsidian_extended_graph(req: ObsidianExportRequest) -> Dict[str
     formatted for Obsidian's Extended Graph plugin.
     """
     vault = req.vault_path or "/media/xchg/ai-knowledge-base"
+    c_vault = docker_mount_service.translate_to_container_path(vault) or vault
     try:
-        index_path = subtree_profiler_service.export_to_obsidian(vault)
+        if not subtree_profiler_service._current_profile:
+            default_path = "/home/mb/Downloads"
+            if docker_mount_service.is_in_container():
+                default_path = docker_mount_service.translate_to_container_path("/home/mb/Downloads") or "/opt/data/Downloads"
+                if not Path(default_path).exists():
+                    status = docker_mount_service.get_mount_status()
+                    for m in status.mounts:
+                        if Path(m.container_path).exists():
+                            default_path = m.container_path
+                            break
+            try:
+                subtree_profiler_service.scan_and_profile(default_path, node_id="laptop", max_depth=2)
+            except Exception as scan_err:
+                logger.warning("Auto-profiling fallback failed: %s", scan_err)
+
+        index_path = subtree_profiler_service.export_to_obsidian(c_vault)
         return {
             "ok": True,
             "vault_path": vault,

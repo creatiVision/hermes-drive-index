@@ -315,10 +315,20 @@
 
   async function apiCall(endpoint, options = {}) {
     const url = API_BASE + endpoint;
-    const fetchFn = SDK.authedFetch || window.fetch;
-    const res = await fetchFn(url, Object.assign({
-      headers: { "Content-Type": "application/json" }
-    }, options));
+    const sdk = window.__HERMES_PLUGIN_SDK__ || (typeof SDK !== "undefined" ? SDK : null);
+    if (sdk && typeof sdk.fetchJSON === "function") {
+      const mergedHeaders = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {});
+      return await sdk.fetchJSON(url, Object.assign({}, options, { headers: mergedHeaders }));
+    }
+    const token = window.__HERMES_SESSION_TOKEN__;
+    const baseHeaders = { "Content-Type": "application/json" };
+    if (token) {
+      baseHeaders["X-Hermes-Session-Token"] = token;
+      baseHeaders["Authorization"] = "Bearer " + token;
+    }
+    const mergedHeaders = Object.assign(baseHeaders, (options && options.headers) || {});
+    const fetchFn = (sdk && sdk.authedFetch) || window.fetch;
+    const res = await fetchFn(url, Object.assign({}, options, { headers: mergedHeaders }));
     if (!res.ok) {
       const err = await res.text();
       throw new Error(`API Error (${res.status}): ${err}`);
@@ -764,6 +774,19 @@
     const dragNodeRef = useRef(null);
     const dragStartRef = useRef({ x: 0, y: 0 });
     const hasDraggedRef = useRef(false);
+
+    // Dynamic Physics & Gravity Simulation Parameters
+    const DEFAULT_PHYSICS = {
+      gravity: 0.0025,
+      repulsion: 1400,
+      linkDistance: 1.0,
+      linkStrength: 0.045,
+      damping: 0.86
+    };
+    const [physicsParams, setPhysicsParams] = useState(DEFAULT_PHYSICS);
+    const [showPhysicsPanel, setShowPhysicsPanel] = useState(false);
+    const physicsRef = useRef(physicsParams);
+    physicsRef.current = physicsParams;
 
     // Build graph hierarchy & destination targets from fsTree
     const graphData = useMemo(() => {
@@ -1237,9 +1260,12 @@
           // Physics Simulation Step
           if (!isPaused) {
             frameCount++;
-            const damp = 0.86;
-            const kSpring = 0.045;
-            const centerG = 0.0025;
+            const p = physicsRef.current || DEFAULT_PHYSICS;
+            const damp = p.damping;
+            const kSpring = p.linkStrength;
+            const centerG = p.gravity;
+            const repForce = p.repulsion;
+            const distMult = p.linkDistance;
 
             // Center gravity
             visibleNodes.forEach(n => {
@@ -1250,6 +1276,7 @@
 
             // Node-to-node repulsion
             const vLen = visibleNodes.length;
+            const repThreshold = 340 * Math.max(0.6, distMult * 0.8);
             for (let i = 0; i < vLen; i++) {
               const n1 = visibleNodes[i];
               for (let j = i + 1; j < vLen; j++) {
@@ -1257,8 +1284,8 @@
                 const dx = n2.x - n1.x;
                 const dy = n2.y - n1.y;
                 const dist = Math.hypot(dx, dy) || 1;
-                if (dist < 320) {
-                  const rep = 1400 / (dist * dist);
+                if (dist < repThreshold) {
+                  const rep = repForce / (dist * dist);
                   const rx = (dx / dist) * rep;
                   const ry = (dy / dist) * rep;
                   if (!dragNodeRef.current || dragNodeRef.current.id !== n1.id) {
@@ -1283,7 +1310,7 @@
                 const dist = Math.hypot(dx, dy) || 1;
 
                 if (l.type === "hierarchy") {
-                  const ideal = (s.radius + tNode.radius + Math.max(38, 70 - (tNode.depth || 1) * 8));
+                  const ideal = (s.radius + tNode.radius + Math.max(38, 70 - (tNode.depth || 1) * 8)) * distMult;
                   const force = (dist - ideal) * kSpring;
                   const fx = (dx / dist) * force;
                   const fy = (dy / dist) * force;
@@ -1297,8 +1324,8 @@
                   }
                 } else if (l.type === "destination") {
                   // Gentle spring pulling destination folder towards source
-                  const ideal = 170;
-                  const force = (dist - ideal) * 0.012;
+                  const ideal = 170 * distMult;
+                  const force = (dist - ideal) * (kSpring * 0.3);
                   const fx = (dx / dist) * force;
                   const fy = (dy / dist) * force;
                   if (!dragNodeRef.current || dragNodeRef.current.id !== s.id) {
@@ -1822,7 +1849,126 @@
           ),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
           h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
-          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset")
+          h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform({ scale: 1, panX: 0, panY: 0 }), title: "Standardansicht", "aria-label": "Ansicht zurücksetzen" }, "↺ Reset"),
+          h("button", {
+            type: "button",
+            className: `auto-org-pill-btn ${showPhysicsPanel ? "active" : ""}`,
+            onClick: () => setShowPhysicsPanel(v => !v),
+            title: "Physik-Parameter für Gravitation, Abstoßung und Federkraft anpassen",
+            "aria-label": "Physik-Parameter anpassen"
+          }, "⚙️ Physik" + (showPhysicsPanel ? " ▲" : " ▼"))
+        ),
+        showPhysicsPanel && h("div", {
+          className: "auto-org-f2g-physics-panel",
+          style: {
+            position: "absolute",
+            top: "84px",
+            left: "1rem",
+            background: "rgba(15, 23, 42, 0.96)",
+            backdropFilter: "blur(14px)",
+            border: "1px solid rgba(56, 189, 248, 0.4)",
+            borderRadius: "0.5rem",
+            padding: "0.85rem 1rem",
+            width: "300px",
+            boxShadow: "0 12px 32px -4px rgba(0, 0, 0, 0.75)",
+            zIndex: 50,
+            pointerEvents: "auto",
+            color: "#e2e8f0",
+            fontSize: "0.78rem"
+          }
+        },
+          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem", borderBottom: "1px solid #334155", paddingBottom: "0.4rem" } },
+            h("strong", { style: { color: "#38bdf8", display: "flex", alignItems: "center", gap: "0.3rem" } },
+              h("span", null, "⚙️"), "Graph-Physik & Kräfte"
+            ),
+            h("button", {
+              type: "button",
+              className: "auto-org-pill-btn",
+              style: { padding: "0.15rem 0.45rem", fontSize: "0.7rem" },
+              onClick: () => setPhysicsParams(DEFAULT_PHYSICS),
+              title: "Auf Standardwerte zurücksetzen"
+            }, "↺ Standard")
+          ),
+          // Gravity Slider
+          h("div", { style: { marginBottom: "0.55rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" } },
+              h("span", { title: "Zentrum-Gravitation: zieht alle Ordner zur Bildmitte" }, "Gravitation (Zentrum):"),
+              h("span", { style: { fontFamily: "monospace", color: "#38bdf8", fontWeight: 600 } }, physicsParams.gravity.toFixed(4))
+            ),
+            h("input", {
+              type: "range",
+              min: "0.0005",
+              max: "0.0080",
+              step: "0.0005",
+              value: physicsParams.gravity,
+              onChange: (e) => setPhysicsParams(p => ({ ...p, gravity: parseFloat(e.target.value) })),
+              style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
+            })
+          ),
+          // Repulsion Slider
+          h("div", { style: { marginBottom: "0.55rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" } },
+              h("span", { title: "Knoten-Abstoßung: verhindert Überlappung benachbarter Ordner" }, "Abstoßung (Repulsion):"),
+              h("span", { style: { fontFamily: "monospace", color: "#38bdf8", fontWeight: 600 } }, Math.round(physicsParams.repulsion))
+            ),
+            h("input", {
+              type: "range",
+              min: "300",
+              max: "4000",
+              step: "100",
+              value: physicsParams.repulsion,
+              onChange: (e) => setPhysicsParams(p => ({ ...p, repulsion: parseFloat(e.target.value) })),
+              style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
+            })
+          ),
+          // Link Distance Slider
+          h("div", { style: { marginBottom: "0.55rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" } },
+              h("span", { title: "Abstand zwischen Eltern- und Unterordnern" }, "Kanten-Länge (Abstand):"),
+              h("span", { style: { fontFamily: "monospace", color: "#38bdf8", fontWeight: 600 } }, `${physicsParams.linkDistance.toFixed(1)}x`)
+            ),
+            h("input", {
+              type: "range",
+              min: "0.4",
+              max: "2.5",
+              step: "0.1",
+              value: physicsParams.linkDistance,
+              onChange: (e) => setPhysicsParams(p => ({ ...p, linkDistance: parseFloat(e.target.value) })),
+              style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
+            })
+          ),
+          // Link Strength / Stiffness Slider
+          h("div", { style: { marginBottom: "0.55rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" } },
+              h("span", { title: "Feder-Härte: Zugkraft zwischen verknüpften Ordnern" }, "Feder-Härte (Stiffness):"),
+              h("span", { style: { fontFamily: "monospace", color: "#38bdf8", fontWeight: 600 } }, physicsParams.linkStrength.toFixed(3))
+            ),
+            h("input", {
+              type: "range",
+              min: "0.010",
+              max: "0.100",
+              step: "0.005",
+              value: physicsParams.linkStrength,
+              onChange: (e) => setPhysicsParams(p => ({ ...p, linkStrength: parseFloat(e.target.value) })),
+              style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
+            })
+          ),
+          // Damping Slider
+          h("div", { style: { marginBottom: "0.25rem" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "0.2rem" } },
+              h("span", { title: "Dämpfung / Reibung: Trägheit der Knotenbewegung" }, "Dämpfung (Trägheit):"),
+              h("span", { style: { fontFamily: "monospace", color: "#38bdf8", fontWeight: 600 } }, physicsParams.damping.toFixed(2))
+            ),
+            h("input", {
+              type: "range",
+              min: "0.65",
+              max: "0.95",
+              step: "0.01",
+              value: physicsParams.damping,
+              onChange: (e) => setPhysicsParams(p => ({ ...p, damping: parseFloat(e.target.value) })),
+              style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
+            })
+          )
         ),
         // Color & Arrow Legend
         h("div", { style: { display: "flex", gap: "0.5rem", pointerEvents: "auto", marginTop: "0.2rem", flexWrap: "wrap", alignItems: "center" } },
@@ -4218,7 +4364,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               "💡 Tipp: Klicken Sie auf einen Knoten zum Auf-/Zuklappen oder 'Auto-Fit Screen' zum Einpassen auf 1 Bildschirm."
           )
         )
-      )
+      ),
+      contextMenu && h(FloatingContextMenu, {
+        x: contextMenu.x,
+        y: contextMenu.y,
+        node: contextMenu.node,
+        currentState: contextMenu.currentState,
+        onClose: () => setContextMenu(null),
+        onSelectState: (st) => handleSwitchNodeState(contextMenu.node, st)
+      }),
+      rollover && h(SyncRolloverTooltip, {
+        x: rollover.x,
+        y: rollover.y,
+        node: rollover.node,
+        nodeState: rollover.nodeState
+      })
     );
   }
 
@@ -10123,8 +10283,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                               className: "auto-org-btn auto-org-btn-outline",
                               style: { fontSize: "0.7rem", padding: "0.2rem 0.5rem" },
                               onClick: () => {
-                                setScanPath(m.mounted_on);
+                                setProfilerTargetInput(m.mounted_on);
+                                setProfilerNodeId("debian1");
                                 setActiveModal(null);
+                                setStep(1);
                                 setNotice(`Pfad '${m.mounted_on}' für Subtree-Analyse übernommen.`);
                               }
                             }, "🔍 Im Profiler laden")
