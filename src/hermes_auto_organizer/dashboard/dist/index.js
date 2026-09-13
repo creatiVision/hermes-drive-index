@@ -4437,12 +4437,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
   // Segmented Switch Button: Overlaying "Freigeben" (Green) and "Ausschließen" (Red)
   function OverlaySwitchButton({ status = "proposed", onApprove, onExclude, onReset, size = "md", disabled = false }) {
     // status: "approved" | "excluded" | "proposed"
+    const approveTitle = status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)";
+    const excludeTitle = status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)";
+
     return h("div", { className: `auto-org-overlay-switch ${size === "sm" ? "sm" : ""}` },
       // Left: Freigeben (Green)
       h("button", {
         type: "button",
         className: `auto-org-switch-segment ${status === "approved" ? "active-approve" : ""}`,
-        title: status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)",
+        title: approveTitle,
+        "aria-label": approveTitle,
         disabled: disabled,
         onClick: (e) => {
           e.stopPropagation();
@@ -4461,7 +4465,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       h("button", {
         type: "button",
         className: `auto-org-switch-segment ${status === "excluded" ? "active-exclude" : ""}`,
-        title: status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)",
+        title: excludeTitle,
+        "aria-label": excludeTitle,
         disabled: disabled,
         onClick: (e) => {
           e.stopPropagation();
