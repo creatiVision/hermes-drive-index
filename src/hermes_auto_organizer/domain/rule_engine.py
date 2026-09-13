@@ -12,12 +12,12 @@ See LICENSE in the repository root for license information.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import fnmatch
+import os
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-import re
-from typing import Any, List, Optional
+from typing import Any
 
 from hermes_auto_organizer.domain.models import FileNode
 
@@ -34,8 +34,8 @@ class RuleConditionItem:
 def evaluate_single_condition(
     cond: dict[str, Any] | RuleConditionItem,
     node: FileNode,
-    extraction_text: Optional[str] = None,
-    now: Optional[datetime] = None,
+    extraction_text: str | None = None,
+    now: datetime | None = None,
 ) -> bool:
     """Evaluates a single condition against a FileNode and optional extracted text."""
     if isinstance(cond, RuleConditionItem):
@@ -57,19 +57,21 @@ def evaluate_single_condition(
         if op == "starts_with":
             return src_path.startswith(folder_str) or rel_path.startswith(folder_str)
         elif op == "equals":
-            parent_dir = str(Path(src_path).parent)
-            return parent_dir == folder_str or str(Path(rel_path).parent) == folder_str
+            # Fast parent folder check without Path object allocation overhead
+            parent_dir = os.path.dirname(src_path)
+            rel_parent = os.path.dirname(rel_path)
+            return parent_dir == folder_str or rel_parent == folder_str
         elif op == "contains":
             return folder_str in src_path or folder_str in rel_path
 
     # 2. Timeframe / Age criteria
     elif field_type == "timeframe":
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
         # Ensure node.mtime is timezone-aware
         node_mtime = node.mtime
         if node_mtime.tzinfo is None:
-            node_mtime = node_mtime.replace(tzinfo=timezone.utc)
+            node_mtime = node_mtime.replace(tzinfo=UTC)
         diff_days = (now - node_mtime).total_seconds() / 86400.0
         try:
             target_days = float(val)
@@ -86,14 +88,17 @@ def evaluate_single_condition(
         kw = val.strip().lower()
         if not kw:
             return True
-        match_name = kw in node.file_name.lower()
-        match_content = bool(extraction_text and (kw in extraction_text.lower()))
+        # Performance optimization: evaluation of extraction_text.lower() is delayed lazily
+        # to avoid scanning potentially large extracted documents when scope is 'filename'
+        # or when matching scope is 'both' and filename match already succeeded.
         if scope == "filename":
-            return match_name
+            return kw in node.file_name.lower()
         elif scope == "content":
-            return match_content
+            return bool(extraction_text and (kw in extraction_text.lower()))
         else:  # both
-            return match_name or match_content
+            if kw in node.file_name.lower():
+                return True
+            return bool(extraction_text and (kw in extraction_text.lower()))
 
     # 4. File extension criteria
     elif field_type == "extension":
@@ -122,9 +127,9 @@ def evaluate_single_condition(
 def evaluate_modular_rule(
     condition_json: dict[str, Any],
     node: FileNode,
-    extraction_text: Optional[str] = None,
+    extraction_text: str | None = None,
     source_pattern: str = "*",
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> bool:
     """
     Evaluates modular rule conditions.
@@ -138,7 +143,7 @@ def evaluate_modular_rule(
 
     # Check legacy 'extensions' field if present
     if "extensions" in condition_json:
-        allowed_exts = [e.lower().lstrip(".") for e in condition_json["extensions"]]
+        allowed_exts = {e.lower().lstrip(".") for e in condition_json["extensions"]}
         node_ext = (node.file_extension or Path(node.file_name).suffix).lower().lstrip(".")
         if node_ext not in allowed_exts:
             return False
@@ -150,18 +155,13 @@ def evaluate_modular_rule(
 
     match_mode = str(condition_json.get("match_mode", "all")).lower()
 
-    results = [
-        evaluate_single_condition(c, node, extraction_text=extraction_text, now=now)
-        for c in conditions
-    ]
-
-    if not results:
-        return True
-
+    # Performance optimization: use lazy generator expressions to short-circuit condition
+    # evaluations. Stops processing early on first failure (all/AND) or first match (any/OR),
+    # avoiding unnecessary single condition evaluations (e.g. expensive text searches).
     if match_mode == "any":
-        return any(results)
+        return any(evaluate_single_condition(c, node, extraction_text=extraction_text, now=now) for c in conditions)
     else:  # "all"
-        return all(results)
+        return all(evaluate_single_condition(c, node, extraction_text=extraction_text, now=now) for c in conditions)
 
 
 def resolve_destination_path(template: str, node: FileNode) -> str:

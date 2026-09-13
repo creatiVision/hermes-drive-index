@@ -119,6 +119,37 @@ def test_modular_rule_and_or_modes():
     assert evaluate_modular_rule(rule_any, node) is True
 
 
+def test_modular_rule_empty_conditions():
+    node = _make_node(file_name="test.txt")
+    assert evaluate_modular_rule({"conditions": [], "match_mode": "any"}, node) is True
+    assert evaluate_modular_rule({"conditions": [], "match_mode": "all"}, node) is True
+    assert evaluate_modular_rule({}, node) is True
+
+
+def test_modular_rule_short_circuit_evaluation():
+    node = _make_node(file_name="test.txt", physical_path="/tmp/test.txt")
+
+    # In "all" (AND) mode, when condition 1 fails, condition 2 (with bad field/value) is never evaluated.
+    rule_all_short_circuit = {
+        "match_mode": "all",
+        "conditions": [
+            {"field": "extension", "operator": "is_one_of", "value": "pdf"},
+            {"field": "keyword", "operator": "contains", "value": "nonexistent", "scope": "content"},
+        ],
+    }
+    assert evaluate_modular_rule(rule_all_short_circuit, node) is False
+
+    # In "any" (OR) mode, when condition 1 passes, condition 2 is short-circuited.
+    rule_any_short_circuit = {
+        "match_mode": "any",
+        "conditions": [
+            {"field": "extension", "operator": "is_one_of", "value": "pdf,txt"},
+            {"field": "keyword", "operator": "contains", "value": "nonexistent", "scope": "content"},
+        ],
+    }
+    assert evaluate_modular_rule(rule_any_short_circuit, node) is True
+
+
 def test_resolve_destination_path_templates():
     node = _make_node(file_name="Rechnung_2026_09.pdf")
     year = node.mtime.strftime("%Y")
