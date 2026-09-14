@@ -2325,8 +2325,142 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
     except Exception as e:
         logger.warning("Failed to query Syncthing folders: %s", e)
 
+    # Physical hardware partition specifications for host systems
+    # Differentiates true partitions (/media/work-data, /media/privat-data, /media/nosync, /media/empty)
+    # from container-internal subpath mounts like /media/privat-data/10_PrivatBüro.
+    PHYSICAL_PARTITION_SPECS = [
+        {
+            "id": "part_work_data",
+            "name": "work-data",
+            "full_label": "work-data (lap24_work-data)",
+            "host_path": "/media/work-data",
+            "dev": "/dev/nvme0n1p4",
+            "category": "Storage Root",
+            "default_free_gb": 594.3,
+        },
+        {
+            "id": "part_privat_data",
+            "name": "privat-data",
+            "full_label": "privat-data (lap24_privat)",
+            "host_path": "/media/privat-data",
+            "dev": "/dev/nvme0n1p8",
+            "category": "Storage Root",
+            "default_free_gb": 503.7,
+        },
+        {
+            "id": "part_nosync",
+            "name": "nosync",
+            "full_label": "nosync (lap24_nosync)",
+            "host_path": "/media/nosync",
+            "dev": "/dev/nvme0n1p9",
+            "category": "Storage Root",
+            "default_free_gb": 450.0,
+        },
+        {
+            "id": "part_empty",
+            "name": "empty",
+            "full_label": "empty (lap24_empty)",
+            "host_path": "/media/empty",
+            "dev": "/dev/nvme0n1p10",
+            "category": "Storage Root",
+            "default_free_gb": 95.0,
+        },
+    ]
+
+    # 1. First, register true Physical Hardware Partitions
+    matched_submount_paths = set()
+    for p in PHYSICAL_PARTITION_SPECS:
+        p_host = p["host_path"]
+        exact_mount = next((m for m in mounts if m.get("host_path") == p_host), None)
+        sub_mounts = [m for m in mounts if m.get("host_path", "").startswith(p_host + "/")]
+
+        subdirectories: List[Dict[str, Any]] = []
+        free_space = p["default_free_gb"]
+        container_p = exact_mount.get("container_path", "") if exact_mount else (sub_mounts[0].get("container_path", "") if sub_mounts else "")
+        is_writable = exact_mount.get("rw", True) if exact_mount else (sub_mounts[0].get("rw", True) if sub_mounts else True)
+
+        # Inspect subdirectories & disk usage
+        if Path(p_host).exists() and Path(p_host).is_dir():
+            try:
+                free_space = round(shutil.disk_usage(p_host).free / (1024 ** 3), 1)
+                for child in sorted(Path(p_host).iterdir(), key=lambda c: c.name.lower()):
+                    if not child.name.startswith(".") and child.name != "lost+found" and child.is_dir():
+                        st_match = syncthing_folders_by_path.get(str(child))
+                        subdirectories.append({
+                            "name": child.name,
+                            "path": str(child),
+                            "syncthing": st_match,
+                        })
+            except Exception:
+                pass
+        elif exact_mount and Path(exact_mount.get("container_path", "")).exists():
+            c_p = exact_mount["container_path"]
+            try:
+                free_space = round(shutil.disk_usage(c_p).free / (1024 ** 3), 1)
+                for child in sorted(Path(c_p).iterdir(), key=lambda c: c.name.lower()):
+                    if not child.name.startswith(".") and child.name != "lost+found" and child.is_dir():
+                        st_match = syncthing_folders_by_path.get(str(Path(p_host) / child.name))
+                        subdirectories.append({
+                            "name": child.name,
+                            "path": str(Path(p_host) / child.name),
+                            "syncthing": st_match,
+                        })
+            except Exception:
+                pass
+        elif sub_mounts:
+            c_p = sub_mounts[0].get("container_path", "")
+            if Path(c_p).exists():
+                try:
+                    free_space = round(shutil.disk_usage(c_p).free / (1024 ** 3), 1)
+                except Exception:
+                    pass
+            for sm in sub_mounts:
+                matched_submount_paths.add(sm.get("host_path", ""))
+                rel = sm.get("host_path", "").replace(p_host + "/", "")
+                st_match = syncthing_folders_by_path.get(sm.get("host_path", ""))
+                subdirectories.append({
+                    "name": rel,
+                    "path": sm.get("host_path", ""),
+                    "container_path": sm.get("container_path", ""),
+                    "is_mounted": True,
+                    "syncthing": st_match,
+                })
+
+        if exact_mount:
+            matched_submount_paths.add(exact_mount.get("host_path", ""))
+
+        parts = [x for x in Path(p_host).parts if x != "/"]
+        drives.append({
+            "id": p["id"],
+            "name": p["name"],
+            "full_label": p["full_label"],
+            "category": p["category"],
+            "section": "hardware",
+            "type": "partition",
+            "host_path": p_host,
+            "container_path": container_p,
+            "tree_slice": ["/"] + parts,
+            "parent_path": str(Path(p_host).parent),
+            "depth": len(parts),
+            "is_writable": is_writable,
+            "free_space_gb": free_space,
+            "estimated_files": 0,
+            "subdirectories": subdirectories,
+            "syncthing": syncthing_folders_by_path.get(p_host),
+            "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
+            "is_approved": False,
+            "is_dismissed": False,
+            "included": True,
+        })
+
+    # 2. Add remaining container mounts (Home, LAN Mesh / xchg, Local Directories)
     for idx, m in enumerate(mounts):
         h_path = m.get("host_path", "")
+        if h_path in matched_submount_paths:
+            continue
+        if any(h_path == p["host_path"] or h_path.startswith(p["host_path"] + "/") for p in PHYSICAL_PARTITION_SPECS):
+            continue
+
         c_path = m.get("container_path", "")
         label = m.get("label", Path(h_path).name or "Storage Drive")
         cat = m.get("category", "Local Drive")
@@ -2339,13 +2473,9 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
         elif h_path.startswith("/home/"):
             clean_name = h_path.replace("/home/", "")
 
-        # Classify by architecture level: Hardware Partition vs LAN-Mesh vs Local Directory
         if "/media/xchg" in h_path:
             section = "syncthing_mesh"
             drive_type = "mesh"
-        elif any(h_path.startswith(p) for p in ["/media/work-data", "/media/privat-data", "/media/nosync", "/media/empty"]):
-            section = "hardware"
-            drive_type = "partition"
         elif h_path.startswith("/home"):
             section = "home"
             drive_type = "home"
@@ -2357,7 +2487,6 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
         tree_slice = ["/"] + list(parts)
         parent_path = str(Path(h_path).parent)
 
-        # Real disk usage if path exists on host or container, else safe default
         free_space = 142.5
         for test_p in [h_path, c_path]:
             if test_p and Path(test_p).exists():
@@ -2367,8 +2496,7 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
                 except Exception:
                     pass
 
-        # Dynamically inspect actual top-level subdirectories without hardcoding
-        subdirectories: List[Dict[str, Any]] = []
+        subdirectories = []
         for test_p in [h_path, c_path]:
             target_p = Path(test_p)
             if target_p.exists() and target_p.is_dir():
@@ -2408,7 +2536,7 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "subdirectories": subdirectories,
             "syncthing": st_match_self,
             "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
-            "is_approved": False,  # Initial state is proposed (neutral)
+            "is_approved": False,
             "is_dismissed": False,
             "included": True,
         })

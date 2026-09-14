@@ -143,12 +143,13 @@ KNOWN_HERMES_MOUNTS: List[Dict[str, Any]] = [
 
 
 class _UnixHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, socket_path: str):
-        super().__init__("localhost")
+    def __init__(self, socket_path: str, timeout: float = 3.0, **kwargs):
+        super().__init__("localhost", timeout=timeout, **kwargs)
         self.socket_path = socket_path
 
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
         self.sock.connect(self.socket_path)
 
 
@@ -158,7 +159,7 @@ class _UnixHTTPHandler(urllib.request.AbstractHTTPHandler):
         self.socket_path = socket_path
 
     def unix_open(self, req):
-        return self.do_open(lambda host: _UnixHTTPConnection(self.socket_path), req)
+        return self.do_open(lambda host, **kwargs: _UnixHTTPConnection(self.socket_path, **kwargs), req)
 
 
 
@@ -196,13 +197,33 @@ class DockerMountService:
 
         # 1. Try querying Docker socket
         if os.path.exists(self.docker_socket_path):
+            conn = None
             try:
-                opener = urllib.request.build_opener(_UnixHTTPHandler(self.docker_socket_path))
-                # Probe hermes-dashboard or inspect container
+                # Find container: check hermes-dashboard or matching container ID
                 target_container = os.getenv("HOSTNAME", "hermes-dashboard")
-                url = f"unix://localhost/containers/{target_container}/json"
-                req = urllib.request.Request(url)
-                with opener.open(req, timeout=1.5) as resp:
+                target_id = target_container
+
+                # Query container list if hostname doesn't match directly
+                conn = _UnixHTTPConnection(self.docker_socket_path, timeout=2.0)
+                try:
+                    conn.request("GET", "/containers/json")
+                    c_resp = conn.getresponse()
+                    if c_resp.status == 200:
+                        c_list = json.loads(c_resp.read().decode("utf-8"))
+                        for c in c_list:
+                            c_names = [n.lstrip("/") for n in c.get("Names", [])]
+                            if "hermes-dashboard" in c_names or (target_container and (c.get("Id", "").startswith(target_container) or target_container in c_names)):
+                                target_id = c["Id"]
+                                break
+                except Exception:
+                    pass
+                finally:
+                    conn.close()
+
+                conn = _UnixHTTPConnection(self.docker_socket_path, timeout=2.0)
+                conn.request("GET", f"/containers/{target_id}/json")
+                resp = conn.getresponse()
+                if resp.status == 200:
                     cdata = json.loads(resp.read().decode("utf-8"))
                     raw_mounts = cdata.get("Mounts", [])
                     for m in raw_mounts:
@@ -229,6 +250,12 @@ class DockerMountService:
                         })
             except Exception as exc:
                 logger.debug("Could not query docker socket %s: %s", self.docker_socket_path, exc)
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         # 2. Fallback to KNOWN_HERMES_MOUNTS if socket query did not yield mounts
         if not discovered_mounts:

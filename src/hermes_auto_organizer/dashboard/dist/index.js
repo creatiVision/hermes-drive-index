@@ -6986,11 +6986,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const renderStep1 = () => {
       const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
       const rawScannedDrives = (proactiveScan && proactiveScan.drives) || [
-        { id: "d_privat", name: "privat-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/privat-data", is_writable: true, free_space_gb: 142.5, estimated_files: 0, tree_slice: ["/", "media", "privat-data"] },
-        { id: "d_work", name: "work-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 0, tree_slice: ["/", "media", "work-data"] },
+        { id: "d_privat", name: "privat-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/privat-data", is_writable: true, free_space_gb: 503.7, estimated_files: 0, tree_slice: ["/", "media", "privat-data"] },
+        { id: "d_work", name: "work-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/work-data", is_writable: true, free_space_gb: 594.3, estimated_files: 0, tree_slice: ["/", "media", "work-data"] },
         { id: "d_nosync", name: "nosync Partition", category: "Storage Root", section: "hardware", host_path: "/media/nosync", is_writable: true, free_space_gb: 450.0, estimated_files: 0, tree_slice: ["/", "media", "nosync"] },
+        { id: "d_empty", name: "empty Partition", category: "Storage Root", section: "hardware", host_path: "/media/empty", is_writable: true, free_space_gb: 95.0, estimated_files: 0, tree_slice: ["/", "media", "empty"] },
         { id: "d_xchg", name: "xchg (Syncthing Mesh)", category: "Shared AI", section: "syncthing_mesh", host_path: "/media/xchg", is_writable: true, free_space_gb: 280.0, estimated_files: 0, tree_slice: ["/", "media", "xchg"] },
-        { id: "d_downloads", name: "Downloads", category: "Dumpzone", section: "hardware", host_path: "/home/mb/Downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 0, tree_slice: ["/", "home", "mb", "Downloads"] },
+        { id: "d_downloads", name: "Downloads", category: "Dumpzone", section: "home", host_path: "/home/mb/Downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 0, tree_slice: ["/", "home", "mb", "Downloads"] },
         { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", section: "cloud", host_path: "gdrive://creatiVision", is_writable: true, free_space_gb: 85.0, estimated_files: 0, tree_slice: ["Cloud", "Google Drive", "creatiVision"] }
       ];
 
