@@ -19,9 +19,15 @@ have been modified to expand the project from hermes-drive-index into hermes-aut
 
 ---
 
-## Interactive Web Dashboard
+## 🌟 Branch Architecture & Distinguishing Focus (`feat/clear-multistep-workflow`)
 
-The Hermes Auto-Organizer features a dedicated multi-step web dashboard plugin mounted in the Hermes Agent UI (`/organizer`):
+This branch establishes the **Transparent 5-Stage Human-in-the-Loop Workflow Pipeline** with zero hardcoded folder assumptions:
+
+* **Scope-Agnostic Ingestion & Deep Extraction**: Unlike hardcoded paths, Phase 1 treats any selected drive or folder as an arbitrary input root, executing two-tier hashing (`xxh64` + `sha256`), multi-modal metadata extraction (`mutagen` audio, `ffprobe` video, `ezdxf` CAD, PDF/DOCX), and vector embedding generation before proposing reorganizations.
+* **Separation of Clusters vs. Exceptions (Outlier Triage)**: Distinctly separates the 90% high-confidence semantic clusters from the ~10% ambiguous outlier edge cases in Phase 3, giving users a dedicated single-click triage queue (`[Vorschlag annehmen]` / `[Ignorieren]`).
+* **Strict Gating & Reversible Sandbox**: Steps 3, 4, and 5 remain locked until the discovered structure is approved in Step 2; Phase 4 provides interactive Vorher/Nachher tree diffs with guaranteed LIFO rollback journaling (`execution_log`).
+
+### Interactive Web Dashboard Preview
 
 ![Hermes Auto-Organizer Multi-Step Web Dashboard](docs/images/dashboard-ui.png)
 
