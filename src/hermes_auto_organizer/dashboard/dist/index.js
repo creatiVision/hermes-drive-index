@@ -5626,13 +5626,14 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [excludedGroupIds, setExcludedGroupIds] = useState(new Set());
     const [expandedGroups, setExpandedGroups] = useState({});
 
-    // Step 1 Drive Approval, Dismiss, and Tree-Position Hover State
+    // Step 1 Drive Approval, Dismiss, Tree-Position Hover, and Container Grant Modal State
     const [approvedDriveIds, setApprovedDriveIds] = useState(new Set());
     const [excludedDriveIds, setExcludedDriveIds] = useState(new Set());
     const [hoveredDriveId, setHoveredDriveId] = useState(null);
     const [showExcludedDrives, setShowExcludedDrives] = useState(false);
     const [showAllUsers, setShowAllUsers] = useState(false);
     const [expandedDrives, setExpandedDrives] = useState(new Set());
+    const [containerGrantModal, setContainerGrantModal] = useState(null);
     const [anomalyViewMode, setAnomalyViewMode] = useState("groups"); // "groups" | "table"
     const [approvedAnomalyGroupIds, setApprovedAnomalyGroupIds] = useState(new Set());
     const [excludedAnomalyGroupIds, setExcludedAnomalyGroupIds] = useState(new Set());
@@ -7110,7 +7111,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               },
                 // Card Header: Checkbox, Name, and Segmented Switch
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" } },
-                  h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0 } },
+                  h("label", { style: { display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", margin: 0, flexWrap: "wrap" } },
                     h("input", {
                       type: "checkbox",
                       className: "auto-org-checkbox",
@@ -7123,7 +7124,26 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                       className: "auto-org-badge",
                       style: { fontSize: "0.65rem", background: "rgba(167, 139, 250, 0.2)", color: "#c4b5fd", border: "1px solid #8b5cf6" },
                       title: `Syncthing Folder: ${d.syncthing.id || d.syncthing.label || ''} (Peers: ${(d.syncthing.devices || []).join(', ')})`
-                    }, `🔄 Syncthing: ${(d.syncthing.devices || ['Mesh']).join(', ')}`)
+                    }, `🔄 Syncthing: ${(d.syncthing.devices || ['Mesh']).join(', ')}`),
+                    // Security / Container Access Warning Badge
+                    d.container_access && d.container_access !== "full" && h("button", {
+                      type: "button",
+                      className: "auto-org-badge",
+                      style: {
+                        fontSize: "0.65rem",
+                        cursor: "pointer",
+                        background: d.container_access === "partial" ? "rgba(234, 179, 8, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                        color: d.container_access === "partial" ? "#facc15" : "#fca5a5",
+                        border: `1px solid ${d.container_access === "partial" ? "#ca8a04" : "#dc2626"}`,
+                        padding: "0.15rem 0.4rem"
+                      },
+                      title: d.access_warning || "Container-Zugriff prüfen & freischalten",
+                      onClick: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContainerGrantModal(d);
+                      }
+                    }, d.container_access === "partial" ? "⚠️ Eingeschränkter Container-Zugriff" : "🔒 Kein Container-Mount • Zugriff gewähren")
                   ),
                   h(OverlaySwitchButton, {
                     status: isApproved ? "approved" : (excludedDriveIds.has(d.id) ? "excluded" : "proposed"),
@@ -10481,7 +10501,98 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       step === 5 && renderStep5(),
 
       // Configuration Modal Overlay
-      renderConfigModal()
+      renderConfigModal(),
+
+      // Security Access / Container Grant Modal
+      containerGrantModal && h("div", {
+        className: "auto-org-modal-backdrop",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "auto-org-grant-title",
+        onClick: (e) => { if (e.target === e.currentTarget) setContainerGrantModal(null); }
+      },
+        h("div", { className: "auto-org-modal", style: { maxWidth: "600px" } },
+          h("div", { className: "auto-org-modal-header" },
+            h("div", { className: "auto-org-modal-title", id: "auto-org-grant-title", style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+              h("span", null, "🛡️"),
+              h("span", null, `Container-Zugriff: ${containerGrantModal.name}`)
+            ),
+            h("button", {
+              type: "button",
+              className: "auto-org-modal-close",
+              onClick: () => setContainerGrantModal(null),
+              "aria-label": "Dialog schließen",
+              title: "Schließen"
+            }, "✕")
+          ),
+          h("div", { className: "auto-org-modal-body", style: { display: "flex", flexDirection: "column", gap: "1rem" } },
+            h("div", {
+              style: {
+                background: containerGrantModal.container_access === "partial" ? "rgba(234, 179, 8, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                border: `1px solid ${containerGrantModal.container_access === "partial" ? "rgba(234, 179, 8, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                borderRadius: "0.375rem",
+                padding: "0.75rem 1rem",
+                fontSize: "0.85rem",
+                color: containerGrantModal.container_access === "partial" ? "#fef08a" : "#fca5a5"
+              }
+            },
+              containerGrantModal.access_warning || "Für dieses physische Hardware-Laufwerk existiert derzeit kein direkter Voll-Mount im Hermes-Container."
+            ),
+            h("div", null,
+              h("div", { style: { fontWeight: 600, color: "#ffffff", fontSize: "0.875rem", marginBottom: "0.35rem" } }, "Laufwerks-Details (Host-System):"),
+              h("div", { style: { display: "grid", gridTemplateColumns: "130px 1fr", gap: "0.4rem", fontSize: "0.8rem", background: "rgba(15, 23, 42, 0.6)", padding: "0.6rem", borderRadius: "0.25rem", border: "1px solid #334155" } },
+                h("span", { style: { color: "#94a3b8" } }, "Partition / Dev:"),
+                h("span", { style: { fontFamily: "monospace", color: "#f1f5f9" } }, `${containerGrantModal.full_label || containerGrantModal.name}`),
+                h("span", { style: { color: "#94a3b8" } }, "Host-Einhängepunkt:"),
+                h("span", { style: { fontFamily: "monospace", color: "#60a5fa" } }, containerGrantModal.host_path),
+                h("span", { style: { color: "#94a3b8" } }, "Container-Status:"),
+                h("span", { style: { fontWeight: 600, color: containerGrantModal.container_access === "partial" ? "#facc15" : "#f87171" } },
+                  containerGrantModal.container_access === "partial" ? "Nur Teil-Ordner gemountet" : "Nicht im Container gemountet"
+                )
+              )
+            ),
+            h("div", null,
+              h("div", { style: { fontWeight: 600, color: "#ffffff", fontSize: "0.875rem", marginBottom: "0.35rem" } }, "Zugriff gewähren (Docker Volume Mount):"),
+              h("p", { style: { fontSize: "0.78rem", color: "#94a3b8", margin: "0 0 0.4rem 0" } },
+                "Fügen Sie die folgende Volume-Bind-Option zu Ihrer Docker-Compose Konfiguration oder dem Container-Startbefehl hinzu:"
+              ),
+              h("div", {
+                style: {
+                  fontFamily: "monospace",
+                  fontSize: "0.8rem",
+                  background: "#020617",
+                  padding: "0.6rem 0.8rem",
+                  borderRadius: "0.25rem",
+                  border: "1px solid #1e293b",
+                  color: "#4ade80",
+                  userSelect: "all",
+                  wordBreak: "break-all"
+                }
+              }, containerGrantModal.container_grant_command || `-v ${containerGrantModal.host_path}:/opt/data/${containerGrantModal.name}:rw`),
+              h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.6rem" } },
+                h("span", { style: { fontSize: "0.72rem", color: "#64748b" } }, "Klicken Sie auf den Befehl zum Kopieren"),
+                h("button", {
+                  type: "button",
+                  className: "auto-org-btn auto-org-btn-outline",
+                  style: { fontSize: "0.75rem", padding: "0.25rem 0.75rem" },
+                  onClick: () => {
+                    navigator.clipboard.writeText(containerGrantModal.container_grant_command || `-v ${containerGrantModal.host_path}:/opt/data/${containerGrantModal.name}:rw`);
+                    setNotice(`Mount-Befehl für '${containerGrantModal.name}' in die Zwischenablage kopiert!`);
+                  }
+                }, "📋 Befehl kopieren")
+              )
+            ),
+            h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" } },
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-primary",
+                style: { padding: "0.4rem 1.25rem" },
+                onClick: () => setContainerGrantModal(null)
+              }, "Verstanden / Schließen")
+            )
+          )
+        )
+      )
     );
   }
 

@@ -329,6 +329,16 @@ def test_proactive_scan_and_start_indexing():
         assert "indexing_prompt" in data
         assert any("Downloads" in d["name"] for d in data["drives"])
 
+        # Verify physical partition properties & container access security
+        privat_part = next((d for d in data["drives"] if d.get("id") == "part_privat_data"), None)
+        assert privat_part is not None
+        assert "container_access" in privat_part
+        assert privat_part["container_access"] in ["full", "partial", "none"]
+        assert "container_grant_command" in privat_part
+        assert len(privat_part.get("subdirectories", [])) >= 10
+        # Ensure subdirectories have clean names (no '(gemountet)' tags)
+        assert any(s["name"] == "10_PrivatBüro" for s in privat_part["subdirectories"])
+
         # 2. Start Indexing
         res_idx = client.post("/api/plugins/auto-organizer/discovery/start-indexing", json={
             "enable_embeddings": True,

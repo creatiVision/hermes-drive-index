@@ -2337,6 +2337,22 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "dev": "/dev/nvme0n1p4",
             "category": "Storage Root",
             "default_free_gb": 594.3,
+            "container_target": "/opt/data/work-data",
+            "known_directories": [
+                "000_Pwords_Hardware,Online,SSL",
+                "000_cv-allg(Logos+Vorlagen)",
+                "001_cv-bookaccount",
+                "002_cv-projects",
+                "003_cv-clients",
+                "011_cv_IT_Intern+Hosting",
+                "10_Geschäftsleitung_CV",
+                "911_IT-wiki",
+                "911_SEO+SEA+Webdesign-wiki",
+                "930_business-wiki",
+                "940_Immobilien_wiki",
+                "941_cad+architektur_wiki",
+                "950_gfx+design_allg_wiki"
+            ],
         },
         {
             "id": "part_privat_data",
@@ -2346,6 +2362,25 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "dev": "/dev/nvme0n1p8",
             "category": "Storage Root",
             "default_free_gb": 503.7,
+            "container_target": "/opt/data/privat-data",
+            "known_directories": [
+                "000_Grunddaten-Privat",
+                "10.6_Bauamt_Regensburg",
+                "10_PrivatBüro",
+                "11_Bildung_Intelektuell",
+                "12_Bildung_Spirituell",
+                "1_PrivatProjekte",
+                "2.5_PrivatPhotos",
+                "4.2_Wohnung_M.Bayerl",
+                "4.6_FamilyWork",
+                "5_Freizeit",
+                "6_Gesundheit_Ernährung",
+                "6_PrivatBüro",
+                "7_Art",
+                "7_People",
+                "9_Auswandern+Life-Possibly-Maybe",
+                "Download_Redmi8"
+            ],
         },
         {
             "id": "part_nosync",
@@ -2355,6 +2390,18 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "dev": "/dev/nvme0n1p9",
             "category": "Storage Root",
             "default_free_gb": 450.0,
+            "container_target": "/opt/data/nosync",
+            "known_directories": [
+                "8-Ringtones",
+                "CC_resources",
+                "Hörbücher",
+                "Meditationen",
+                "Podcasts_Biz",
+                "Podcasts_Privat",
+                "_music_shared",
+                "corupted-tiel-mp4s",
+                "zz_backups_nosync"
+            ],
         },
         {
             "id": "part_empty",
@@ -2364,6 +2411,11 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "dev": "/dev/nvme0n1p10",
             "category": "Storage Root",
             "default_free_gb": 95.0,
+            "container_target": "/opt/data/empty",
+            "known_directories": [
+                "bckp_thunderbird",
+                "timeshift"
+            ],
         },
     ]
 
@@ -2374,23 +2426,40 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
         exact_mount = next((m for m in mounts if m.get("host_path") == p_host), None)
         sub_mounts = [m for m in mounts if m.get("host_path", "").startswith(p_host + "/")]
 
-        subdirectories: List[Dict[str, Any]] = []
-        free_space = p["default_free_gb"]
-        container_p = exact_mount.get("container_path", "") if exact_mount else (sub_mounts[0].get("container_path", "") if sub_mounts else "")
-        is_writable = exact_mount.get("rw", True) if exact_mount else (sub_mounts[0].get("rw", True) if sub_mounts else True)
+        # Compute container access security status: full, partial, or none
+        if exact_mount:
+            container_access = "full"
+            container_p = exact_mount.get("container_path", "")
+            is_writable = exact_mount.get("rw", True)
+            access_warning = None
+        elif sub_mounts:
+            container_access = "partial"
+            container_p = sub_mounts[0].get("container_path", "")
+            is_writable = sub_mounts[0].get("rw", True)
+            sub_names = [m.get("host_path", "").replace(p_host + "/", "") for m in sub_mounts]
+            access_warning = (
+                f"Container-Zugriff eingeschränkt: Nur Unterordner gemountet ({', '.join(sub_names)}). "
+                f"Voller Zugriff auf {p['name']} erfordert Mount von {p_host}."
+            )
+        else:
+            container_access = "none"
+            container_p = ""
+            is_writable = False
+            access_warning = (
+                f"Kein Container-Zugriff: Laufwerk {p['name']} ({p_host}) ist im Hermes-Container nicht gemountet."
+            )
 
-        # Inspect subdirectories & disk usage
+        container_grant_command = f"-v {p_host}:{p['container_target']}:rw"
+        free_space = p["default_free_gb"]
+        found_dir_names: List[str] = []
+
+        # Inspect subdirectories & disk usage dynamically from host or container
         if Path(p_host).exists() and Path(p_host).is_dir():
             try:
                 free_space = round(shutil.disk_usage(p_host).free / (1024 ** 3), 1)
                 for child in sorted(Path(p_host).iterdir(), key=lambda c: c.name.lower()):
                     if not child.name.startswith(".") and child.name != "lost+found" and child.is_dir():
-                        st_match = syncthing_folders_by_path.get(str(child))
-                        subdirectories.append({
-                            "name": child.name,
-                            "path": str(child),
-                            "syncthing": st_match,
-                        })
+                        found_dir_names.append(child.name)
             except Exception:
                 pass
         elif exact_mount and Path(exact_mount.get("container_path", "")).exists():
@@ -2399,33 +2468,27 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
                 free_space = round(shutil.disk_usage(c_p).free / (1024 ** 3), 1)
                 for child in sorted(Path(c_p).iterdir(), key=lambda c: c.name.lower()):
                     if not child.name.startswith(".") and child.name != "lost+found" and child.is_dir():
-                        st_match = syncthing_folders_by_path.get(str(Path(p_host) / child.name))
-                        subdirectories.append({
-                            "name": child.name,
-                            "path": str(Path(p_host) / child.name),
-                            "syncthing": st_match,
-                        })
+                        found_dir_names.append(child.name)
             except Exception:
                 pass
-        elif sub_mounts:
-            c_p = sub_mounts[0].get("container_path", "")
-            if Path(c_p).exists():
-                try:
-                    free_space = round(shutil.disk_usage(c_p).free / (1024 ** 3), 1)
-                except Exception:
-                    pass
-            for sm in sub_mounts:
-                matched_submount_paths.add(sm.get("host_path", ""))
-                rel = sm.get("host_path", "").replace(p_host + "/", "")
-                st_match = syncthing_folders_by_path.get(sm.get("host_path", ""))
-                subdirectories.append({
-                    "name": rel,
-                    "path": sm.get("host_path", ""),
-                    "container_path": sm.get("container_path", ""),
-                    "is_mounted": True,
-                    "syncthing": st_match,
-                })
 
+        # If running inside container jail where the whole partition isn't accessible, use known directory catalog
+        if not found_dir_names:
+            found_dir_names = list(p.get("known_directories", []))
+
+        subdirectories: List[Dict[str, Any]] = []
+        for dname in found_dir_names:
+            dir_full_path = str(Path(p_host) / dname)
+            st_match = syncthing_folders_by_path.get(dir_full_path)
+            subdirectories.append({
+                "name": dname,
+                "path": dir_full_path,
+                "syncthing": st_match,
+            })
+
+        # Track any submounts so they aren't duplicated as separate drives later
+        for sm in sub_mounts:
+            matched_submount_paths.add(sm.get("host_path", ""))
         if exact_mount:
             matched_submount_paths.add(exact_mount.get("host_path", ""))
 
@@ -2439,6 +2502,9 @@ async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, An
             "type": "partition",
             "host_path": p_host,
             "container_path": container_p,
+            "container_access": container_access,  # "full" | "partial" | "none"
+            "container_grant_command": container_grant_command,
+            "access_warning": access_warning,
             "tree_slice": ["/"] + parts,
             "parent_path": str(Path(p_host).parent),
             "depth": len(parts),
