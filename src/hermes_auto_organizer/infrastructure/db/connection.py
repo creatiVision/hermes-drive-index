@@ -13,7 +13,10 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import asyncpg
-from pgvector.asyncpg import register_vector
+try:
+    from pgvector.asyncpg import register_vector
+except ImportError:  # pragma: no cover
+    register_vector = None
 
 from hermes_auto_organizer.config import DatabaseConfig
 
@@ -33,7 +36,11 @@ class DatabaseConnectionPool:
             return
 
         async def init_connection(conn: asyncpg.Connection) -> None:
-            await register_vector(conn)
+            if register_vector is not None:
+                try:
+                    await register_vector(conn)
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Could not register pgvector extension on connection: %s", exc)
 
         self._pool = await asyncpg.create_pool(
             host=self._config.host,
