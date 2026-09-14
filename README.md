@@ -38,6 +38,10 @@ This branch establishes the **Transparent 5-Stage Human-in-the-Loop Workflow Pip
 4. **Phase 4: Sandbox & Reversible Ausführung** — Inspect the before-and-after tree diff and execute safely with atomic verification and 1-click LIFO rollback.
 5. **Phase 5: Cloud- & LAN-Sync** — Selective bi-directional sync mappings and multi-host LAN mesh management.
 
+👉 **Ausführliche Schritt-für-Schritt Benutzeranleitung:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+
+---
+
 ## Attribution & Project Lineage
 
 This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
