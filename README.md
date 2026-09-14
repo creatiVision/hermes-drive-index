@@ -19,7 +19,17 @@ have been modified to expand the project from hermes-drive-index into hermes-aut
 
 ---
 
-## Attribution & Project Lineage
+## 🌟 Branch Architecture & Distinguishing Focus (`feat/lan-tree-diff-organizer`)
+
+This branch introduces the **Multi-Level Hierarchy Tree Visualization & Directional Target Transfer Engine**:
+
+* **Multi-Level Hierarchy Depth Mapping**: Visualizes filesystem structures across explicit hierarchical tiers (`L0`: Partition Mount, `L1`: Category, `L2`: Subfolder, `L3+`: Deep Nested Inodes) with level-specific visual badges and calibrated spring forces.
+* **Target Destination Beacons & Directional Flow**: Dynamically materializes destination folder nodes (`🎯`) with pulsating target beacons and draws curved, animated directional vectors with sharp chevrons indicating prospective file transfers directly on the canvas.
+* **Interactive HUD & Noise Suppression**: Includes real-time HUD controls for toggling destination flow arrows (ON/OFF), filtering visible hierarchy depth (`Alle`, `L1`, `L2`, `L3`), auto-fitting graph bounds, and collapsing system roots (`/`) to isolate active user data partitions.
+
+### Multi-Level Hierarchy & Directional Graph Preview
+
+![Multi-Level Hierarchy Visualization & Target Transfer](docs/images/dashboard-lan-tree-diff.png)
 
 This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
 
