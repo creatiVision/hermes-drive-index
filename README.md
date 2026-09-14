@@ -18,6 +18,20 @@ have been modified to expand the project from hermes-drive-index into hermes-aut
 
 ---
 
+## 🌟 Branch Architecture & Distinguishing Focus (`feat/source-lan-tree-ai-chat`)
+
+This branch explores a **Simplified Tab-Based Architecture with Conversational Natural-Language Rule AI**:
+
+* **Tabbed Left-Rail Organization**: Completely replaces physics graphs and unified canvas views with a strict 6-tab modal structure (`📁 Quellen`, `📊 Übersicht`, `🗺️ Taxonomie`, `📋 Regeln`, `▶ Vorschau`, `📜 Journal`) enforcing one action per tab.
+* **Natural-Language Conversational Rules**: Integrates an AI chat prompt inside every rule card allowing users to describe file management rules in natural German/English text (compiled into parametric conditions on the fly).
+* **Autocomplete Source Navigation**: Direct host filesystem path autocompletion (`/sources/complete`) and breadcrumb traversal for quick directory selection.
+
+### Tabbed UI & Conversational Rule Preview
+
+![Hermes Auto-Organizer Tabbed UI with Conversational AI](docs/images/dashboard-source-ai-chat.png)
+
+---
+
 ## Attribution & Project Lineage
 
 This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
