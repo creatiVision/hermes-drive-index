@@ -55,21 +55,31 @@ flowchart LR
 
 ## 3. Phase 1: Zielbereich & Ingestion
 
-In dieser Phase bestimmen Sie, welche Verzeichnisse analysiert werden sollen. **Es werden hierbei noch keinerlei Dateien verschoben.**
+In dieser Phase bestimmen Sie, welche physischen Laufwerke und Verzeichnisse analysiert werden sollen. **Es werden hierbei noch keinerlei Dateien verschoben und keine voreiligen inhaltlichen Annahmen getroffen.** Die semantische Einordnung erfolgt erst dynamisch nach der Ingestion in Schritt 2.
 
-1. **Speicherorte auswählen**:
-   * Sie sehen alle erkannten Ordner (z. B. lokale Platten, Download-Zonen, Cloud-Spiegel).
-   * Nutzen Sie die Checkboxen oder klicken Sie auf **`🟢 Alle freigeben`**, um festzulegen, welche Pfade einbezogen werden.
-   * Möchten Sie Ordner ignorieren, wählen Sie über den Schalter **`🔴 Ausschließen`**.
-2. **Eigenen Pfad / Subtree analysieren**:
-   * Im Panel *Subtree-Profiler & Entropie-Diagnose* können Sie jeden beliebigen absoluten Pfad eingeben und die Analysetiefe (`Tiefe 1–4`) wählen.
-3. **Ingestion & Tiefenanalyse starten**:
+1. **Strukturierung nach physischen Speicher-Ebenen**:
+   Die erkannten Pfade sind übersichtlich nach Architektur-Ebenen gegliedert:
+   * **💾 Physische Hardware-Laufwerke & Partitionen**: Ihre tatsächlichen Hardware-Partitionen (`/media/privat-data`, `/media/work-data`, `/media/nosync`, `/home/...`).
+   * **☁️ Cloud Storage**: Erkannte Google Drive Sync-Mappings (`gdrive://...`).
+   * **🔄 LAN-Sync & Mesh (Syncthing)**: Geteilte Ordner im P2P-Netzwerk (`/media/xchg` zwischen `laptop`, `debian1` und Mobilgeräten wie `Note14new`).
+2. **Kompakte Kachel-Übersicht & Einklappbarer Verzeichnisbaum**:
+   * Jede Kachel zeigt den Speicherort, Lese-/Schreibberechtigung und den tatsächlichen freien Festplattenplatz.
+   * Der integrierte Verzeichnisbaum (`VisualFilePathTree`) ist **standardmäßig eingeklappt** (`defaultExpanded: false`), um eine saubere Gesamtübersicht zu wahren.
+   * Klicken Sie auf **`▶`**, um die Verzeichnis-Hierarchie der Partition im Detail auszuklappen.
+3. **Auswahl & Einbeziehung**:
+   * Nutzen Sie die Checkboxen oder klicken Sie auf **`🟢 Alle freigeben`**, um festzulegen, welche Pfade in die Analyse einbezogen werden.
+   * Möchten Sie Partitionen oder Ordner ausschließen, schalten Sie die Ampel über den Segment-Button auf **`🔴 Ausschließen`**.
+4. **Schnellauswahl für häufige Quellbereiche**:
+   * Im Panel *Häufige Quellbereiche & Dumpzones* stehen Ihnen die wichtigsten Einstiegspunkte (z. B. `Downloads`, `Schreibtisch`, `work-data`, `privat-data`, `nosync`, `xchg`) per 1-Klick-Button bereit.
+5. **Eigenen Pfad / Subtree analysieren**:
+   * Im Panel *Subtree-Profiler & Entropie-Diagnose* können Sie jeden beliebigen absoluten Pfad eingeben, die Shannon MIME-Entropie messen und strukturelle Störungszonen aufdecken.
+6. **Ingestion & Tiefenanalyse starten**:
    * Klicken Sie auf den Button **`🚀 Ingestion & Analyse starten`**.
    * Was im Hintergrund geschieht:
      * **Zweistufiges Hashing**: Schneller O(1) Header/Tail xxHash64 + gestreamtes SHA-256 zur Byte-Deduplizierung.
      * **Multi-Modale Extraktion**: Auslesen von Text (PDF, DOCX), Audio-Tags (`mutagen`), Video-Metadaten (`ffprobe`) und CAD-Layern (`ezdxf`).
      * **Vektorisierung**: Generierung von Einbettungen in PostgreSQL (`pgvector`).
-4. **Weiter zu Phase 2**:
+7. **Weiter zu Phase 2**:
    * Nach Abschluss der Indexierung klicken Sie unten auf **`Weiter zu Schritt 2: Semantische Cluster & Wissensgraph →`**.
 
 ---
@@ -153,8 +163,11 @@ In der finalen Phase konfigurieren Sie die Zusammenarbeit über Cloud- und Netzw
    * Verknüpfen Sie einen Remote-Google-Drive-Ordner mit einem lokalen Verzeichnis.
    * Wählen Sie die Richtung: `bidirectional` (Zwei-Wege-Abgleich), `upload_only` oder `download_only`.
    * Tragen Sie Dateifilter ein (z. B. `*.pdf, *.docx`).
-2. **Multi-Host LAN-Radar**:
-   * Über die Schaltfläche **`🌐 Multi-Computer Tree & Radar Fenster`** können Sie den Status verbundener LAN-Geräte (z. B. Laptop, Debian-Server) und Syncthing-Shares einsehen.
+2. **Multi-Host LAN-Radar & Syncthing Mesh**:
+   * Über die Schaltfläche **`🌐 Multi-Computer Tree & Radar Fenster`** öffnen Sie die netzwerkweite Topologie.
+   * **Host-Übersicht**: Visualisiert verbundene Knoten (`kimi-laptop`, `kimi-debian1`, Android-Knoten `Note14new`, etc.).
+   * **Syncthing P2P-Ordner**: Zeigt den Synchronisationsstatus von `/media/xchg` und gerätespezifischen Shares (z. B. Smartphone Kamera/DCIM-Sync oder Datenaustausch).
+   * **Physik-Steuerung**: Über das Panel **`⚙️ Physik`** können Sie Abstoßung, Federhärte und Dämpfung des interaktiven Force-Directed-Graphen justieren.
 
 ---
 

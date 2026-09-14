@@ -6979,10 +6979,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const renderStep1 = () => {
       const isIndexed = proactiveScan && proactiveScan.status === "INDEXED";
       const rawScannedDrives = (proactiveScan && proactiveScan.drives) || [
-        { id: "d_privat", name: "PrivatBüro", category: "Local Drive", host_path: "/media/privat-data/10_PrivatBüro", is_writable: true, free_space_gb: 142.5, estimated_files: 89, tree_slice: ["/", "media", "privat-data", "10_PrivatBüro"] },
-        { id: "d_work", name: "Arbeitsdateien (work-data)", category: "Local Drive", host_path: "/media/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 142, tree_slice: ["/", "media", "work-data"] },
-        { id: "d_downloads", name: "Downloads (Dumpzone)", category: "Dumpzone", host_path: "/home/mb/Downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 45, tree_slice: ["/", "home", "mb", "Downloads"] },
-        { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", host_path: "gdrive://creatiVision", is_writable: true, free_space_gb: 85.0, estimated_files: 120, tree_slice: ["Cloud", "Google Drive", "creatiVision"] }
+        { id: "d_privat", name: "privat-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/privat-data", is_writable: true, free_space_gb: 142.5, estimated_files: 0, tree_slice: ["/", "media", "privat-data"] },
+        { id: "d_work", name: "work-data Partition", category: "Storage Root", section: "hardware", host_path: "/media/work-data", is_writable: true, free_space_gb: 210.0, estimated_files: 0, tree_slice: ["/", "media", "work-data"] },
+        { id: "d_nosync", name: "nosync Partition", category: "Storage Root", section: "hardware", host_path: "/media/nosync", is_writable: true, free_space_gb: 450.0, estimated_files: 0, tree_slice: ["/", "media", "nosync"] },
+        { id: "d_xchg", name: "xchg (Syncthing Mesh)", category: "Shared AI", section: "syncthing_mesh", host_path: "/media/xchg", is_writable: true, free_space_gb: 280.0, estimated_files: 0, tree_slice: ["/", "media", "xchg"] },
+        { id: "d_downloads", name: "Downloads", category: "Dumpzone", section: "hardware", host_path: "/home/mb/Downloads", is_writable: true, free_space_gb: 45.0, estimated_files: 0, tree_slice: ["/", "home", "mb", "Downloads"] },
+        { id: "d_gdrive", name: "☁️ Google Drive Sync", category: "Cloud Storage", section: "cloud", host_path: "gdrive://creatiVision", is_writable: true, free_space_gb: 85.0, estimated_files: 0, tree_slice: ["Cloud", "Google Drive", "creatiVision"] }
       ];
 
       const activeDrives = rawScannedDrives.filter(d => !excludedDriveIds.has(d.id));
@@ -7061,9 +7063,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             )
           ),
 
-          // Scanned Drives Grid (with Ampel, Checkbox, Dismiss button & Tree Position Hover)
-          h("div", { className: "auto-org-drive-grid", style: { marginTop: "0.85rem" } },
-            activeDrives.map((d) => {
+          // Scanned Drives Grouped by Architecture Tier: Hardware Partitions, Cloud Storage, LAN-Mesh
+          (() => {
+            const hardwareDrives = activeDrives.filter(d => d.section === "hardware" || (!d.section && d.category !== "Cloud Storage" && !d.host_path.includes("/media/xchg")));
+            const cloudDrives = activeDrives.filter(d => d.section === "cloud" || d.category === "Cloud Storage" || d.type === "cloud");
+            const meshDrives = activeDrives.filter(d => d.section === "syncthing_mesh" || d.type === "mesh" || d.host_path.includes("/media/xchg"));
+
+            const renderDriveCard = (d) => {
               const isApproved = approvedDriveIds.has(d.id);
               const isHovered = hoveredDriveId === d.id;
 
@@ -7094,16 +7100,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   })
                 ),
 
-                // Visual Tree representation of the Drive Path
+                // Visual Tree representation of the Drive Path (default collapsed for clean overview)
                 h(VisualFilePathTree, {
                   sourcePath: d.host_path,
                   title: `${d.name} (${formatUserPath(d.host_path)})`,
-                  defaultExpanded: true
+                  defaultExpanded: false
                 }),
 
-                // Stats line
+                // Stats line (authentic storage size & status)
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
-                  h("span", null, `~${d.estimated_files || 0} Dateien`),
+                  h("span", null, d.estimated_files > 0 ? `~${d.estimated_files} Dateien` : "Wartet auf Scan"),
                   h("span", { style: { color: "#4ade80", fontWeight: 500 } }, `${d.free_space_gb || 0} GB frei • RW`)
                 ),
 
@@ -7117,8 +7123,43 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     h("span", null, "Maus berühren für Verzeichnisbaum-Stellung")
                   )
               );
-            })
-          ),
+            };
+
+            return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "0.85rem" } },
+              // 1. Physische Hardware-Laufwerke & Partitionen
+              hardwareDrives.length > 0 && h("div", null,
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
+                  h("span", { style: { fontSize: "1.1rem" } }, "💾"),
+                  h("h4", { style: { fontSize: "0.95rem", fontWeight: 700, color: "#93c5fd", margin: 0 } },
+                    `Physische Hardware-Laufwerke & Partitionen (${hardwareDrives.length})`
+                  )
+                ),
+                h("div", { className: "auto-org-drive-grid" }, hardwareDrives.map(renderDriveCard))
+              ),
+
+              // 2. Cloud Storage
+              cloudDrives.length > 0 && h("div", null,
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
+                  h("span", { style: { fontSize: "1.1rem" } }, "☁️"),
+                  h("h4", { style: { fontSize: "0.95rem", fontWeight: 700, color: "#38bdf8", margin: 0 } },
+                    `Cloud Storage (${cloudDrives.length})`
+                  )
+                ),
+                h("div", { className: "auto-org-drive-grid" }, cloudDrives.map(renderDriveCard))
+              ),
+
+              // 3. LAN-Sync & Mesh (Syncthing)
+              meshDrives.length > 0 && h("div", null,
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
+                  h("span", { style: { fontSize: "1.1rem" } }, "🔄"),
+                  h("h4", { style: { fontSize: "0.95rem", fontWeight: 700, color: "#a78bfa", margin: 0 } },
+                    `LAN-Sync & Mesh (Syncthing • laptop ↔ debian1 ↔ Note14new) (${meshDrives.length})`
+                  )
+                ),
+                h("div", { className: "auto-org-drive-grid" }, meshDrives.map(renderDriveCard))
+              )
+            );
+          })(),
 
           // Excluded Drives Section
           showExcludedDrives && excludedDrives.length > 0 && h("div", {
@@ -7403,10 +7444,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
           h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "0.75rem" } },
             [
-              { name: "Downloads", path: "/home/mb/Downloads", icon: "⬇️", desc: "Sammelort für Webinhalte & Rechnungen" },
-              { name: "Schreibtisch", path: "/home/mb/Schreibtisch", icon: "🖥️", desc: "Temporäre Arbeitsdateien & Notizen" },
-              { name: "PrivatBüro", path: "/media/privat-data/10_PrivatBüro", icon: "📁", desc: "Privatdokumente & Belege" },
-              { name: "Work Data", path: "/media/work-data", icon: "💼", desc: "Projektunterlagen & Archive" },
+              { name: "Downloads", path: "/home/mb/Downloads", icon: "⬇️", desc: "Lokaler Download-Ordner" },
+              { name: "Schreibtisch", path: "/home/mb/Schreibtisch", icon: "🖥️", desc: "Lokaler Desktop-Ablageort" },
+              { name: "privat-data", path: "/media/privat-data", icon: "💾", desc: "Physische Partition für Privates" },
+              { name: "work-data", path: "/media/work-data", icon: "💼", desc: "Physische Partition für Beruf & Projekte" },
+              { name: "nosync", path: "/media/nosync", icon: "📚", desc: "Lokaler Storage & externe Medien (nicht gesynct)" },
+              { name: "xchg (Syncthing)", path: "/media/xchg", icon: "🔄", desc: "LAN-Austausch & P2P Mesh-Pool" },
             ].map((src, i) =>
               h("div", {
                 key: i,

@@ -2301,7 +2301,8 @@ _REDUNDANCY_DECISIONS: Dict[str, Dict[str, Any]] = {
 async def proactive_scan_drives() -> Dict[str, Any]:
     """
     Proactively discovers all available storage drives, container mounts, and Google Drive links.
-    Returns the survey result and prompts the user for embedding & indexing consent.
+    Organized strictly by physical hardware partitions, LAN-mesh (Syncthing), and cloud mappings,
+    without premature semantic file role or count assumptions.
     """
     mounts = docker_mount_service.get_mounts()
     drives: List[Dict[str, Any]] = []
@@ -2313,17 +2314,36 @@ async def proactive_scan_drives() -> Dict[str, Any]:
         cat = m.get("category", "Local Drive")
         rw = m.get("rw", True)
 
-        drive_type = "dumpzone" if any(k in h_path.lower() for k in ["download", "desktop", "schreibtisch"]) else "local"
-        est_files = 45 if drive_type == "dumpzone" else (142 if "work" in h_path else (89 if "privat" in h_path else 60))
+        # Classify by architecture level: Hardware Partition vs LAN-Mesh vs Local Directory
+        if "/media/xchg" in h_path:
+            section = "syncthing_mesh"
+            drive_type = "mesh"
+        elif any(h_path.startswith(p) for p in ["/media/work-data", "/media/privat-data", "/media/nosync", "/media/empty"]):
+            section = "hardware"
+            drive_type = "partition"
+        else:
+            section = "hardware"
+            drive_type = "local"
 
         parts = [p for p in Path(h_path).parts if p != "/"]
         tree_slice = ["/"] + list(parts)
         parent_path = str(Path(h_path).parent)
 
+        # Real disk usage if path exists on host or container, else safe default
+        free_space = 142.5
+        for test_p in [h_path, c_path]:
+            if test_p and Path(test_p).exists():
+                try:
+                    free_space = round(shutil.disk_usage(test_p).free / (1024 ** 3), 1)
+                    break
+                except Exception:
+                    pass
+
         drives.append({
             "id": f"drive_{idx}_{Path(c_path).name}",
             "name": label,
             "category": cat,
+            "section": section,
             "type": drive_type,
             "host_path": h_path,
             "container_path": c_path,
@@ -2331,8 +2351,8 @@ async def proactive_scan_drives() -> Dict[str, Any]:
             "parent_path": parent_path,
             "depth": len(parts),
             "is_writable": rw,
-            "free_space_gb": 142.5,
-            "estimated_files": est_files,
+            "free_space_gb": free_space,
+            "estimated_files": 0,
             "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
             "is_approved": True,
             "is_dismissed": False,
@@ -2344,6 +2364,7 @@ async def proactive_scan_drives() -> Dict[str, Any]:
             "id": f"cloud_{m.get('id', 'gdrive')}",
             "name": f"☁️ Google Drive ({m.get('name', 'Cloud')})",
             "category": "Cloud Storage",
+            "section": "cloud",
             "type": "cloud",
             "host_path": m.get("drive_folder_path", "gdrive://"),
             "container_path": m.get("local_path", "/opt/data/cloud"),
@@ -2352,7 +2373,7 @@ async def proactive_scan_drives() -> Dict[str, Any]:
             "depth": 2,
             "is_writable": True,
             "free_space_gb": 85.0,
-            "estimated_files": 120,
+            "estimated_files": 0,
             "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
             "is_approved": True,
             "is_dismissed": False,
@@ -2365,7 +2386,7 @@ async def proactive_scan_drives() -> Dict[str, Any]:
         "status": _PROACTIVE_DISCOVERY_STATE["status"],
         "total_drives": len(drives),
         "total_estimated_files": sum(d["estimated_files"] for d in drives),
-        "indexing_prompt": "Hermes hat alle aktiven Speicherorte und Drives auf diesem Rechner erkannt. Soll mit dem Embedding und der semantischen Indexierung für diese Pfade begonnen werden?",
+        "indexing_prompt": "Hermes hat alle aktiven physischen Laufwerke, Partitionen und Cloud-Pfade auf diesem System erkannt. Soll mit der Tiefenanalyse (Dokumentextraktion, Audio/Video-Metadaten & Embeddings) begonnen werden?",
         "last_scan_at": _PROACTIVE_DISCOVERY_STATE["last_scan_at"] or datetime.now(timezone.utc).isoformat(),
         "drives": drives,
     }
