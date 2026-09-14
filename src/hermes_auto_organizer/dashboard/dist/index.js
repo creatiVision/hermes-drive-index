@@ -5631,6 +5631,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const [excludedDriveIds, setExcludedDriveIds] = useState(new Set());
     const [hoveredDriveId, setHoveredDriveId] = useState(null);
     const [showExcludedDrives, setShowExcludedDrives] = useState(false);
+    const [showAllUsers, setShowAllUsers] = useState(false);
+    const [expandedDrives, setExpandedDrives] = useState(new Set());
     const [anomalyViewMode, setAnomalyViewMode] = useState("groups"); // "groups" | "table"
     const [approvedAnomalyGroupIds, setApprovedAnomalyGroupIds] = useState(new Set());
     const [excludedAnomalyGroupIds, setExcludedAnomalyGroupIds] = useState(new Set());
@@ -5714,16 +5716,6 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         }).catch(() => null);
         if (pscan) {
           setProactiveScan(pscan);
-          if (pscan.drives && pscan.drives.length > 0) {
-            setApprovedDriveIds(prev => {
-              const driveIds = pscan.drives.map(d => d.id);
-              const hasAnyRealId = Array.from(prev).some(id => driveIds.includes(id));
-              if (!hasAnyRealId) {
-                return new Set(driveIds);
-              }
-              return prev;
-            });
-          }
         }
         if (etax) {
           setEmergentTaxonomy(etax);
@@ -6078,6 +6070,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       } else {
         setApprovedDriveIds(new Set(activeIds));
       }
+    };
+
+    const handleResetAllDrives = () => {
+      setApprovedDriveIds(new Set());
+      setExcludedDriveIds(new Set());
+      setNotice("Alle Laufwerke und Ordner auf den neutralen Ausgangs-Vorschlagsmodus (🟡) zurückgesetzt.");
+    };
+
+    const toggleExpandDrive = (driveId) => {
+      setExpandedDrives(prev => {
+        const next = new Set(prev);
+        if (next.has(driveId)) next.delete(driveId);
+        else next.add(driveId);
+        return next;
+      });
     };
 
     const toggleExpandBranch = (id) => {
@@ -7054,6 +7061,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 style: { padding: "0.4rem 0.85rem", fontSize: "0.78rem" },
                 onClick: () => setApprovedDriveIds(new Set(activeDrives.map(d => d.id)))
               }, "🟢 Alle freigeben"),
+              h("button", {
+                type: "button",
+                className: "auto-org-btn auto-org-btn-outline",
+                style: { padding: "0.4rem 0.85rem", fontSize: "0.78rem", borderColor: "#eab308", color: "#fef08a" },
+                onClick: handleResetAllDrives
+              }, "🟡 Neuer Vorschlag (Zurücksetzen)"),
+              h("label", { style: { display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.78rem", color: "#94a3b8", cursor: "pointer", marginLeft: "0.5rem" } },
+                h("input", {
+                  type: "checkbox",
+                  className: "auto-org-checkbox",
+                  checked: showAllUsers,
+                  onChange: () => setShowAllUsers(v => !v)
+                }),
+                h("span", null, "👥 Andere Benutzer einblenden")
+              ),
               excludedDrives.length > 0 && h("button", {
                 type: "button",
                 className: "auto-org-btn auto-org-btn-outline",
@@ -7065,13 +7087,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
           // Scanned Drives Grouped by Architecture Tier: Hardware Partitions, Cloud Storage, LAN-Mesh
           (() => {
-            const hardwareDrives = activeDrives.filter(d => d.section === "hardware" || (!d.section && d.category !== "Cloud Storage" && !d.host_path.includes("/media/xchg")));
+            const hardwareDrives = activeDrives.filter(d => d.section === "hardware" || (!d.section && d.category !== "Cloud Storage" && !d.host_path.includes("/media/xchg") && !d.host_path.startsWith("/home")));
+            const homeDrives = activeDrives.filter(d => d.section === "home" || d.host_path.startsWith("/home")).filter(d => {
+              if (showAllUsers) return true;
+              return d.host_path.includes("/home/mb") || d.name.includes("mb");
+            });
             const cloudDrives = activeDrives.filter(d => d.section === "cloud" || d.category === "Cloud Storage" || d.type === "cloud");
             const meshDrives = activeDrives.filter(d => d.section === "syncthing_mesh" || d.type === "mesh" || d.host_path.includes("/media/xchg"));
 
             const renderDriveCard = (d) => {
               const isApproved = approvedDriveIds.has(d.id);
               const isHovered = hoveredDriveId === d.id;
+              const isDriveExpanded = expandedDrives.has(d.id);
+              const subs = d.subdirectories || [];
 
               return h("div", {
                 key: d.id,
@@ -7089,7 +7117,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                       onChange: () => toggleApproveDrive(d.id)
                     }),
                     h("span", { style: { fontWeight: 700, color: "#ffffff", fontSize: "0.95rem" } }, d.name),
-                    h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive")
+                    h("span", { className: "auto-org-badge auto-org-badge-blue", style: { fontSize: "0.68rem" } }, d.category || "Drive"),
+                    d.syncthing && h("span", {
+                      className: "auto-org-badge",
+                      style: { fontSize: "0.65rem", background: "rgba(167, 139, 250, 0.2)", color: "#c4b5fd", border: "1px solid #8b5cf6" },
+                      title: `Syncthing Folder: ${d.syncthing.id || d.syncthing.label || ''} (Peers: ${(d.syncthing.devices || []).join(', ')})`
+                    }, `🔄 Syncthing: ${(d.syncthing.devices || ['Mesh']).join(', ')}`)
                   ),
                   h(OverlaySwitchButton, {
                     status: isApproved ? "approved" : (excludedDriveIds.has(d.id) ? "excluded" : "proposed"),
@@ -7106,6 +7139,78 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   title: `${d.name} (${formatUserPath(d.host_path)})`,
                   defaultExpanded: false
                 }),
+
+                // Dynamically Discovered Subdirectories Hierarchy Section
+                subs.length > 0 && h("div", {
+                  style: {
+                    marginTop: "0.45rem",
+                    padding: "0.45rem 0.65rem",
+                    background: "rgba(15, 23, 42, 0.65)",
+                    border: "1px solid #334155",
+                    borderRadius: "0.375rem"
+                  }
+                },
+                  h("div", {
+                    style: {
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      color: "#93c5fd",
+                      userSelect: "none"
+                    },
+                    onClick: () => toggleExpandDrive(d.id)
+                  },
+                    h("div", { style: { display: "flex", alignItems: "center", gap: "0.35rem" } },
+                      h("span", null, isDriveExpanded ? "▼" : "▶"),
+                      h("span", null, `📁 Erkannte Quell-Ordner (${subs.length})`)
+                    ),
+                    h("span", { style: { fontSize: "0.7rem", color: "#64748b" } }, isDriveExpanded ? "Zuklappen" : "Aufklappen")
+                  ),
+                  isDriveExpanded && h("div", {
+                    style: {
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.3rem",
+                      marginTop: "0.45rem",
+                      paddingLeft: "0.5rem",
+                      borderLeft: "2px solid #1e293b"
+                    }
+                  },
+                    subs.map((sub, sidx) => {
+                      const st = sub.syncthing;
+                      const isSubApproved = isApproved;
+                      return h("div", {
+                        key: sidx,
+                        style: {
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          fontSize: "0.76rem",
+                          padding: "0.25rem 0.4rem",
+                          background: "rgba(30, 41, 59, 0.45)",
+                          borderRadius: "0.25rem"
+                        }
+                      },
+                        h("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", overflow: "hidden", textOverflow: "ellipsis" } },
+                          h("span", null, "├── 📂"),
+                          h("span", { style: { color: "#f1f5f9", fontWeight: 500 } }, sub.name),
+                          st && h("span", {
+                            className: "auto-org-badge",
+                            style: { fontSize: "0.62rem", background: "rgba(167, 139, 250, 0.2)", color: "#c4b5fd", border: "1px solid #7c3aed" },
+                            title: `Syncthing Sync mit: ${(st.devices || []).join(', ')}`
+                          }, `🔄 ${(st.devices || []).join(', ')}`)
+                        ),
+                        h("span", {
+                          className: `auto-org-badge ${isSubApproved ? "auto-org-badge-green" : "auto-org-badge-yellow"}`,
+                          style: { fontSize: "0.62rem" }
+                        }, isSubApproved ? "🟢 Freigabe" : "🟡 Vorschlag")
+                      );
+                    })
+                  )
+                ),
 
                 // Stats line (authentic storage size & status)
                 h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.2rem" } },
@@ -7137,7 +7242,18 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("div", { className: "auto-org-drive-grid" }, hardwareDrives.map(renderDriveCard))
               ),
 
-              // 2. Cloud Storage
+              // 2. Home & Benutzer-Verzeichnisse
+              homeDrives.length > 0 && h("div", null,
+                h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
+                  h("span", { style: { fontSize: "1.1rem" } }, "🏠"),
+                  h("h4", { style: { fontSize: "0.95rem", fontWeight: 700, color: "#facc15", margin: 0 } },
+                    `Home & Benutzer-Verzeichnisse (${homeDrives.length})`
+                  )
+                ),
+                h("div", { className: "auto-org-drive-grid" }, homeDrives.map(renderDriveCard))
+              ),
+
+              // 3. Cloud Storage
               cloudDrives.length > 0 && h("div", null,
                 h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
                   h("span", { style: { fontSize: "1.1rem" } }, "☁️"),
@@ -7148,7 +7264,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 h("div", { className: "auto-org-drive-grid" }, cloudDrives.map(renderDriveCard))
               ),
 
-              // 3. LAN-Sync & Mesh (Syncthing)
+              // 4. LAN-Sync & Mesh (Syncthing)
               meshDrives.length > 0 && h("div", null,
                 h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" } },
                   h("span", { style: { fontSize: "1.1rem" } }, "🔄"),
@@ -7431,52 +7547,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             )
         ),
 
-        // Dumpzone Quick Sources Overview
-        h("div", { className: "auto-org-panel" },
-          h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" } },
-            h("h3", { style: { fontSize: "1.125rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" } },
-              h("span", null, "📥"),
-              h("span", null, "Häufige Quellbereiche & Dumpzones (Ist-Stand)")
-            ),
-            h("span", { style: { fontSize: "0.8125rem", color: "#94a3b8" } },
-              "Schnellauswahl zur gezielten Analyse & Regel-Erstellung"
-            )
-          ),
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "0.75rem" } },
-            [
-              { name: "Downloads", path: "/home/mb/Downloads", icon: "⬇️", desc: "Lokaler Download-Ordner" },
-              { name: "Schreibtisch", path: "/home/mb/Schreibtisch", icon: "🖥️", desc: "Lokaler Desktop-Ablageort" },
-              { name: "privat-data", path: "/media/privat-data", icon: "💾", desc: "Physische Partition für Privates" },
-              { name: "work-data", path: "/media/work-data", icon: "💼", desc: "Physische Partition für Beruf & Projekte" },
-              { name: "nosync", path: "/media/nosync", icon: "📚", desc: "Lokaler Storage & externe Medien (nicht gesynct)" },
-              { name: "xchg (Syncthing)", path: "/media/xchg", icon: "🔄", desc: "LAN-Austausch & P2P Mesh-Pool" },
-            ].map((src, i) =>
-              h("div", {
-                key: i,
-                style: {
-                  background: "rgba(15, 23, 42, 0.75)",
-                  border: "1px solid #334155",
-                  borderRadius: "0.375rem",
-                  padding: "0.85rem 1rem",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.4rem"
-                }
-              },
-                h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-                  h("span", { style: { fontWeight: 600, color: "#ffffff" } }, `${src.icon} ${src.name}`),
-                  h("button", {
-                    type: "button",
-                    className: "auto-org-pill-btn",
-                    onClick: () => handleSetRuleSource(src.path)
-                  }, "Als Quelle wählen →")
-                ),
-                h("div", { style: { fontFamily: "monospace", fontSize: "0.75rem", color: "#93c5fd" } }, src.path),
-                h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, src.desc)
-              )
-            )
-          )
-        ),
+
 
         // Google Drive Discovery Notice (Isolated & Gated to Step 5)
         h("div", {

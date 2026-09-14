@@ -2298,14 +2298,32 @@ _REDUNDANCY_DECISIONS: Dict[str, Dict[str, Any]] = {
 
 
 @router.get("/discovery/proactive-scan")
-async def proactive_scan_drives() -> Dict[str, Any]:
+async def proactive_scan_drives(include_all_users: bool = False) -> Dict[str, Any]:
     """
-    Proactively discovers all available storage drives, container mounts, and Google Drive links.
-    Organized strictly by physical hardware partitions, LAN-mesh (Syncthing), and cloud mappings,
-    without premature semantic file role or count assumptions.
+    Proactively discovers all available storage drives, container mounts, Syncthing folders, and Google Drive links.
+    Organized strictly by physical hardware partitions, /home, LAN-mesh (Syncthing), and cloud mappings.
+    All detected items start in the neutral 'proposed' state (is_approved=False).
     """
+    import socket
+    from hermes_auto_organizer.infrastructure.storage.lan_mesh_scanner import LanMeshScanner
+
+    hostname = socket.gethostname() or "laptop"
     mounts = docker_mount_service.get_mounts()
     drives: List[Dict[str, Any]] = []
+
+    # Map Syncthing folders by path
+    syncthing_folders_by_path: Dict[str, Dict[str, Any]] = {}
+    try:
+        scanner = LanMeshScanner()
+        st_folders = scanner.get_syncthing_folders()
+        for sf in st_folders:
+            p = sf.get("path", "")
+            if p:
+                p_expanded = str(Path(p).expanduser().resolve())
+                syncthing_folders_by_path[p_expanded] = sf
+                syncthing_folders_by_path[p] = sf
+    except Exception as e:
+        logger.warning("Failed to query Syncthing folders: %s", e)
 
     for idx, m in enumerate(mounts):
         h_path = m.get("host_path", "")
@@ -2314,6 +2332,13 @@ async def proactive_scan_drives() -> Dict[str, Any]:
         cat = m.get("category", "Local Drive")
         rw = m.get("rw", True)
 
+        # Dynamic display name stripping technical /media/ mountpoint
+        clean_name = label
+        if h_path.startswith("/media/"):
+            clean_name = h_path.replace("/media/", "")
+        elif h_path.startswith("/home/"):
+            clean_name = h_path.replace("/home/", "")
+
         # Classify by architecture level: Hardware Partition vs LAN-Mesh vs Local Directory
         if "/media/xchg" in h_path:
             section = "syncthing_mesh"
@@ -2321,6 +2346,9 @@ async def proactive_scan_drives() -> Dict[str, Any]:
         elif any(h_path.startswith(p) for p in ["/media/work-data", "/media/privat-data", "/media/nosync", "/media/empty"]):
             section = "hardware"
             drive_type = "partition"
+        elif h_path.startswith("/home"):
+            section = "home"
+            drive_type = "home"
         else:
             section = "hardware"
             drive_type = "local"
@@ -2339,9 +2367,33 @@ async def proactive_scan_drives() -> Dict[str, Any]:
                 except Exception:
                     pass
 
+        # Dynamically inspect actual top-level subdirectories without hardcoding
+        subdirectories: List[Dict[str, Any]] = []
+        for test_p in [h_path, c_path]:
+            target_p = Path(test_p)
+            if target_p.exists() and target_p.is_dir():
+                try:
+                    for child in sorted(target_p.iterdir(), key=lambda c: c.name.lower()):
+                        if child.name.startswith(".") or child.name == "lost+found":
+                            continue
+                        if child.is_dir():
+                            c_full = str(child)
+                            st_match = syncthing_folders_by_path.get(c_full) or syncthing_folders_by_path.get(str(Path(h_path) / child.name))
+                            subdirectories.append({
+                                "name": child.name,
+                                "path": str(Path(h_path) / child.name),
+                                "syncthing": st_match,
+                            })
+                    break
+                except (PermissionError, OSError):
+                    pass
+
+        st_match_self = syncthing_folders_by_path.get(h_path)
+
         drives.append({
             "id": f"drive_{idx}_{Path(c_path).name}",
-            "name": label,
+            "name": clean_name,
+            "full_label": label,
             "category": cat,
             "section": section,
             "type": drive_type,
@@ -2353,8 +2405,10 @@ async def proactive_scan_drives() -> Dict[str, Any]:
             "is_writable": rw,
             "free_space_gb": free_space,
             "estimated_files": 0,
+            "subdirectories": subdirectories,
+            "syncthing": st_match_self,
             "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
-            "is_approved": True,
+            "is_approved": False,  # Initial state is proposed (neutral)
             "is_dismissed": False,
             "included": True,
         })
@@ -2374,8 +2428,10 @@ async def proactive_scan_drives() -> Dict[str, Any]:
             "is_writable": True,
             "free_space_gb": 85.0,
             "estimated_files": 0,
+            "subdirectories": [],
+            "syncthing": None,
             "is_indexed": _PROACTIVE_DISCOVERY_STATE["status"] == "INDEXED",
-            "is_approved": True,
+            "is_approved": False,  # Initial state is proposed (neutral)
             "is_dismissed": False,
             "included": True,
         })
@@ -2384,9 +2440,10 @@ async def proactive_scan_drives() -> Dict[str, Any]:
 
     return {
         "status": _PROACTIVE_DISCOVERY_STATE["status"],
+        "hostname": hostname,
         "total_drives": len(drives),
         "total_estimated_files": sum(d["estimated_files"] for d in drives),
-        "indexing_prompt": "Hermes hat alle aktiven physischen Laufwerke, Partitionen und Cloud-Pfade auf diesem System erkannt. Soll mit der Tiefenanalyse (Dokumentextraktion, Audio/Video-Metadaten & Embeddings) begonnen werden?",
+        "indexing_prompt": f"Hermes hat alle aktiven physischen Laufwerke, Partitionen, Syncthing-Syncs und Cloud-Pfade auf '{hostname}' erkannt. Alle Pfade befinden sich im neutralen Vorschlagsmodus.",
         "last_scan_at": _PROACTIVE_DISCOVERY_STATE["last_scan_at"] or datetime.now(timezone.utc).isoformat(),
         "drives": drives,
     }

@@ -53,24 +53,28 @@ flowchart LR
 
 ---
 
-## 3. Phase 1: Zielbereich & Ingestion
+## 3. Phase 1: Zielbereich & Ingestion (Wo wird gearbeitet?)
 
 In dieser Phase bestimmen Sie, welche physischen Laufwerke und Verzeichnisse analysiert werden sollen. **Es werden hierbei noch keinerlei Dateien verschoben und keine voreiligen inhaltlichen Annahmen getroffen.** Die semantische Einordnung erfolgt erst dynamisch nach der Ingestion in Schritt 2.
 
-1. **Strukturierung nach physischen Speicher-Ebenen**:
-   Die erkannten Pfade sind übersichtlich nach Architektur-Ebenen gegliedert:
-   * **💾 Physische Hardware-Laufwerke & Partitionen**: Ihre tatsächlichen Hardware-Partitionen (`/media/privat-data`, `/media/work-data`, `/media/nosync`, `/home/...`).
+1. **Ausgangszustand: Neutraler Vorschlag (`🟡 Vorschlag`)**:
+   * Alle erkannten Laufwerke und Partitionen starten im neutralen Status **`🟡 Vorschlag`** (weder automatisch freigegeben noch ausgeschlossen).
+   * Sie behalten jederzeit die volle Hoheit: Erst nach Ihrer Prüfung und Freigabe werden die Ordner in die Ingestion einbezogen.
+2. **Strukturierung nach physischen Speicher-Ebenen**:
+   Die erkannten Pfade stammen aus dem realen Systemzustand des Rechners (dynamischer Hostname `laptop`, keine Hardcodierung):
+   * **💾 Physische Hardware-Laufwerke & Partitionen**: Ihre tatsächlichen Hardware-Mounts (`privat-data`, `work-data`, `nosync`, etc. – der technische Mountpoint-Präfix `/media/` wird für mehr Übersichtlichkeit ausgeblendet).
+   * **🏠 Home & Benutzer-Verzeichnisse**: Lokale Arbeitsordner wie `/home/mb/Downloads`. Über die Option **`👥 Andere Benutzer einblenden`** können bei Bedarf auch System- und Hintergrundnutzer (`hermes-runner`, etc.) eingeblendet werden.
    * **☁️ Cloud Storage**: Erkannte Google Drive Sync-Mappings (`gdrive://...`).
-   * **🔄 LAN-Sync & Mesh (Syncthing)**: Geteilte Ordner im P2P-Netzwerk (`/media/xchg` zwischen `laptop`, `debian1` und Mobilgeräten wie `Note14new`).
-2. **Kompakte Kachel-Übersicht & Einklappbarer Verzeichnisbaum**:
-   * Jede Kachel zeigt den Speicherort, Lese-/Schreibberechtigung und den tatsächlichen freien Festplattenplatz.
-   * Der integrierte Verzeichnisbaum (`VisualFilePathTree`) ist **standardmäßig eingeklappt** (`defaultExpanded: false`), um eine saubere Gesamtübersicht zu wahren.
-   * Klicken Sie auf **`▶`**, um die Verzeichnis-Hierarchie der Partition im Detail auszuklappen.
-3. **Auswahl & Einbeziehung**:
-   * Nutzen Sie die Checkboxen oder klicken Sie auf **`🟢 Alle freigeben`**, um festzulegen, welche Pfade in die Analyse einbezogen werden.
-   * Möchten Sie Partitionen oder Ordner ausschließen, schalten Sie die Ampel über den Segment-Button auf **`🔴 Ausschließen`**.
-4. **Schnellauswahl für häufige Quellbereiche**:
-   * Im Panel *Häufige Quellbereiche & Dumpzones* stehen Ihnen die wichtigsten Einstiegspunkte (z. B. `Downloads`, `Schreibtisch`, `work-data`, `privat-data`, `nosync`, `xchg`) per 1-Klick-Button bereit.
+   * **🔄 LAN-Sync & Mesh (Syncthing)**: Geteilte Ordner im P2P-Netzwerk (`/media/xchg` zwischen `laptop`, `debian1` und Mobilgeräten wie `Note14new`). Live-Syncthing-Peers werden direkt mit Badges angezeigt.
+3. **Strukturierte grafische Verzeichnisbaum-Auflistung**:
+   * Jede Laufwerkskachel enthält eine ausklappbare Hierarchie **`📁 Erkannte Quell-Ordner`**, die echte Unterordner (z. B. `002_cv-projects`, `10_PrivatBüro`, `Meditationen`) dynamisch auflistet.
+   * Für Ordner, die via Syncthing geteilt werden, werden die aktiven Zielgeräte (z. B. `🔄 Note14new, debian1`) direkt in der Baumansicht hervorgehoben.
+   * Der integrierte Verzeichnisbaum (`VisualFilePathTree`) ermöglicht zusätzlich die visuelle Navigation und das Umschalten von Teilpfaden.
+4. **Steuerungs-Leiste (Toolbar)**:
+   * **`🟢 Alle freigeben`**: Übernimmt alle aktiven Partitionen für die Ingestion.
+   * **`🟡 Neuer Vorschlag (Zurücksetzen)`**: Setzt alle Freigaben und Ausschlüsse zurück auf den neutralen Ausgangszustand (`🟡 Vorschlag`).
+   * **`👥 Andere Benutzer einblenden`**: Filtert bzw. erweitert die Anzeige im Home-Bereich.
+   * **`🔴 Ausschließen` / Ampel-Schalter**: Ermöglicht das gezielte Ausschließen einzelner Pfade oder ganzer Partitionen.
 5. **Eigenen Pfad / Subtree analysieren**:
    * Im Panel *Subtree-Profiler & Entropie-Diagnose* können Sie jeden beliebigen absoluten Pfad eingeben, die Shannon MIME-Entropie messen und strukturelle Störungszonen aufdecken.
 6. **Ingestion & Tiefenanalyse starten**:
