@@ -6717,7 +6717,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       return h("div", { className: "auto-org-header" },
         h("div", { className: "auto-org-title-group" },
           h("div", { className: "auto-org-title" },
-            h("span", null, "📁 Auto-Organizer"),
+            h("span", null, "📁 Auto Filesys Organizer"),
             stats && stats.db_connected ?
               h("span", { className: "auto-org-badge auto-org-badge-green" }, "✓ PostgreSQL 16 + pgvector") :
               h("span", { className: "auto-org-badge auto-org-badge-yellow" }, "Verbinde..."),

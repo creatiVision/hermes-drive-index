@@ -7,7 +7,7 @@ In accordance with Section 4(b) of the Apache 2.0 License, this file and the rep
 have been modified to expand the project from hermes-drive-index into hermes-auto-organizer.
 -->
 
-# Hermes Auto-Organizer & Drive Index
+# Hermes Auto Filesys Organizer & Drive Index
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
@@ -246,11 +246,11 @@ hermes-organizer rollback --batch-id <UUID>
 
 ## Dashboard Web Plugin — Step-by-Step User Guide
 
-The Hermes Auto-Organizer Dashboard Plugin integrates seamlessly into the Hermes Agent Web Dashboard (`http://localhost:9119/organizer`).
+The Hermes Auto Filesys Organizer Dashboard Plugin integrates seamlessly into the Hermes Agent Web Dashboard (`http://localhost:9119/organizer`).
 
 ### 1. Opening the Web Interface
 - **Direct URL**: Open your browser at [http://localhost:9119/organizer](http://localhost:9119/organizer).
-- **Navigation via Sidebar**: Click **Plugins** in the left sidebar, then select **Auto Organizer** (or click the top-bar tab `Auto Organizer`).
+- **Navigation via Sidebar**: Click **Plugins** in the left sidebar, then select **Auto Filesys Organizer** (or click the top-bar tab `Auto Filesys Organizer`).
 - **Troubleshooting Black Screen / Browser Cache**: If you see a blank or black screen, your browser is holding cached JavaScript assets from an earlier version. Perform a **hard reload**:
   - **Chrome / Firefox / Edge**: Press `Ctrl + Shift + R` or `Ctrl + F5` (on Mac: `Cmd + Shift + R`).
   - Or test in an Incognito / Private browsing window.

@@ -50,7 +50,7 @@ def test_manifest_structure():
 
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["name"] == "auto-organizer"
-    assert data["label"] == "Auto Organizer"
+    assert data["label"] == "Auto Filesys Organizer"
     assert data["icon"] == "FolderTree"
     assert data["tab"]["path"] == "/organizer"
     assert data["entry"] == "dist/index.js"

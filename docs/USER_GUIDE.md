@@ -1,6 +1,6 @@
-# Schritt-für-Schritt Benutzeranleitung — Hermes Auto-Organizer
+# Schritt-für-Schritt Benutzeranleitung — Hermes Auto Filesys Organizer
 
-Willkommen zur Benutzeranleitung für den **Hermes Auto-Organizer**. Dieses Dokument führt Sie praxisnah durch den vollständigen 5-Phasen-Workflow zur sicheren, semantischen und revisionssicheren Organisation Ihrer Dateien.
+Willkommen zur Benutzeranleitung für den **Hermes Auto Filesys Organizer**. Dieses Dokument führt Sie praxisnah durch den vollständigen 5-Phasen-Workflow zur sicheren, semantischen und revisionssicheren Organisation Ihrer Dateien.
 
 Das System folgt der **Dual-State-Architektur**: Es scannt den Ist-Zustand ($\mathcal{S}_{\text{now}}$), induziert eine ideale Zielstruktur ($\mathcal{S}_{\text{ideal}}$) und führt physische Dateioperationen **ausschließlich nach Ihrer expliziten Freigabe** und einem vorab berechneten **Dry-Run (Simulation)** aus. Keine Datei wird unwiderruflich gelöscht.
 
@@ -27,7 +27,7 @@ Das System folgt der **Dual-State-Architektur**: Es scannt den Ist-Zustand ($\ma
    ```text
    http://localhost:9119/organizer
    ```
-   *(Alternativ im Hermes Agent Web-Dashboard auf den Tab **Auto Organizer** in der Navigationsleiste klicken).*
+   *(Alternativ im Hermes Agent Web-Dashboard auf den Tab **Auto Filesys Organizer** in der Navigationsleiste klicken).*
 
 2. **System-Status prüfen**:
    In der oberen Kopfzeile sehen Sie das Schnell-Diagnose-Tool:

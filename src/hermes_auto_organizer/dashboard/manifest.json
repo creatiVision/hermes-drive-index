@@ -1,6 +1,6 @@
 {
   "name": "auto-organizer",
-  "label": "Auto Organizer",
+  "label": "Auto Filesys Organizer",
   "description": "Autonomous file management, semantic clustering, and storage reorganization for Hermes Agent.",
   "icon": "FolderTree",
   "version": "0.4.0",
