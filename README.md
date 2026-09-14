@@ -19,6 +19,19 @@ have been modified to expand the project from hermes-drive-index into hermes-aut
 
 ---
 
+## Interactive Web Dashboard
+
+The Hermes Auto-Organizer features a dedicated multi-step web dashboard plugin mounted in the Hermes Agent UI (`/organizer`):
+
+![Hermes Auto-Organizer Multi-Step Web Dashboard](docs/images/dashboard-ui.png)
+
+### The 5-Phase Intent-Driven Workflow
+1. **Phase 1: Zielbereich & Ingestion** — Inspect detected partitions, confirm boundaries, and trigger two-tier hashing (`xxh64` + `sha256`), document & media metadata extraction (`mutagen`/`ffprobe`), and `pgvector` embedding generation.
+2. **Phase 2: Cluster & Wissensgraph** — Explore the naturally emerged target taxonomy tree ($S_{ideal}$) and interactive Obsidian-style knowledge graph.
+3. **Phase 3: Regeln & Ausreißer-Triage** — Configure deterministic match-and-move rules for standard files alongside a dedicated Human-in-the-Loop **Outlier Triage Queue** for the ~10% ambiguous edge cases.
+4. **Phase 4: Sandbox & Reversible Ausführung** — Inspect the before-and-after tree diff and execute safely with atomic verification and 1-click LIFO rollback.
+5. **Phase 5: Cloud- & LAN-Sync** — Selective bi-directional sync mappings and multi-host LAN mesh management.
+
 ## Attribution & Project Lineage
 
 This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
