@@ -6858,17 +6858,17 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
             h("span", { className: "auto-org-stepper-phase-pill" }, `Phase ${step} von 5`),
             h("span", { style: { fontWeight: 600, color: "#f8fafc", fontSize: "0.875rem" } },
-              step === 1 ? "Quell-Verzeichnisse prüfen & semantische Indexierung starten" :
-              step === 2 ? "Induziertes Kategoriensystem sichten, Graphen prüfen & freigeben" :
-              step === 3 ? "Proaktive KI-Zuordnungsregeln & Deduplizierung festlegen" :
-              step === 4 ? "Reorganisations-Simulation (Dry-Run) prüfen & revisionssicher ausführen" :
-              "Google Drive Cloud-Mappings & Multi-Host Synchronisation"
+              step === 1 ? "1. Zielbereich wählen: Quell-Verzeichnisse prüfen & Ingestion starten" :
+              step === 2 ? "2. Semantische Struktur: Entstandene Cluster & Wissensgraph freigeben" :
+              step === 3 ? "3. Regeln & Ausnahmen: Deterministische Filter & Ausreißer-Triage" :
+              step === 4 ? "4. Sandbox-Simulation: Tree-Diff & Reversible Ausführung (LIFO Rollback)" :
+              "5. Cloud-Integration: Selektive Synchronisation & Remote-Knoten"
             )
           ),
           h("div", { style: { fontSize: "0.75rem", color: "#94a3b8" } },
-            !isStep1Done ? "Schritt 1: Indexierung ausstehend" :
-            !isStep2Approved ? "Schritt 2: Freigabe erforderlich für Schritte 3–5" :
-            "System freigegeben • Bereit für Regeln & Simulation"
+            !isStep1Done ? "Schritt 1: Ordnerauswahl & Ingestion erforderlich" :
+            !isStep2Approved ? "Schritt 2: Struktur-Freigabe erforderlich für Schritte 3–5" :
+            "Struktur freigegeben • Bereit für Regeln, Triage & Simulation"
           )
         ),
         h("div", { className: "auto-org-stepper-track" },
@@ -6878,7 +6878,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           })
         ),
         h("div", { className: "auto-org-stepper" },
-          // Step 1
+          // Step 1: Zielbereich & Ingestion
           h("div", {
             className: `auto-org-step-card ${step === 1 ? "active" : ""} ${isStep1Done ? "completed" : ""}`,
             onClick: () => setStep(1)
@@ -6886,13 +6886,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { className: "auto-org-step-badge" }, isStep1Done ? "✓" : "1"),
             h("div", { className: "auto-org-step-info" },
               h("div", { className: "auto-org-step-number-title" }, "Schritt 1"),
-              h("div", { className: "auto-org-step-name" }, "Quelle & Ist-Stand"),
+              h("div", { className: "auto-org-step-name" }, "Zielbereich & Ingestion"),
               h("div", { className: "auto-org-step-subtitle" },
-                isStep1Done ? `✓ Indexiert (${stats ? stats.total_files : 450} Dateien)` : "Scan & Indexierungs-Consent"
+                isStep1Done ? `✓ Bereit (${stats ? stats.total_files : 450} Dateien indexiert)` : "Ordner wählen & Tiefenanalyse"
               )
             )
           ),
-          // Step 2 (Organisationssystem & Freigabe)
+          // Step 2: Semantische Cluster & Graph
           h("div", {
             className: `auto-org-step-card ${step === 2 ? "active" : ""} ${isStep2Approved ? "completed" : ""}`,
             onClick: () => setStep(2)
@@ -6900,70 +6900,70 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { className: "auto-org-step-badge" }, isStep2Approved ? "✓" : "2"),
             h("div", { className: "auto-org-step-info" },
               h("div", { className: "auto-org-step-number-title" }, "Schritt 2"),
-              h("div", { className: "auto-org-step-name" }, "Organisationssystem & Freigabe"),
+              h("div", { className: "auto-org-step-name" }, "Cluster & Wissensgraph"),
               h("div", { className: "auto-org-step-subtitle" },
-                isStep2Approved ? "✓ Natürlich entstanden & freigegeben" : "Emergente Taxonomie & Freigabe"
+                isStep2Approved ? "✓ Ziel-Taxonomie freigegeben" : "Struktur sichten & freigeben"
               )
             )
           ),
-          // Step 3 (Proaktive Filter-Regeln) - Strictly Gated
+          // Step 3: Regeln & Ausreißer-Triage - Strictly Gated
           h("div", {
             className: `auto-org-step-card ${step === 3 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""} ${rules.length > 0 && isStep2Approved ? "completed" : ""}`,
             onClick: () => {
               if (!isStep2Approved) {
-                setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Struktur-Freigabe) abschließen.");
                 return;
               }
               setStep(3);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3"
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3: Regeln & Triage"
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : (rules.length > 0 ? "✓" : "3")),
             h("div", { className: "auto-org-step-info" },
               h("div", { className: "auto-org-step-number-title" }, "Schritt 3"),
-              h("div", { className: "auto-org-step-name" }, "Proaktive Filter-Regeln"),
+              h("div", { className: "auto-org-step-name" }, "Regeln & Ausreißer-Triage"),
               h("div", { className: "auto-org-step-subtitle" },
-                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${rules.length} aktive Regeln (5 KI-Vorschläge)`
+                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${rules.length} aktive Regeln • Sonderfall-Triage`
               )
             )
           ),
-          // Step 4 (Simulation & Reorganisation) - Strictly Gated
+          // Step 4: Sandbox & Reversible Ausführung - Strictly Gated
           h("div", {
             className: `auto-org-step-card ${step === 4 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
             onClick: () => {
               if (!isStep2Approved) {
-                setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 abschließen.");
                 return;
               }
               setStep(4);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4"
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4: Sandbox-Simulation"
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "4"),
             h("div", { className: "auto-org-step-info" },
               h("div", { className: "auto-org-step-number-title" }, "Schritt 4"),
-              h("div", { className: "auto-org-step-name" }, "Simulation & Ausführung"),
+              h("div", { className: "auto-org-step-name" }, "Sandbox & Ausführung"),
               h("div", { className: "auto-org-step-subtitle" },
-                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : (dryRun ? `${dryRun.actions_count} Aktionen im Staging` : "Dry-Run & Sandbox-Ausführung")
+                !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : (dryRun ? `${dryRun.actions_count} Staging-Aktionen • Rollback-Schutz` : "Tree-Diff & Journal-Rollback")
               )
             )
           ),
-          // Step 5 (Google Drive Cloud-Sync) - Strictly Gated
+          // Step 5: Cloud & LAN-Sync - Strictly Gated
           h("div", {
             className: `auto-org-step-card ${step === 5 ? "active" : ""} ${!isStep2Approved ? "locked disabled" : ""}`,
             onClick: () => {
               if (!isStep2Approved) {
-                setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben.");
+                setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 abschließen.");
                 return;
               }
               setStep(5);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync"
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Cloud & Multi-Host"
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "5"),
             h("div", { className: "auto-org-step-info" },
               h("div", { className: "auto-org-step-number-title" }, "Schritt 5"),
-              h("div", { className: "auto-org-step-name" }, "Google Drive Cloud-Sync"),
+              h("div", { className: "auto-org-step-name" }, "Cloud- & LAN-Sync"),
               h("div", { className: "auto-org-step-subtitle" },
                 !isStep2Approved ? "🔒 Freigabe in Schritt 2 erforderlich" : `${syncMappings.length} selektive Sync-Ordner`
               )
@@ -6992,22 +6992,22 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       const anomalyGroups = groupAnomaliesBySemanticIntent(anomalies);
 
       return h("div", { style: { display: "flex", flexDirection: "column", gap: "1.25rem" } },
-        // Proactive AI Scan Banner (Autonome Erkennung & 1-Klick Consent)
+        // Step 1 Ingestion & Scope Banner (Autonome Erkennung & 1-Klick Consent)
         h("div", { className: "auto-org-proactive-banner" },
           h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" } },
             h("div", { style: { flex: 1, minWidth: "280px" } },
               h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
-                h("span", { style: { fontSize: "1.35rem" } }, "🤖"),
+                h("span", { style: { fontSize: "1.35rem" } }, "📂"),
                 h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
-                  "Proaktiver KI-Drive & Pfad-Scan (Autonome Erkennung)"
+                  "Schritt 1: Zielbereich & Tiefenanalyse (Ingestion & Graphify)"
                 ),
                 h("span", {
                   className: `auto-org-badge ${isIndexed ? "auto-org-badge-green" : "auto-org-badge-yellow"}`
-                }, isIndexed ? "✓ Indexiert (516 Dateien / Embeddings aktiv)" : "⏳ Indexierung & Vektorisierung ausstehend")
+                }, isIndexed ? "✓ Indexiert & Enriched (Embeddings in PostgreSQL)" : "⏳ Ingestion & Vektorisierung ausstehend")
               ),
               h("p", { style: { color: "#cbd5e1", fontSize: "0.85rem", marginTop: "0.4rem", lineHeight: "1.4" } },
                 (proactiveScan && proactiveScan.indexing_prompt) ||
-                "Hermes hat alle aktiven Speicherorte und Drives auf diesem Rechner erkannt. Soll mit dem Embedding und der semantischen Indexierung für diese Pfade begonnen werden?"
+                "Wählen Sie die zu organisierenden Ordner. Der Prozess extrahiert Dokumente, Audio/Video-Metadaten (ffprobe/mutagen) und erstellt pgvector-Embeddings zur Wissensgraph-Synthese (keine Dateien werden dabei verschoben)."
               )
             ),
             h("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" } },
@@ -7018,14 +7018,14 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 onClick: handleStartIndexing,
                 disabled: indexingLoading || approvedCount === 0
               },
-                indexingLoading ? "⏳ Erstelle Embeddings & Index..." : (isIndexed ? `↻ ${approvedCount} freigegebene Ordner aktualisieren` : `🚀 Embedding & Indexing starten (${approvedCount} Ordner)`)
+                indexingLoading ? "⏳ Erstelle Embeddings & Index..." : (isIndexed ? `↻ ${approvedCount} freigegebene Ordner aktualisieren` : `🚀 Ingestion & Analyse starten (${approvedCount} Ordner)`)
               ),
               isIndexed && h("button", {
                 type: "button",
                 className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
                 style: { padding: "0.65rem 1.2rem" },
                 onClick: () => setStep(2)
-              }, "Zu Schritt 2: Organisationssystem →")
+              }, "Zu Schritt 2: Cluster & Wissensgraph →")
             )
           ),
 
@@ -7628,13 +7628,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Step 1 Footer
         h("div", { className: "auto-org-step-footer" },
           h("div", { style: { fontSize: "0.85rem", color: "#94a3b8" } },
-            "Ist-Stand erfasst? Definieren und prüfen Sie als Nächstes das Ziel-Organisationssystem (den Verzeichnis-Baum)."
+            "Zielbereich und Ingestion erfasst? Sichten Sie als Nächstes die erkannten semantischen Cluster und den Wissensgraphen."
           ),
           h("button", {
             className: "auto-org-btn auto-org-btn-primary",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => setStep(2)
-          }, "Weiter zu Schritt 2: Organisationssystem & Baum freigeben →")
+          }, "Weiter zu Schritt 2: Semantische Cluster & Wissensgraph →")
         )
       );
     };
@@ -8153,19 +8153,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(1)
-          }, "← Zurück zu Schritt 1: Quelle & Ist-Stand"),
+          }, "← Zurück zu Schritt 1: Zielbereich & Ingestion"),
           !isStep2Approved ?
           h("button", {
             className: "auto-org-btn",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem", opacity: 0.5, cursor: "not-allowed", background: "#334155", color: "#94a3b8" },
             disabled: true,
             title: "Bitte bestätigen und geben Sie zuerst das natürlich entstandene Kategoriensystem oben frei."
-          }, "🔒 Schritt 3 gesperrt (Freigabe des Kategoriensystems erforderlich)") :
+          }, "🔒 Schritt 3 gesperrt (Freigabe der Struktur erforderlich)") :
           h("button", {
             className: "auto-org-btn auto-org-btn-primary",
             style: { padding: "0.6rem 1.5rem", fontSize: "0.875rem" },
             onClick: () => setStep(3)
-          }, "Weiter zu Schritt 3: Proaktive Filter-Regeln →")
+          }, "Weiter zu Schritt 3: Regeln & Ausreißer-Triage →")
         )
       );
     };
@@ -8819,7 +8819,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(2)
-          }, "← Zurück zu Schritt 2: Organisationssystem & Baum"),
+          }, "← Zurück zu Schritt 2: Semantische Cluster & Graph"),
           h("button", {
             className: "auto-org-btn auto-org-btn-primary auto-org-btn-hero",
             style: { padding: "0.65rem 1.5rem", fontSize: "0.875rem" },
@@ -8827,7 +8827,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               handleRunDryRun();
               setStep(4);
             }
-          }, "Weiter zu Schritt 4: Simulation & Reorganisation starten →")
+          }, "Weiter zu Schritt 4: Sandbox & Reversible Ausführung →")
         )
       );
     };
@@ -9232,7 +9232,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(3)
-          }, "← Zurück zu Schritt 3: Filter-Regeln anpassen"),
+          }, "← Zurück zu Schritt 3: Regeln & Ausreißer-Triage"),
           h("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" } },
             h("button", {
               className: "auto-org-btn auto-org-btn-outline",
@@ -9522,7 +9522,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("button", {
             className: "auto-org-btn auto-org-btn-outline",
             onClick: () => setStep(4)
-          }, "← Zurück zu Schritt 4: Simulation & Reorganisation"),
+          }, "← Zurück zu Schritt 4: Sandbox & Reversible Ausführung"),
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", color: "#4ade80", fontSize: "0.875rem", fontWeight: 600 } },
             "✓ Workflow vollständig konfiguriert & betriebsbereit"
           )
