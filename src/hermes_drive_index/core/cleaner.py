@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import re
 from typing import Iterable, Sequence
@@ -74,21 +75,24 @@ SAFE_DELETE_EXTENSIONS = {
 }
 
 VERSION_PATTERNS = [
-    r"[-_ ]*(?:v\d+|\bv\d+\b|\bver\d+\b)",
-    r"[-_ ]*(?:final|FINAL|Final|real|REAL|Real|draft|DRAFT)",
-    r"[-_ ]*(?:kopie|Kopie|copy|Copy|\(\d+\))",
-    r"[-_ ]*(?:new|NEW|neu|NEU|latest|alt|old)",
+    re.compile(r"[-_ ]*(?:v\d+|\bv\d+\b|\bver\d+\b)", re.IGNORECASE),
+    re.compile(r"[-_ ]*(?:final|real|draft)", re.IGNORECASE),
+    re.compile(r"[-_ ]*(?:kopie|copy|\(\d+\))", re.IGNORECASE),
+    re.compile(r"[-_ ]*(?:new|neu|latest|alt|old)", re.IGNORECASE),
 ]
+
+_RE_UNDERSCORES = re.compile(r"[_\-]+")
+_RE_SPACES = re.compile(r"\s+")
 
 
 def normalize_stem(stem: str) -> str:
     """Normalize filename stem to find near-duplicates and version variants."""
     s = stem.lower()
-    # Strip common copy and version annotations
+    # Strip common copy and version annotations using pre-compiled regexes
     for pat in VERSION_PATTERNS:
-        s = re.sub(pat, "", s, flags=re.IGNORECASE)
-    s = re.sub(r"[_\-]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
+        s = pat.sub("", s)
+    s = _RE_UNDERSCORES.sub(" ", s)
+    s = _RE_SPACES.sub(" ", s).strip()
     return s
 
 
@@ -122,18 +126,21 @@ def detect_duplicates(
         if isinstance(f, LocalFile):
             file_list.append(f)
         elif isinstance(f, dict):
+            p_str = f.get("path", "")
+            f_name = f.get("name") or os.path.basename(p_str)
+            f_ext = os.path.splitext(p_str)[1].lower()
             file_list.append(
                 LocalFile(
-                    id=f.get("id", f.get("path", "")),
-                    name=f.get("name", Path(f.get("path", "")).name),
+                    id=f.get("id", p_str),
+                    name=f_name,
                     mime_type=f.get("mime_type", ""),
-                    path=f.get("path", ""),
+                    path=p_str,
                     size=int(f.get("size", 0)),
                     modified_time=f.get("modified_time"),
                     accessed_time=f.get("accessed_time"),
                     md5_checksum=f.get("md5_checksum"),
                     sha256_checksum=f.get("sha256_checksum"),
-                    extension=Path(f.get("path", "")).suffix.lower(),
+                    extension=f_ext,
                 )
             )
 
@@ -190,26 +197,27 @@ def detect_duplicates(
     near_groups: list[DuplicateGroup] = []
 
     if check_variants or check_near:
-        by_stem: dict[tuple[str, str], list[LocalFile]] = defaultdict(list)
+        by_stem: dict[tuple[str, str], list[tuple[LocalFile, str]]] = defaultdict(list)
         for f in file_list:
             if f.is_dir or f.path in handled_paths:
                 continue
-            norm = normalize_stem(Path(f.name).stem)
+            stem = os.path.splitext(f.name)[0]
+            norm = normalize_stem(stem)
             if len(norm) >= 3:
-                by_stem[(norm, f.extension)].append(f)
+                by_stem[(norm, f.extension)].append((f, stem))
 
         for (norm_key, ext), cluster in by_stem.items():
             if len(cluster) < 2:
                 continue
 
             has_version_marker = any(
-                any(re.search(pat, Path(c.name).stem, re.IGNORECASE) for pat in VERSION_PATTERNS)
-                for c in cluster
+                any(pat.search(stem) for pat in VERSION_PATTERNS)
+                for _c, stem in cluster
             )
 
             # Pick keep candidate: prefer file with latest date
             sorted_cluster = sorted(
-                cluster,
+                [c for c, _stem in cluster],
                 key=lambda x: (-(datetime.fromisoformat(x.modified_time).timestamp() if x.modified_time else 0), len(x.name)),
             )
             keep = sorted_cluster[0]
@@ -285,11 +293,18 @@ def classify_old_files(
     tier3_active: list[OldFileItem] = []
 
     for f in files:
-        path_str = f.path if isinstance(f, LocalFile) else f.get("path", "")
-        name = f.name if isinstance(f, LocalFile) else f.get("name", Path(path_str).name)
-        size = f.size if isinstance(f, LocalFile) else int(f.get("size", 0))
-        mtime_str = f.modified_time if isinstance(f, LocalFile) else f.get("modified_time")
-        ext = Path(path_str).suffix.lower()
+        if isinstance(f, LocalFile):
+            path_str = f.path
+            name = f.name
+            size = f.size
+            mtime_str = f.modified_time
+            ext = f.extension or os.path.splitext(path_str)[1].lower()
+        else:
+            path_str = f.get("path", "")
+            name = f.get("name") or os.path.basename(path_str)
+            size = int(f.get("size", 0))
+            mtime_str = f.get("modified_time")
+            ext = os.path.splitext(path_str)[1].lower()
 
         age_days = 0
         if mtime_str:
@@ -405,7 +420,7 @@ def plan_download_organization(
     for f in files:
         if f.is_dir:
             continue
-        ext = Path(f.name).suffix.lower()
+        ext = f.extension or os.path.splitext(f.name)[1].lower()
         cat = EXT_TO_CATEGORY.get(ext, "Other")
         category_counts[cat] += 1
 
@@ -443,12 +458,12 @@ def plan_download_organization(
 # =====================================================================
 
 TOP_LEVEL_STRUCTURE = [
-    ("01-Projects", r"project|code|repo|git|build|dev|design|app"),
-    ("02-Finances", r"invoice|receipt|rechnung|beleg|steuer|tax|bank|konto|finanz|payment|vertrag|contract"),
-    ("03-Personal", r"personal|privat|id|ausweis|pass|krankenkasse|health|insurance|versicherung|urlaub|travel"),
-    ("04-Reference", r"guide|handbook|reference|manual|doc|template|vorlage|book|cheat|tutorial"),
-    ("05-Archive", r"archive|archiv|old|alt|backup|bak|201\d|202[0-3]"),
-    ("06-Inbox-Unsorted", r".*"),
+    ("01-Projects", re.compile(r"project|code|repo|git|build|dev|design|app", re.IGNORECASE)),
+    ("02-Finances", re.compile(r"invoice|receipt|rechnung|beleg|steuer|tax|bank|konto|finanz|payment|vertrag|contract", re.IGNORECASE)),
+    ("03-Personal", re.compile(r"personal|privat|id|ausweis|pass|krankenkasse|health|insurance|versicherung|urlaub|travel", re.IGNORECASE)),
+    ("04-Reference", re.compile(r"guide|handbook|reference|manual|doc|template|vorlage|book|cheat|tutorial", re.IGNORECASE)),
+    ("05-Archive", re.compile(r"archive|archiv|old|alt|backup|bak|201\d|202[0-3]", re.IGNORECASE)),
+    ("06-Inbox-Unsorted", re.compile(r".*", re.IGNORECASE)),
 ]
 
 
@@ -479,7 +494,7 @@ def plan_document_structure(
 
         assigned = None
         for folder_name, pat in TOP_LEVEL_STRUCTURE[:-1]:
-            if re.search(pat, f.name, re.IGNORECASE) or re.search(pat, f.path, re.IGNORECASE):
+            if pat.search(f.name) or pat.search(f.path):
                 assigned = folder_name
                 break
 

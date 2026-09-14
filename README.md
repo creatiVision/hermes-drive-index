@@ -19,17 +19,7 @@ have been modified to expand the project from hermes-drive-index into hermes-aut
 
 ---
 
-## 🌟 Branch Architecture & Core Foundation (`main`)
-
-The `main` branch serves as the authoritative, production-stabilized trunk of the **Hermes Auto-Organizer & Drive Index**:
-
-* **Dual-State Engine & Relational Backbone**: Full implementation of PostgreSQL 16 + `pgvector` HNSW vector persistence, `BoundaryPolicy`, and `CollisionPolicy` for non-destructive, transaction-logged file reorganizations with LIFO rollback.
-* **Force-Physics Visualizer (`folders2graph`)**: Interactive force-directed Obsidian physics canvas with real-time sliders (repulsion force, link spring stiffness, center gravity, damping) and HUD telemetry controls.
-* **Unified Diagnostic Tooling**: Integrated Docker mount path validation (`DockerMountService`), storage root verification, and Google Drive bi-directional sync orchestration.
-
-### Interactive Web Dashboard Preview
-
-![Hermes Auto-Organizer Main Dashboard](docs/images/dashboard-main.png)
+## Attribution & Project Lineage
 
 This project is an authorized fork and extension of [`hermes-drive-index`](https://github.com/gregoryhorn/hermes-drive-index), originally created by **Gregory Horn and contributors** under the Apache License, Version 2.0.
 
