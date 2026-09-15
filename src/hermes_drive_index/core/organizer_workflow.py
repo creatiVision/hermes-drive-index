@@ -39,6 +39,12 @@ APPROVAL_KEYWORDS = {
 
 DISQUALIFIERS = ["but", "maybe", "wait", "?", "aber", "vielleicht", "warte", "noch nicht"]
 
+# Pre-compiled regexes for hot analysis loops
+_RE_DATE_PREFIX = re.compile(r"^\d{4}[-_]\d{2}[-_]\d{2}")
+_RE_VERSION_TAG = re.compile(r"[_\- ]v\d+", re.IGNORECASE)
+_RE_COPY_ANNOTATION = re.compile(r"[_\- ](copy|kopie|\(\d+\))", re.IGNORECASE)
+_RE_HEX_HASH = re.compile(r"^[a-f0-9]+$")
+
 
 @dataclass
 class OrganizerAction:
@@ -155,22 +161,26 @@ def analyse_first(folder_path: Path | str) -> dict:
     naming_patterns: Counter[str] = Counter()
     unclear_files: list[str] = []
 
+    base_str = str(base)
+    base_prefix = base_str if base_str.endswith(os.sep) else base_str + os.sep
+
     for f in files:
-        rel_p = Path(f.path).relative_to(base)
-        nesting = len(rel_p.parts) - 1
+        # Fast nesting calculation using string operations instead of Path object allocation
+        rel_p_str = f.relative_path or (f.path[len(base_prefix):] if f.path.startswith(base_prefix) else f.name)
+        nesting = rel_p_str.count(os.sep)
         if nesting > max_nesting:
             max_nesting = nesting
 
         cat = EXT_TO_CATEGORY.get(f.extension, "Other")
         type_groups[cat].append(f)
 
-        # Naming pattern analysis
-        stem = Path(f.name).stem
-        if re.search(r"^\d{4}[-_]\d{2}[-_]\d{2}", stem):
+        # Naming pattern analysis using os.path.splitext and pre-compiled regexes
+        stem = os.path.splitext(f.name)[0]
+        if _RE_DATE_PREFIX.search(stem):
             naming_patterns["date_prefixed (YYYY-MM-DD_*)"] += 1
-        elif re.search(r"[_\- ]v\d+", stem, re.IGNORECASE):
+        elif _RE_VERSION_TAG.search(stem):
             naming_patterns["version_tagged (*_v1, *_v2)"] += 1
-        elif re.search(r"[_\- ](copy|kopie|\(\d+\))", stem, re.IGNORECASE):
+        elif _RE_COPY_ANNOTATION.search(stem):
             naming_patterns["copy_annotated (*_copy, *(1))"] += 1
         elif "_" in stem:
             naming_patterns["snake_case"] += 1
@@ -183,9 +193,9 @@ def analyse_first(folder_path: Path | str) -> dict:
 
         # Unclear or orphan files (random hash, untyped, weird characters)
         if (
-            len(stem) > 30 and re.match(r"^[a-f0-9]+$", stem)
+            (len(stem) > 30 and _RE_HEX_HASH.match(stem))
             or f.extension == ""
-            or re.search(r"^[~#%&]", f.name)
+            or f.name.startswith(("~", "#", "%", "&"))
         ):
             unclear_files.append(f.name)
 
