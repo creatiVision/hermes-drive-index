@@ -8745,7 +8745,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     type: "button",
                     className: "auto-org-btn auto-org-btn-outline",
                     style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
-                    onClick: () => handleApproveNlRule(rule.id, false)
+                    onClick: () => handleApproveNlRule(rule.id, false),
+                    "aria-label": "Meta-Regel ablehnen",
+                    title: "Meta-Regel ablehnen"
                   }, "✕")
                 )
               )
