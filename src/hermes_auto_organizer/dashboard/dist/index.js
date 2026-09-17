@@ -8739,7 +8739,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     type: "button",
                     className: "auto-org-btn auto-org-btn-primary",
                     style: { fontSize: "0.75rem", padding: "0.3rem 0.75rem", background: "#16a34a" },
-                    onClick: () => handleApproveNlRule(rule.id, true)
+                    onClick: () => handleApproveNlRule(rule.id, true),
+                    "aria-label": "Meta-Regel annehmen",
+                    title: "Meta-Regel annehmen"
                   }, "✓ Annehmen"),
                   !isRejected && h("button", {
                     type: "button",
