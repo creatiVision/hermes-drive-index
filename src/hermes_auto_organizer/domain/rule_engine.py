@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fnmatch
+import os
 from pathlib import Path
 import re
 from typing import Any, List, Optional
@@ -57,8 +58,10 @@ def evaluate_single_condition(
         if op == "starts_with":
             return src_path.startswith(folder_str) or rel_path.startswith(folder_str)
         elif op == "equals":
-            parent_dir = str(Path(src_path).parent)
-            return parent_dir == folder_str or str(Path(rel_path).parent) == folder_str
+            # Optimized: Use os.path.dirname instead of instantiating Path objects per evaluation
+            parent_dir = os.path.dirname(src_path)
+            rel_parent = os.path.dirname(rel_path)
+            return parent_dir == folder_str or rel_parent == folder_str
         elif op == "contains":
             return folder_str in src_path or folder_str in rel_path
 
@@ -98,7 +101,8 @@ def evaluate_single_condition(
     # 4. File extension criteria
     elif field_type == "extension":
         allowed = {e.strip().lower().lstrip(".") for e in val.split(",") if e.strip()}
-        node_ext = (node.file_extension or Path(node.file_name).suffix).lower().lstrip(".")
+        # Optimized: Use os.path.splitext instead of instantiating Path objects per evaluation
+        node_ext = (node.file_extension or os.path.splitext(node.file_name)[1]).lower().lstrip(".")
         if op == "is_one_of":
             return node_ext in allowed
         elif op == "is_not_one_of":
@@ -139,7 +143,8 @@ def evaluate_modular_rule(
     # Check legacy 'extensions' field if present
     if "extensions" in condition_json:
         allowed_exts = [e.lower().lstrip(".") for e in condition_json["extensions"]]
-        node_ext = (node.file_extension or Path(node.file_name).suffix).lower().lstrip(".")
+        # Optimized: Use os.path.splitext instead of instantiating Path objects
+        node_ext = (node.file_extension or os.path.splitext(node.file_name)[1]).lower().lstrip(".")
         if node_ext not in allowed_exts:
             return False
 
@@ -166,21 +171,30 @@ def evaluate_modular_rule(
 
 def resolve_destination_path(template: str, node: FileNode) -> str:
     """Interpolates variables ({year}, {month}, {day}, {file_name}, {stem}, {ext}) into destination path."""
-    year_str = node.mtime.strftime("%Y")
-    month_str = node.mtime.strftime("%m")
-    day_str = node.mtime.strftime("%d")
-    stem_str = Path(node.file_name).stem
-    ext_str = node.file_extension or Path(node.file_name).suffix
-
+    # Optimized: Guard replacements with placeholder presence checks and avoid Path instantiation
     result = template
-    result = result.replace("{year}", year_str)
-    result = result.replace("{month}", month_str)
-    result = result.replace("{day}", day_str)
-    result = result.replace("{file_name}", node.file_name)
-    result = result.replace("{filename}", node.file_name)
-    result = result.replace("{stem}", stem_str)
-    result = result.replace("{ext}", ext_str)
-    result = result.replace("{extension}", ext_str)
+    if "{" in result:
+        mtime = node.mtime
+        if "{year}" in result:
+            result = result.replace("{year}", mtime.strftime("%Y"))
+        if "{month}" in result:
+            result = result.replace("{month}", mtime.strftime("%m"))
+        if "{day}" in result:
+            result = result.replace("{day}", mtime.strftime("%d"))
+        if "{file_name}" in result:
+            result = result.replace("{file_name}", node.file_name)
+        if "{filename}" in result:
+            result = result.replace("{filename}", node.file_name)
+        if "{stem}" in result or "{ext}" in result or "{extension}" in result:
+            stem_str, ext_str = os.path.splitext(node.file_name)
+            if node.file_extension:
+                ext_str = node.file_extension
+            if "{stem}" in result:
+                result = result.replace("{stem}", stem_str)
+            if "{ext}" in result:
+                result = result.replace("{ext}", ext_str)
+            if "{extension}" in result:
+                result = result.replace("{extension}", ext_str)
 
     # If target is a directory ending with '/', append filename automatically
     if result.endswith("/"):

@@ -3848,10 +3848,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               // Filesystem Folding Controls
               h("div", { className: "auto-org-toolbar-group" },
                 h("span", { className: "auto-org-toolbar-label" }, "Faltung:"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAllFs, title: "Alle Äste ausklappen" }, "[+] Alles"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAllFs, title: "Nur Mount-Punkte" }, "[-] Mounts"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(2), title: "Bis Ebene 2 ausklappen" }, "[2] Ebene 2"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(3), title: "Bis Ebene 3 ausklappen" }, "[3] Ebene 3")
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAllFs, title: "Alle Äste ausklappen", "aria-label": "Alle Äste ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAllFs, title: "Nur Mount-Punkte", "aria-label": "Nur Mounts ausklappen" }, "[-] Mounts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(2), title: "Bis Ebene 2 ausklappen", "aria-label": "Bis Ebene 2 ausklappen" }, "[2] Ebene 2"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setFsLevel(3), title: "Bis Ebene 3 ausklappen", "aria-label": "Bis Ebene 3 ausklappen" }, "[3] Ebene 3")
               ),
 
               // Rescan Button
@@ -3861,7 +3861,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   className: "auto-org-pill-btn fit",
                   onClick: triggerRescan,
                   disabled: isRescanning,
-                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems"
+                  title: "Startet einen sofortigen Hintergrundscan des Host-Dateisystems",
+                  "aria-label": "Host-Dateisystem neu scannen"
                 }, isRescanning ? "⏳ Scannt..." : "🔄 Neu scannen")
               )
             ) :
@@ -3887,10 +3888,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               // Tree Folding Controls
               h("div", { className: "auto-org-toolbar-group" },
                 h("span", { className: "auto-org-toolbar-label" }, "Baum-Faltung:"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen" }, "[+] Alles"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen" }, "[-] Nur Hosts"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen" }, "[2] Laufwerke"),
-                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen" }, "[3] Ordner")
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: expandAll, title: "Alle Äste bis zu den Blättern ausklappen", "aria-label": "Alle Äste ausklappen" }, "[+] Alles"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: collapseAll, title: "Bis auf Rechner einklappen", "aria-label": "Nur Host-Knoten einklappen" }, "[-] Nur Hosts"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(2), title: "Rechner & Hauptlaufwerke zeigen", "aria-label": "Bis zu Laufwerken ausklappen" }, "[2] Laufwerke"),
+                h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setLevel(3), title: "Bis zu Hauptordnern ausklappen", "aria-label": "Bis zu Ordnern ausklappen" }, "[3] Ordner")
               ),
 
               // Viewport & Auto-Fit Controls
@@ -3899,7 +3900,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   type: "button",
                   className: "auto-org-pill-btn fit",
                   onClick: autoFitScreen,
-                  title: "Passgenau auf 1 Bildschirm skalieren und zentrieren"
+                  title: "Passgenau auf 1 Bildschirm skalieren und zentrieren",
+                  "aria-label": "Ansicht auf Bildschirm einpassen"
                 }, "🎯 Auto-Fit Screen"),
                 h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 1.25 })), title: "Vergrößern", "aria-label": "Vergrößern" }, "+"),
                 h("button", { type: "button", className: "auto-org-pill-btn", onClick: () => setTransform(p => ({ ...p, scale: p.scale * 0.8 })), title: "Verkleinern", "aria-label": "Verkleinern" }, "-"),
@@ -4597,12 +4599,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
   // Segmented Switch Button: Overlaying "Freigeben" (Green) and "Ausschließen" (Red)
   function OverlaySwitchButton({ status = "proposed", onApprove, onExclude, onReset, size = "md", disabled = false }) {
     // status: "approved" | "excluded" | "proposed"
+    const approveTitle = status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)";
+    const excludeTitle = status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)";
+
     return h("div", { className: `auto-org-overlay-switch ${size === "sm" ? "sm" : ""}` },
       // Left: Freigeben (Green)
       h("button", {
         type: "button",
         className: `auto-org-switch-segment ${status === "approved" ? "active-approve" : ""}`,
-        title: status === "approved" ? "Bereits freigegeben (Klicken zum Zurücksetzen)" : "Freigeben (auf Grün schalten)",
+        title: approveTitle,
+        "aria-label": approveTitle,
         disabled: disabled,
         onClick: (e) => {
           e.stopPropagation();
@@ -4621,7 +4627,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       h("button", {
         type: "button",
         className: `auto-org-switch-segment ${status === "excluded" ? "active-exclude" : ""}`,
-        title: status === "excluded" ? "Bereits ausgeschlossen (Klicken zum Zurücksetzen)" : "Ausschließen (auf Rot schalten)",
+        title: excludeTitle,
+        "aria-label": excludeTitle,
         disabled: disabled,
         onClick: (e) => {
           e.stopPropagation();
@@ -8867,13 +8874,17 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     type: "button",
                     className: "auto-org-btn auto-org-btn-primary",
                     style: { fontSize: "0.75rem", padding: "0.3rem 0.75rem", background: "#16a34a" },
-                    onClick: () => handleApproveNlRule(rule.id, true)
+                    onClick: () => handleApproveNlRule(rule.id, true),
+                    "aria-label": "Meta-Regel annehmen",
+                    title: "Meta-Regel annehmen"
                   }, "✓ Annehmen"),
                   !isRejected && h("button", {
                     type: "button",
                     className: "auto-org-btn auto-org-btn-outline",
                     style: { fontSize: "0.75rem", padding: "0.3rem 0.6rem" },
-                    onClick: () => handleApproveNlRule(rule.id, false)
+                    onClick: () => handleApproveNlRule(rule.id, false),
+                    "aria-label": "Meta-Regel ablehnen",
+                    title: "Meta-Regel ablehnen"
                   }, "✕")
                 )
               )
