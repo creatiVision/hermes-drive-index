@@ -2728,27 +2728,35 @@ async def _execute_real_indexing(req_drive_ids: Optional[List[str]] = None) -> i
             LIMIT 10;
             """
         )
-        for row in dup_rows:
-            node_ids = row["node_ids"]
-            if len(node_ids) >= 2:
-                existing = await conn.fetchval(
-                    "SELECT COUNT(*) FROM structural_anomalies WHERE file_id = $1", node_ids[0]
-                )
-                if existing == 0:
-                    await conn.execute(
-                        """
-                        INSERT INTO structural_anomalies (
-                            id, file_id, anomaly_type, status, confidence, explanation,
-                            recommended_action, created_at
-                        ) VALUES (
-                            $1, $2, 'DUPLICATE_CLUSTER', 'open', 0.98,
-                            $3, 'Zur Bereinigung oder als gewolltes Backup prüfen.', NOW()
-                        )
-                        """,
+        candidate_dup_ids = [row["node_ids"][0] for row in dup_rows if len(row["node_ids"]) >= 2]
+        if candidate_dup_ids:
+            existing_dup_rows = await conn.fetch(
+                "SELECT file_id FROM structural_anomalies WHERE file_id = ANY($1::uuid[])",
+                candidate_dup_ids,
+            )
+            existing_dup_ids = {r["file_id"] for r in existing_dup_rows}
+            dup_inserts = []
+            for row in dup_rows:
+                node_ids = row["node_ids"]
+                if len(node_ids) >= 2 and node_ids[0] not in existing_dup_ids:
+                    dup_inserts.append((
                         uuid4(),
                         node_ids[0],
                         f"Identischer Content-Hash ({row['content_sha256'][:8]}...) an {row['cnt']} Speicherorten gefunden.",
+                    ))
+            if dup_inserts:
+                await conn.executemany(
+                    """
+                    INSERT INTO structural_anomalies (
+                        id, file_id, anomaly_type, status, confidence, explanation,
+                        recommended_action, created_at
+                    ) VALUES (
+                        $1, $2, 'DUPLICATE_CLUSTER', 'open', 0.98,
+                        $3, 'Zur Bereinigung oder als gewolltes Backup prüfen.', NOW()
                     )
+                    """,
+                    dup_inserts,
+                )
 
         # Detect dumpzone files
         dump_rows = await conn.fetch(
@@ -2760,14 +2768,26 @@ async def _execute_real_indexing(req_drive_ids: Optional[List[str]] = None) -> i
             LIMIT 10;
             """
         )
-        for row in dump_rows:
-            existing = await conn.fetchval(
-                "SELECT COUNT(*) FROM structural_anomalies WHERE file_id = $1", row["id"]
+        candidate_dump_ids = [row["id"] for row in dump_rows]
+        if candidate_dump_ids:
+            existing_dump_rows = await conn.fetch(
+                "SELECT file_id FROM structural_anomalies WHERE file_id = ANY($1::uuid[])",
+                candidate_dump_ids,
             )
-            if existing == 0:
-                meta = resolve_concrete_anomaly_target(row["file_name"], None, "DUMP_ZONE_ITEM")
-                rec_target = meta.get("target", "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/")
-                await conn.execute(
+            existing_dump_ids = {r["file_id"] for r in existing_dump_rows}
+            dump_inserts = []
+            for row in dump_rows:
+                if row["id"] not in existing_dump_ids:
+                    meta = resolve_concrete_anomaly_target(row["file_name"], None, "DUMP_ZONE_ITEM")
+                    rec_target = meta.get("target", "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/")
+                    dump_inserts.append((
+                        uuid4(),
+                        row["id"],
+                        f"Datei {row['file_name']} liegt unsortiert in einer temporären Dumpzone ({meta['group_title']}).",
+                        rec_target,
+                    ))
+            if dump_inserts:
+                await conn.executemany(
                     """
                     INSERT INTO structural_anomalies (
                         id, file_id, anomaly_type, status, confidence, explanation,
@@ -2777,10 +2797,7 @@ async def _execute_real_indexing(req_drive_ids: Optional[List[str]] = None) -> i
                         $3, $4, NOW()
                     )
                     """,
-                    uuid4(),
-                    row["id"],
-                    f"Datei {row['file_name']} liegt unsortiert in einer temporären Dumpzone ({meta['group_title']}).",
-                    rec_target,
+                    dump_inserts,
                 )
 
         db_count = await conn.fetchval("SELECT COUNT(*) FROM file_nodes WHERE NOT is_deleted;")
