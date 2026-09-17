@@ -585,3 +585,68 @@ def test_filesystem_node_switch_endpoint():
 
 
 
+
+
+def test_execute_real_indexing_batch_anomalies():
+    import asyncio
+    from hermes_auto_organizer.dashboard.plugin_api import _execute_real_indexing
+
+    node1_id = uuid4()
+    node2_id = uuid4()
+    dump_id = uuid4()
+
+    mock_conn = AsyncMock()
+
+    def fetch_side_effect(query, *args):
+        if "FROM storage_roots" in query:
+            return []
+        elif "FROM file_nodes" in query and "content_sha256" in query:
+            return [
+                {
+                    "content_sha256": "abcdef1234567890",
+                    "node_ids": [node1_id, node2_id],
+                    "cnt": 2,
+                }
+            ]
+        elif "FROM structural_anomalies" in query and candidate_dup_ids_present(args):
+            return []
+        elif "FROM file_nodes" in query and "physical_path ILIKE" in query:
+            return [
+                {
+                    "id": dump_id,
+                    "file_name": "test_invoice.pdf",
+                    "physical_path": "/home/mb/Downloads/test_invoice.pdf",
+                }
+            ]
+        elif "FROM structural_anomalies" in query and candidate_dump_ids_present(args):
+            return []
+        return []
+
+    def candidate_dup_ids_present(args):
+        return len(args) > 0 and node1_id in args[0]
+
+    def candidate_dump_ids_present(args):
+        return len(args) > 0 and dump_id in args[0]
+
+    mock_conn.fetch.side_effect = fetch_side_effect
+    mock_conn.fetchval.return_value = 10
+
+    async def _run():
+        with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=mock_conn):
+            return await _execute_real_indexing()
+
+    count = asyncio.run(_run())
+    assert count == 10
+
+    executemany_calls = mock_conn.executemany.call_args_list
+    assert len(executemany_calls) == 2
+
+    dup_insert_call = executemany_calls[0]
+    assert "DUPLICATE_CLUSTER" in dup_insert_call[0][0]
+    assert len(dup_insert_call[0][1]) == 1
+    assert dup_insert_call[0][1][0][1] == node1_id
+
+    dump_insert_call = executemany_calls[1]
+    assert "DUMP_ZONE_ITEM" in dump_insert_call[0][0]
+    assert len(dump_insert_call[0][1]) == 1
+    assert dump_insert_call[0][1][0][1] == dump_id
