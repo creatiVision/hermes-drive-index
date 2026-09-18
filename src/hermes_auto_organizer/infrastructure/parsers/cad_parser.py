@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from hermes_auto_organizer.domain.models import FileExtraction
 from hermes_auto_organizer.infrastructure.storage.hashing import compute_full_sha256
