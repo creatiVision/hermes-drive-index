@@ -124,23 +124,22 @@ def test_index_local_file_extraction_exception(tmp_path: Path):
     con = init_db(db_path)
     migrate(con)
 
-    fpath = tmp_path / "corrupt.pdf"
+    fpath = tmp_path / "corrupt.txt"
     fpath.write_text("corrupt content")
 
     lf = LocalFile(
-        id="local:corrupt.pdf",
-        name="corrupt.pdf",
+        id="local:corrupt.txt",
+        name="corrupt.txt",
         path=str(fpath),
-        mime_type="application/pdf",
-        size=10,
+        mime_type="text/plain",
+        size=15,
         modified_time="2025-01-01T00:00:00Z",
         md5_checksum="checksumcorrupt",
     )
     metrics = {}
 
-    with patch("hermes_drive_index.core.local_index.extract_text", side_effect=RuntimeError("Extraction failed")), \
-         patch("hermes_drive_index.core.extract.extract_text", side_effect=RuntimeError("Extraction failed")):
-        index_local_file(con, lf, metrics, ocr_pdf_enabled=True)
+    with patch("hermes_drive_index.core.local_index.extract_text", side_effect=RuntimeError("Extraction failed")):
+        index_local_file(con, lf, metrics)
 
     assert metrics.get("files_metadata_only") == 1
     assert metrics.get("chunks") == 1
