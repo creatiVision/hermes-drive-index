@@ -75,13 +75,13 @@ def test_index_local_file_success(tmp_path: Path):
     assert metrics.get("files_indexed_native") == 1
     assert metrics.get("chunks") == 1
 
-    file_row = con.execute("select * from files where file_id=?", (lf.id,)).fetchone()
+    file_row = con.execute("select status from files where file_id=?", (lf.id,)).fetchone()
     assert file_row is not None
-    assert file_row[9] == "indexed"  # status
+    assert file_row[0] == "indexed"
 
-    chunks = con.execute("select * from chunks where file_id=?", (lf.id,)).fetchall()
+    chunks = con.execute("select text from chunks where file_id=?", (lf.id,)).fetchall()
     assert len(chunks) == 1
-    assert "Hello Hermes" in chunks[0][3]  # text
+    assert "Hello Hermes" in chunks[0][0]
     con.close()
 
 
@@ -108,14 +108,14 @@ def test_index_local_file_empty_text_metadata_only(tmp_path: Path):
     assert metrics.get("files_metadata_only") == 1
     assert metrics.get("chunks") == 1
 
-    file_row = con.execute("select * from files where file_id=?", (lf.id,)).fetchone()
+    file_row = con.execute("select status, error from files where file_id=?", (lf.id,)).fetchone()
     assert file_row is not None
-    assert file_row[9] == "indexed_metadata"  # status
-    assert file_row[10] == "no text extracted; indexed filename/path metadata only"  # error
+    assert file_row[0] == "indexed_metadata"
+    assert file_row[1] == "no text extracted; indexed filename/path metadata only"
 
-    chunks = con.execute("select * from chunks where file_id=?", (lf.id,)).fetchall()
+    chunks = con.execute("select text from chunks where file_id=?", (lf.id,)).fetchall()
     assert len(chunks) == 1
-    assert "empty.bin" in chunks[0][3]
+    assert "empty.bin" in chunks[0][0]
     con.close()
 
 
@@ -138,16 +138,17 @@ def test_index_local_file_extraction_exception(tmp_path: Path):
     )
     metrics = {}
 
-    with patch("hermes_drive_index.core.local_index.extract_text", side_effect=RuntimeError("Extraction failed")):
+    with patch("hermes_drive_index.core.local_index.extract_text", side_effect=RuntimeError("Extraction failed")), \
+         patch("hermes_drive_index.core.extract.extract_text", side_effect=RuntimeError("Extraction failed")):
         index_local_file(con, lf, metrics, ocr_pdf_enabled=True)
 
     assert metrics.get("files_metadata_only") == 1
     assert metrics.get("chunks") == 1
 
-    file_row = con.execute("select * from files where file_id=?", (lf.id,)).fetchone()
+    file_row = con.execute("select status, error from files where file_id=?", (lf.id,)).fetchone()
     assert file_row is not None
-    assert file_row[9] == "indexed_metadata"
-    assert file_row[10] == "Extraction failed"
+    assert file_row[0] == "indexed_metadata"
+    assert file_row[1] == "Extraction failed"
     con.close()
 
 
@@ -178,7 +179,7 @@ def test_index_local_file_reindexing_cleans_old_entry(tmp_path: Path):
     files = con.execute("select * from files where file_id=?", (lf.id,)).fetchall()
     assert len(files) == 1
 
-    chunks = con.execute("select * from chunks where file_id=?", (lf.id,)).fetchall()
+    chunks = con.execute("select text from chunks where file_id=?", (lf.id,)).fetchall()
     assert len(chunks) == 1
-    assert "Version 2" in chunks[0][3]
+    assert "Version 2" in chunks[0][0]
     con.close()
