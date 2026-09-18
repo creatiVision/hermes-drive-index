@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import sqlite3
+import subprocess
+from unittest import mock
 
 from hermes_drive_index.config import default_config
-from hermes_drive_index.core import extract, index as index_mod, ocr
+from hermes_drive_index.core import extract, ocr
+from hermes_drive_index.core import index as index_mod
 from hermes_drive_index.core.index import index_file, init_db
 from hermes_drive_index.core.models import DriveFile, is_indexable
 
@@ -175,3 +177,54 @@ def test_index_file_native_pdf_does_not_count_ocr_attempt(tmp_path, monkeypatch)
     assert row[0] == "indexed"
     assert metrics["files_indexed_native"] == 1
     assert metrics["ocr_attempted"] == 0
+
+
+def test_ocr_pdf_unavailable_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(ocr, "ocr_available", lambda _kind: False)
+    assert ocr.ocr_pdf(tmp_path / "scan.pdf") is None
+
+
+def test_ocr_pdf_success(tmp_path):
+    path = tmp_path / "scan.pdf"
+    with (
+        mock.patch.object(ocr, "ocr_available", return_value=True),
+        mock.patch("subprocess.run") as mock_run,
+        mock.patch("hermes_drive_index.core.extract.extract_pdf", return_value="  extracted pdf text  "),
+    ):
+        mock_run.return_value = subprocess.CompletedProcess(["ocrmypdf"], 0)
+        result = ocr.ocr_pdf(path, timeout=60, extra_args=("--deskew",))
+
+        assert result == "  extracted pdf text  "
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        cmd = args[0]
+        assert cmd[0] == "ocrmypdf"
+        assert "--deskew" in cmd
+        assert str(path) in cmd
+        assert kwargs["timeout"] == 60
+        assert kwargs["check"] is True
+
+
+def test_ocr_pdf_empty_text_returns_none(tmp_path):
+    with (
+        mock.patch.object(ocr, "ocr_available", return_value=True),
+        mock.patch("subprocess.run"),
+        mock.patch("hermes_drive_index.core.extract.extract_pdf", return_value="   \n  "),
+    ):
+        assert ocr.ocr_pdf(tmp_path / "scan.pdf") is None
+
+
+def test_ocr_pdf_subprocess_exception_returns_none(tmp_path):
+    with (
+        mock.patch.object(ocr, "ocr_available", return_value=True),
+        mock.patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "ocrmypdf")),
+    ):
+        assert ocr.ocr_pdf(tmp_path / "scan.pdf") is None
+
+
+def test_ocr_pdf_timeout_returns_none(tmp_path):
+    with (
+        mock.patch.object(ocr, "ocr_available", return_value=True),
+        mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ocrmypdf", timeout=120)),
+    ):
+        assert ocr.ocr_pdf(tmp_path / "scan.pdf") is None
