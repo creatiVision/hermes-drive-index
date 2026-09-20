@@ -613,23 +613,27 @@
     return h("div", {
       ref: menuRef,
       className: "auto-org-context-menu",
+      role: "menu",
+      "aria-label": `Statusoptionen für ${nodeName}`,
       style: { left: `${posX}px`, top: `${posY}px` },
       onClick: (e) => e.stopPropagation(),
       onContextMenu: (e) => e.preventDefault()
     },
       h("div", { className: "auto-org-context-menu-header" },
         h("div", { className: "auto-org-context-menu-title" },
-          h("span", null, nodeType.split(" ")[0]),
+          h("span", { "aria-hidden": "true" }, nodeType.split(" ")[0]),
           h("span", null, nodeName)
         ),
         nodePath && h("div", { className: "auto-org-context-menu-path", title: nodePath }, nodePath)
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "approved",
         className: `auto-org-context-menu-item approve ${currentState === "approved" ? "active" : ""}`,
         onClick: () => { onSelectState("approved"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "🟢"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟢"),
         h("div", null,
           h("div", null, "Freigeben (Grün)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Genehmigt & aktiv einbezogen")
@@ -637,10 +641,12 @@
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "proposed",
         className: `auto-org-context-menu-item propose ${currentState === "proposed" ? "active" : ""}`,
         onClick: () => { onSelectState("proposed"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "🟡"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟡"),
         h("div", null,
           h("div", null, "Als Vorschlag (Gelb)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Vorgeschlagener Sync / Transfer")
@@ -648,10 +654,12 @@
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "excluded",
         className: `auto-org-context-menu-item exclude ${currentState === "excluded" ? "active" : ""}`,
         onClick: () => { onSelectState("excluded"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "⚪"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "⚪"),
         h("div", null,
           h("div", null, "Nicht einbezogen (Grau)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Ausschließen & nicht synchronisieren")
