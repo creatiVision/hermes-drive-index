@@ -11,3 +11,7 @@
 ## 2026-03-31 - Path Instantiations and Unconditional Variable Formatting in Rule Engines
 **Learning:** Instantiating `pathlib.Path` objects (`Path().parent`, `Path().stem`, `Path().suffix`) and performing unconditional `strftime` date formatting inside rule condition and template resolution loops per file slows evaluation down by 2-5x. Using `os.path.dirname`, `os.path.splitext`, and checking placeholder existence before formatting eliminates object allocation and unnecessary string manipulation.
 **Action:** In condition evaluation and template resolution loops, rely on `os.path` functions and check placeholder presence (`if "{year}" in template:`) before invoking string formatting.
+
+## 2026-04-01 - dataclasses.asdict Reflection Overhead & Datetime Parsing in Hot Sort Loops
+**Learning:** Calling `dataclasses.asdict()` on thousands of items in batch operations (e.g. duplicate detection or file classification) causes significant CPU overhead due to recursive field reflection and deepcopy semantics. Implementing explicit `.to_dict()` methods on dataclasses speeds up conversion by ~5x. Furthermore, comparing ISO 8601 date strings directly in sort keys eliminates redundant `datetime.fromisoformat(...).timestamp()` calls.
+**Action:** Provide explicit `.to_dict()` methods on dataclasses used in high-volume collection results, and sort ISO 8601 timestamps lexicographically directly instead of parsing them into `datetime` objects in key callbacks.
