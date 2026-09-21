@@ -8112,7 +8112,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     node.sample_files && node.sample_files.length > 0 && h("button", {
                       type: "button",
                       className: "auto-org-tag-btn",
-                      onClick: () => toggleSampleExpand(node.id)
+                      onClick: () => toggleSampleExpand(node.id),
+                      "aria-expanded": isExpanded ? "true" : "false",
+                      "aria-label": isExpanded ? `Beispieldateien für ${node.name} ausblenden` : `Beispieldateien für ${node.name} anzeigen`
                     }, isExpanded ? "Beispiele ausblenden ▲" : "Beispiele anzeigen ▼")
                   )
                 ),
