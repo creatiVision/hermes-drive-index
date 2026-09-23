@@ -6775,7 +6775,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               className: "auto-org-btn auto-org-btn-outline",
               onClick: loadData,
               disabled: loading,
-              title: "Daten neu laden"
+              title: "Daten neu laden",
+              "aria-label": "Daten neu laden"
             }, loading ? "..." : "↻ Aktualisieren")
           ),
           showDiagnosticTools && h("div", { className: "auto-org-toolbar-secondary-panel" },
