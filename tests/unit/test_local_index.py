@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 from unittest.mock import patch
 
+from hermes_drive_index.core import local_index
 from hermes_drive_index.core.index import init_db, migrate
 from hermes_drive_index.core.local_index import index_local_directory, index_local_file
 from hermes_drive_index.core.local_scanner import LocalFile
@@ -138,8 +139,8 @@ def test_index_local_file_extraction_exception(tmp_path: Path):
     )
     metrics = {}
 
-    with patch("hermes_drive_index.core.local_index.extract_text", side_effect=RuntimeError("Extraction failed")):
-        index_local_file(con, lf, metrics)
+    with patch.object(local_index, "extract_text", side_effect=RuntimeError("Extraction failed")):
+        local_index.index_local_file(con, lf, metrics)
 
     assert metrics.get("files_metadata_only") == 1
     assert metrics.get("chunks") == 1
