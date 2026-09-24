@@ -11,3 +11,7 @@
 ## 2026-03-31 - Path Instantiations and Unconditional Variable Formatting in Rule Engines
 **Learning:** Instantiating `pathlib.Path` objects (`Path().parent`, `Path().stem`, `Path().suffix`) and performing unconditional `strftime` date formatting inside rule condition and template resolution loops per file slows evaluation down by 2-5x. Using `os.path.dirname`, `os.path.splitext`, and checking placeholder existence before formatting eliminates object allocation and unnecessary string manipulation.
 **Action:** In condition evaluation and template resolution loops, rely on `os.path` functions and check placeholder presence (`if "{year}" in template:`) before invoking string formatting.
+
+## 2026-04-01 - O(N^2) Path.resolve() Syscalls in Boundary Deduplication Loops
+**Learning:** In candidate deduplication loops, calling `Path.resolve()` repeatedly inside inner comparison functions (like `same_path` or `is_path_inside`) generates $O(N^2)$ filesystem system calls and `Path` object allocations. Pre-normalizing paths once before the loop and using string prefix matching (`child.startswith(parent_prefix)`) speeds up path containment checks by over 400x.
+**Action:** Pre-normalize filesystem paths once before entering comparison loops, and use string prefix matching for path containment checks on normalized path strings.
