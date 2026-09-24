@@ -2785,6 +2785,15 @@
     const dragStartRef = useRef({ x: 0, y: 0 });
     const hasDraggedRef = useRef(false);
 
+    // Escape key handler to close window
+    useEffect(() => {
+      function handleKeyDown(e) {
+        if (e.key === "Escape") onClose();
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [onClose]);
+
     // Fetch /system-tree on mount
     useEffect(() => {
       let mounted = true;
@@ -3763,6 +3772,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
     return h("div", {
       className: "auto-org-multi-tree-modal",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": "auto-org-multi-tree-title",
       onClick: (e) => { if (e.target === e.currentTarget) onClose(); }
     },
       h("div", {
@@ -3772,7 +3784,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Top Header with Title and Mode Switcher
         h("div", { className: "auto-org-multi-tree-header" },
           h("div", { className: "auto-org-multi-tree-title" },
-            h("h3", null,
+            h("h3", { id: "auto-org-multi-tree-title" },
               h("span", null, viewMode === "folders2graph" ? "🕸️" : viewMode === "filesystem" ? "🌲" : "🌐"),
               viewMode === "folders2graph" ? "Obsidian folders2graph Struktur-Graph (Faltung & Sync)" :
               viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" :
@@ -3820,7 +3832,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               className: "auto-org-modal-close",
               onClick: onClose,
               title: "Schließen",
-              "aria-label": "Fenster schließen"
+              "aria-label": "Dialog schließen"
             }, "✕")
           )
         ),
@@ -5584,6 +5596,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     // Modal state for top bar config tools: null | "mounts" | "roots" | "journal" | "sync"
     const [activeModal, setActiveModal] = useState(null);
     const [showDiagnosticTools, setShowDiagnosticTools] = useState(false);
+
+    // Escape key listener for config modals
+    useEffect(() => {
+      if (!activeModal) return;
+      function handleKeyDown(e) {
+        if (e.key === "Escape") setActiveModal(null);
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [activeModal]);
 
     // Application state
     const [stats, setStats] = useState(null);
