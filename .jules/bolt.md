@@ -15,3 +15,8 @@
 ## 2026-04-01 - O(N^2) Path.resolve() Syscalls in Boundary Deduplication Loops
 **Learning:** In candidate deduplication loops, calling `Path.resolve()` repeatedly inside inner comparison functions (like `same_path` or `is_path_inside`) generates $O(N^2)$ filesystem system calls and `Path` object allocations. Pre-normalizing paths once before the loop and using string prefix matching (`child.startswith(parent_prefix)`) speeds up path containment checks by over 400x.
 **Action:** Pre-normalize filesystem paths once before entering comparison loops, and use string prefix matching for path containment checks on normalized path strings.
+
+## 2026-04-01 - Path Instantiation & Redundant Stat in Subtree Profiling
+**Learning:** Instantiating `pathlib.Path` objects for file extension extraction (`Path(entry.name).suffix`) and child directory recursion (`Path(entry.path)`), along with redundant `node_path.exists()`/`node_path.is_dir()` checks before `os.scandir`, slows recursive subtree profiling down by ~42% (1.73x overhead). Using `os.path.splitext(entry_name)[1]`, string paths, and relying on `os.scandir`'s exception handling eliminates GC pressure and stat syscalls.
+**Action:** Use string paths and `os.path` utilities in directory traversal and profiling loops rather than `pathlib.Path` wrapper objects.
+
