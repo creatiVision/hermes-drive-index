@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import pytest
 
@@ -46,3 +47,54 @@ def test_safe_trash(tmp_path: Path):
     res = safe_trash(target)
     assert res is True
     assert not target.exists()
+
+
+def test_compute_file_hashes_basic(tmp_path: Path):
+    content = b"hello world 123"
+    test_file = tmp_path / "sample.txt"
+    test_file.write_bytes(content)
+
+    expected_md5 = hashlib.md5(content).hexdigest()
+    expected_sha256 = hashlib.sha256(content).hexdigest()
+
+    # Test with Path object
+    md5, sha256 = compute_file_hashes(test_file)
+    assert md5 == expected_md5
+    assert sha256 == expected_sha256
+
+    # Test with string path
+    md5_str, sha256_str = compute_file_hashes(str(test_file))
+    assert md5_str == expected_md5
+    assert sha256_str == expected_sha256
+
+
+def test_compute_file_hashes_empty_file(tmp_path: Path):
+    empty_file = tmp_path / "empty.txt"
+    empty_file.write_bytes(b"")
+
+    expected_md5 = hashlib.md5(b"").hexdigest()
+    expected_sha256 = hashlib.sha256(b"").hexdigest()
+
+    md5, sha256 = compute_file_hashes(empty_file)
+    assert md5 == expected_md5
+    assert sha256 == expected_sha256
+
+
+def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
+    content = b"A" * 100
+    test_file = tmp_path / "chunks.txt"
+    test_file.write_bytes(content)
+
+    expected_md5 = hashlib.md5(content).hexdigest()
+    expected_sha256 = hashlib.sha256(content).hexdigest()
+
+    # Read with chunk size smaller than content length to test iteration
+    md5, sha256 = compute_file_hashes(test_file, chunk_size=10)
+    assert md5 == expected_md5
+    assert sha256 == expected_sha256
+
+
+def test_compute_file_hashes_nonexistent_file(tmp_path: Path):
+    non_existent = tmp_path / "does_not_exist.txt"
+    with pytest.raises(FileNotFoundError):
+        compute_file_hashes(non_existent)
