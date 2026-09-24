@@ -11,26 +11,31 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 import shutil
-from typing import Any, List
+from pathlib import Path
+from typing import Any
 
 from hermes_auto_organizer.domain.models import DiskUsageEntry
 
 logger = logging.getLogger("hermes_auto_organizer.storage.fast_disk_scanner")
 
 
-def get_dir_size_fast(path: Path, max_depth: int = 2) -> int:
-    """Calculates approximate directory size without infinite deep traversal."""
+def get_dir_size_fast(path: Path | str, max_depth: int = 2) -> int:
+    """Calculates approximate directory size without infinite deep traversal.
+
+    Optimized: Uses cached stat struct on os.DirEntry (follow_symlinks=False)
+    and passes path strings directly to eliminate redundant os.stat syscalls
+    and Path object allocation overhead.
+    """
     total = 0
     try:
         with os.scandir(path) as it:
             for entry in it:
                 try:
                     if entry.is_file(follow_symlinks=False):
-                        total += entry.stat().st_size
+                        total += entry.stat(follow_symlinks=False).st_size
                     elif entry.is_dir(follow_symlinks=False) and max_depth > 0:
-                        total += get_dir_size_fast(Path(entry.path), max_depth=max_depth - 1)
+                        total += get_dir_size_fast(entry.path, max_depth=max_depth - 1)
                 except (OSError, PermissionError):
                     continue
     except (OSError, PermissionError):
@@ -60,17 +65,19 @@ class FastDiskScanner:
         # Collect children
         child_entries: list[DiskUsageEntry] = []
         try:
+            # Optimized: target is resolved, so entry.path in os.scandir is already
+            # resolved & absolute. Avoids Path(entry.path).resolve() syscall overhead.
             with os.scandir(target) as it:
                 for entry in it:
                     try:
-                        p = str(Path(entry.path).resolve())
+                        p = entry.path
                         if entry.is_dir(follow_symlinks=False):
-                            size = get_dir_size_fast(Path(entry.path), max_depth=2)
+                            size = get_dir_size_fast(entry.path, max_depth=2)
                             child_entries.append(
                                 DiskUsageEntry(path=p, total_size=size, type_id=0, file_count=1)
                             )
                         elif entry.is_file(follow_symlinks=False):
-                            size = entry.stat().st_size
+                            size = entry.stat(follow_symlinks=False).st_size
                             child_entries.append(
                                 DiskUsageEntry(path=p, total_size=size, type_id=1, file_count=1)
                             )
