@@ -6,15 +6,19 @@ and safe deletion using desktop/system trash.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
+import logging
 import mimetypes
 import os
-from pathlib import Path
 import shutil
 import subprocess
-from typing import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Sequence
+
+logger = logging.getLogger(__name__)
+
 
 DEFAULT_EXCLUDE_DIRS = {
     ".git",
@@ -96,8 +100,9 @@ def safe_trash(path: Path | str) -> bool:
                 )
                 if res.returncode == 0:
                     return True
-            except Exception:
-                pass
+                logger.debug("%s trash failed with returncode %d: %s", gio_cmd, res.returncode, res.stderr)
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.debug("%s trash command failed: %s", gio_cmd, exc)
 
     # 2. Try trash-put or trash
     for trash_cmd in ("trash-put", "trash"):
@@ -111,8 +116,9 @@ def safe_trash(path: Path | str) -> bool:
                 )
                 if res.returncode == 0:
                     return True
-            except Exception:
-                pass
+                logger.debug("%s failed with returncode %d: %s", trash_cmd, res.returncode, res.stderr)
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.debug("%s command failed: %s", trash_cmd, exc)
 
     # 3. Fallback: move to ~/.local/share/Trash/files/
     trash_dir = Path.home() / ".local" / "share" / "Trash" / "files"
