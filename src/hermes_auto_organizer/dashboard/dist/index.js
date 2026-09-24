@@ -49,6 +49,15 @@
         background-color: #3b82f6 !important;
         color: #ffffff !important;
       }
+      .auto-org-container button:focus-visible,
+      .auto-org-container input:focus-visible,
+      .auto-org-container select:focus-visible,
+      .auto-org-container textarea:focus-visible,
+      .auto-org-container [tabindex]:focus-visible {
+        outline: 2px solid #38bdf8 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4) !important;
+      }
       .auto-org-step-card.disabled, .auto-org-step-card.locked {
         opacity: 0.42 !important;
         cursor: not-allowed !important;
