@@ -631,6 +631,7 @@
         role: "menuitemradio",
         "aria-checked": currentState === "approved",
         className: `auto-org-context-menu-item approve ${currentState === "approved" ? "active" : ""}`,
+        "aria-label": "Freigeben (Grün): Genehmigt & aktiv einbezogen",
         onClick: () => { onSelectState("approved"); onClose(); }
       },
         h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟢"),
@@ -644,6 +645,7 @@
         role: "menuitemradio",
         "aria-checked": currentState === "proposed",
         className: `auto-org-context-menu-item propose ${currentState === "proposed" ? "active" : ""}`,
+        "aria-label": "Als Vorschlag (Gelb): Vorgeschlagener Sync / Transfer",
         onClick: () => { onSelectState("proposed"); onClose(); }
       },
         h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟡"),
@@ -657,6 +659,7 @@
         role: "menuitemradio",
         "aria-checked": currentState === "excluded",
         className: `auto-org-context-menu-item exclude ${currentState === "excluded" ? "active" : ""}`,
+        "aria-label": "Nicht einbezogen (Grau): Ausschließen & nicht synchronisieren",
         onClick: () => { onSelectState("excluded"); onClose(); }
       },
         h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "⚪"),
@@ -4474,6 +4477,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         type: "button",
         className: "auto-org-pipeline-focus-btn",
         title: "Diesen Pfad im interaktiven Graphen fokussieren",
+        "aria-label": "Diesen Pfad im interaktiven Graphen fokussieren",
         onClick: (e) => {
           e.stopPropagation();
           onFocusGraph(branchId || "dst_general");
@@ -4547,6 +4551,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         type: "button",
         className: "auto-org-pipeline-focus-btn",
         title: "Diesen Zweig im interaktiven Graphen fokussieren",
+        "aria-label": "Diesen Zweig im interaktiven Graphen fokussieren",
         onClick: (e) => {
           e.stopPropagation();
           onFocusGraph(branchId || slice[0]);
