@@ -126,28 +126,32 @@ class PostgresNodeRepository:
             sync_status = EXCLUDED.sync_status,
             last_scanned_at = NOW();
         """
+        # Performance optimization: construct parameter tuple list and batch execute via executemany
+        # to avoid N round-trips over the network to PostgreSQL during large directory scans.
+        args_list = [
+            (
+                node.id,
+                node.root_id,
+                node.relative_path,
+                node.physical_path,
+                node.gdrive_id,
+                node.file_name,
+                node.file_extension,
+                node.mime_type,
+                node.size_bytes,
+                node.head_tail_xxh64,
+                node.content_sha256,
+                node.mtime,
+                node.ctime,
+                node.is_deleted,
+                node.sync_status.value,
+                node.last_scanned_at,
+            )
+            for node in nodes
+        ]
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                for node in nodes:
-                    await conn.execute(
-                        query,
-                        node.id,
-                        node.root_id,
-                        node.relative_path,
-                        node.physical_path,
-                        node.gdrive_id,
-                        node.file_name,
-                        node.file_extension,
-                        node.mime_type,
-                        node.size_bytes,
-                        node.head_tail_xxh64,
-                        node.content_sha256,
-                        node.mtime,
-                        node.ctime,
-                        node.is_deleted,
-                        node.sync_status.value,
-                        node.last_scanned_at,
-                    )
+                await conn.executemany(query, args_list)
         return len(nodes)
 
     async def get_node_by_path(self, physical_path: str) -> FileNode | None:
