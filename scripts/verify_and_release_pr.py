@@ -35,12 +35,21 @@ def run_cmd(
     cwd: Path | str | None = None,
     check: bool = True,
     capture_output: bool = True,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a shell command with proper error handling."""
     if isinstance(cmd, str):
         shell = True
     else:
         shell = False
+
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    elif cwd:
+        worktree_src = str(Path(cwd) / "src")
+        existing_pp = run_env.get("PYTHONPATH", "")
+        run_env["PYTHONPATH"] = f"{worktree_src}:{existing_pp}" if existing_pp else worktree_src
 
     res = subprocess.run(
         cmd,
@@ -49,6 +58,7 @@ def run_cmd(
         check=False,
         text=True,
         capture_output=capture_output,
+        env=run_env,
     )
     if check and res.returncode != 0:
         err_msg = res.stderr.strip() or res.stdout.strip()
