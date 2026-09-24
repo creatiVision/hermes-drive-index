@@ -62,8 +62,9 @@ def test_composite_extractor_routing(tmp_path: Path):
     assert extraction.extraction_strategy == "doc_plaintext"
     assert "Project Notes" in extraction.summary_text
 
-from unittest.mock import MagicMock, patch
 import subprocess
+from unittest.mock import MagicMock, patch
+
 from hermes_auto_organizer.infrastructure.parsers.image_parser import ImageParser
 
 
@@ -159,3 +160,16 @@ def test_composite_extractor_routes_image(tmp_path: Path):
 
     assert extraction.extraction_strategy == "ocr_tesseract"
     assert "Architekturdiagramm" in extraction.summary_text
+
+
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._PDFTOPPM_BIN", "/usr/bin/pdftoppm")
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._TESSERACT_BIN", "/usr/bin/tesseract")
+def test_doc_parser_ocr_pdf_subprocess_error(tmp_path: Path):
+    parser = DocumentParser()
+    pdf_file = tmp_path / "corrupt.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 header only")
+
+    with patch("subprocess.run", side_effect=subprocess.CalledProcessError(cmd="pdftoppm", returncode=1)):
+        extraction = parser._ocr_pdf(pdf_file, "mock_sha256", total_pages=1)
+
+    assert extraction is None

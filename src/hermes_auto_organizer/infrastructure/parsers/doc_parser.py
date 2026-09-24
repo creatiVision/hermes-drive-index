@@ -9,10 +9,10 @@ See LICENSE in the repository root for license information.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from hermes_auto_organizer.domain.models import FileExtraction
 from hermes_auto_organizer.infrastructure.storage.hashing import compute_full_sha256
@@ -114,6 +114,7 @@ class DocumentParser:
         if not _PDFTOPPM_BIN or not _TESSERACT_BIN:
             return None
         try:
+            resolved_path = Path(path).resolve()
             with tempfile.TemporaryDirectory(prefix="ocr_pdf_") as tmpdir:
                 tmp_prefix = Path(tmpdir) / "page"
                 # Render first up to 3 pages
@@ -127,10 +128,16 @@ class DocumentParser:
                     "1",
                     "-l",
                     str(max_pages),
-                    str(path),
+                    str(resolved_path),
                     str(tmp_prefix),
                 ]
-                subprocess.run(cmd_render, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45, check=True)
+                subprocess.run(
+                    cmd_render,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=45,
+                    check=True,
+                )
 
                 rendered_images = sorted(Path(tmpdir).glob("page-*.png"))
                 if not rendered_images:
