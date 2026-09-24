@@ -7,12 +7,15 @@ Licensed under the Apache License, Version 2.0.
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 from starlette.testclient import TestClient
 
 from hermes_auto_organizer.application.use_cases.ssh_node_service import SSHNodeService
 from hermes_auto_organizer.dashboard.plugin_api import router
-from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import (
+    SSHNodeInspector,
+)
 
 
 @pytest.fixture
@@ -140,3 +143,32 @@ def test_ssh_api_routes(client: TestClient):
     res_overview = client.get("/ssh/debian1/overview")
     assert res_overview.status_code == 200
     assert "ok" in res_overview.json()
+
+
+def test_find_key_path_found(tmp_path):
+    ssh_dir = tmp_path / ".ssh"
+    ssh_dir.mkdir()
+    key_file = ssh_dir / "id_ed25519_test"
+    key_file.write_text("fake key content")
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        key_path = SSHNodeInspector._find_key_path("id_ed25519_test")
+        assert key_path == str(key_file)
+
+
+def test_find_key_path_not_found(tmp_path):
+    with patch("pathlib.Path.home", return_value=tmp_path / "nonexistent_home"):
+        key_path = SSHNodeInspector._find_key_path("nonexistent_key_12345")
+        assert key_path is None
+
+
+def test_find_key_path_oserror_logged(caplog):
+    def mock_exists(self):
+        if "id_err_key" in str(self):
+            raise OSError("Permission denied")
+        return False
+
+    with caplog.at_level("DEBUG"), patch.object(Path, "exists", mock_exists):
+        key_path = SSHNodeInspector._find_key_path("id_err_key")
+        assert key_path is None
+        assert "Error checking SSH key candidate path" in caplog.text
+        assert "Permission denied" in caplog.text
