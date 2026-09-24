@@ -4677,12 +4677,20 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       const tgtDir = (targetPath || (files[0].destination_path ? files[0].destination_path.substring(0, files[0].destination_path.lastIndexOf('/')) : '/media/work-data/'));
       const rootState = itemStates[srcDir] || localStatus;
 
+      const treeTitle = title || `Visueller Dateibaum (${files.length} Dateien)`;
       return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
         h("div", { className: "auto-org-tree-header" },
-          h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
-            h("span", null, expanded ? "▼" : "▶"),
-            h("span", { style: { fontSize: "1.1rem" } }, "🌳"),
-            h("span", null, title || `Visueller Dateibaum (${files.length} Dateien)`)
+          h("button", {
+            type: "button",
+            className: "auto-org-tree-title",
+            style: { cursor: "pointer", background: "none", border: "none", color: "inherit", font: "inherit", padding: 0 },
+            onClick: () => setExpanded(!expanded),
+            "aria-expanded": expanded,
+            "aria-label": `${expanded ? "Einklappen" : "Ausklappen"}: ${treeTitle}`
+          },
+            h("span", { "aria-hidden": "true" }, expanded ? "▼" : "▶"),
+            h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🌳"),
+            h("span", null, treeTitle)
           ),
           showSwitch && h(OverlaySwitchButton, {
             status: rootState,
@@ -4889,12 +4897,20 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const tgtParts = tgtClean.split('/').filter(Boolean);
     const singleState = localStatus;
 
+    const singleTreeTitle = title || "Visuelle Pfad-Hierarchie";
     return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
       h("div", { className: "auto-org-tree-header" },
-        h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
-          h("span", null, expanded ? "▼" : "▶"),
-          h("span", null, "🌳"),
-          h("span", null, title || "Visuelle Pfad-Hierarchie")
+        h("button", {
+          type: "button",
+          className: "auto-org-tree-title",
+          style: { cursor: "pointer", background: "none", border: "none", color: "inherit", font: "inherit", padding: 0 },
+          onClick: () => setExpanded(!expanded),
+          "aria-expanded": expanded,
+          "aria-label": `${expanded ? "Einklappen" : "Ausklappen"}: ${singleTreeTitle}`
+        },
+          h("span", { "aria-hidden": "true" }, expanded ? "▼" : "▶"),
+          h("span", { "aria-hidden": "true" }, "🌳"),
+          h("span", null, singleTreeTitle)
         ),
         showSwitch && h(OverlaySwitchButton, {
           status: singleState,
