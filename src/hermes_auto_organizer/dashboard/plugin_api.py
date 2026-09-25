@@ -922,39 +922,64 @@ async def adopt_suggested_rules(req: AdoptSuggestedRulesRequest) -> Dict[str, An
     conn = await _get_connection()
 
     try:
+        to_process = []
+        all_aliases = []
+
         for s in suggestions:
             if req.adopt_all or (req.rule_ids and s["id"] in req.rule_ids):
                 _ACTIVE_SUGGESTED_RULE_IDS.add(s["id"])
                 _EXCLUDED_SUGGESTED_RULE_IDS.discard(s["id"])
                 adopted += 1
+                aliases = name_aliases.get(s["name"], [s["name"]])
+                to_process.append((s, aliases))
+                all_aliases.extend(aliases)
 
-                if conn:
-                    aliases = name_aliases.get(s["name"], [s["name"]])
-                    existing = await conn.fetchval(
-                        "SELECT id FROM organization_rules WHERE rule_name = ANY($1::text[])", aliases
+        if conn and to_process:
+            rows = await conn.fetch(
+                "SELECT id, rule_name FROM organization_rules WHERE rule_name = ANY($1::text[])",
+                all_aliases,
+            )
+            existing_map = {r["rule_name"]: r["id"] for r in rows}
+
+            updates = []
+            inserts = []
+
+            for s, aliases in to_process:
+                existing_id = None
+                for alias in aliases:
+                    if alias in existing_map:
+                        existing_id = existing_map[alias]
+                        break
+
+                if existing_id:
+                    updates.append((existing_id,))
+                else:
+                    inserts.append((
+                        uuid4(),
+                        s["name"],
+                        s["description"],
+                        json.dumps(s["condition_json"]),
+                        s["target_template"],
+                        s["matched_files_count"],
+                    ))
+
+            if updates:
+                await conn.executemany(
+                    "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
+                    updates,
+                )
+            if inserts:
+                await conn.executemany(
+                    """
+                    INSERT INTO organization_rules (
+                        id, rule_name, description, source_pattern, condition_json,
+                        target_path_template, state, dry_run_last_count, created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
                     )
-                    if existing:
-                        await conn.execute(
-                            "UPDATE organization_rules SET state = 'USER_APPROVED', updated_at = NOW() WHERE id = $1",
-                            existing
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            INSERT INTO organization_rules (
-                                id, rule_name, description, source_pattern, condition_json,
-                                target_path_template, state, dry_run_last_count, created_at, updated_at
-                            ) VALUES (
-                                $1, $2, $3, '*.*', $4::jsonb, $5, 'USER_APPROVED', $6, NOW(), NOW()
-                            )
-                            """,
-                            uuid4(),
-                            s["name"],
-                            s["description"],
-                            json.dumps(s["condition_json"]),
-                            s["target_template"],
-                            s["matched_files_count"],
-                        )
+                    """,
+                    inserts,
+                )
 
         return {
             "ok": True,
