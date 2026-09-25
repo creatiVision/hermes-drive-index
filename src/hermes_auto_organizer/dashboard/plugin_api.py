@@ -734,8 +734,8 @@ async def get_suggested_rules() -> Dict[str, Any]:
             organized_nodes = []
             for n in all_nodes:
                 p_lower = n.physical_path.lower()
-                r_clean = n.relative_path.strip("/")
-                if any(k in p_lower for k in ["download", "schreibtisch", "desktop", "tmp", "temp", "unsortiert", "dump", "inbox"]) or "/" not in r_clean:
+                r_lower = n.relative_path.lower()
+                if any(k in p_lower or k in r_lower for k in ["/download", "/schreibtisch", "/desktop", "/tmp", "/temp", "/unsortiert", "/dump", "/inbox", "downloads/", "schreibtisch/", "desktop/"]):
                     unorganized_nodes.append(n)
                 else:
                     organized_nodes.append(n)
@@ -764,7 +764,8 @@ async def get_suggested_rules() -> Dict[str, Any]:
             # 4. Synthesize rule suggestions from folder purposes
             for f_path, purpose in distilled_purposes.items():
                 f_proposals = [p for p in proposals if p.suggested_target_folder.rstrip("/") == f_path.rstrip("/") and not p.is_new_folder]
-                folder_name = os.path.basename(f_path.rstrip("/"))
+                user_f_path = to_user_path(f_path)
+                folder_name = os.path.basename(user_f_path.rstrip("/"))
                 rule_id = f"sug_fp_{abs(hash(f_path)) % 10000000}"
 
                 cat = "Ordner-Ablage"
@@ -793,8 +794,8 @@ async def get_suggested_rules() -> Dict[str, Any]:
                 rule_name = f"{purpose.document_types[0].capitalize() if purpose.document_types else folder_name} ({folder_name})"
                 rule_desc = purpose.purpose_summary
                 evidence = f"Autonom aus {purpose.file_count} Bestandsdateien destilliert. {len(f_proposals)} unorganisierte Datei(en) passen inhaltlich zu diesem Ordner-Zweck."
-                target_tpl = f_path.rstrip("/") + "/"
-                tree_sl = [part for part in f_path.strip("/").split("/") if part][-4:]
+                target_tpl = user_f_path.rstrip("/") + "/"
+                tree_sl = [part for part in user_f_path.strip("/").split("/") if part][-4:]
                 sample_files = [p.file_name for p in f_proposals[:5]] or list(purpose.sample_file_names[:5])
                 tokens = list(purpose.characteristic_entities[:4]) + list(purpose.keywords[:4])
 
@@ -832,27 +833,28 @@ async def get_suggested_rules() -> Dict[str, Any]:
                     new_groups.setdefault(p.suggested_target_folder, []).append(p)
 
             for new_f_path, g_props in new_groups.items():
-                new_f_name = os.path.basename(new_f_path.rstrip("/"))
-                r_id = f"sug_new_{abs(hash(new_f_path)) % 10000000}"
+                user_new_f_path = to_user_path(new_f_path)
+                new_f_name = os.path.basename(user_new_f_path.rstrip("/"))
+                r_id = f"sug_new_{abs(hash(user_new_f_path)) % 10000000}"
                 dyn_suggestions.append({
                     "id": r_id,
                     "name": f"Neuer Ordner: {new_f_name}",
                     "category": "🆕 Neuer Zielordner (Erfordert Bestätigung)",
                     "icon": "🆕",
                     "confidence": 0.50,
-                    "description": f"Schlägt vor, den neuen Ordner '{new_f_path}' für bisher unstrukturierte Inhalte anzulegen.",
+                    "description": f"Schlägt vor, den neuen Ordner '{user_new_f_path}' für bisher unstrukturierte Inhalte anzulegen.",
                     "evidence": f"Kein existierender Ordner passt zu diesen Dokumenten ({len(g_props)} Datei(en)). Autonome Ordnererstellung benötigt Benutzer-Freigabe.",
                     "condition_json": {
                         "document_types": [p.matched_document_type for p in g_props if p.matched_document_type],
                         "keywords": list({k for p in g_props for k in p.matched_entities}),
                         "extensions": list({os.path.splitext(p.file_name)[1].lstrip(".") for p in g_props}),
                     },
-                    "target_template": new_f_path,
+                    "target_template": user_new_f_path,
                     "matched_files_count": len(g_props),
                     "sample_files": [p.file_name for p in g_props[:5]],
                     "is_already_active": False,
                     "is_excluded": False,
-                    "tree_slice": [part for part in new_f_path.strip("/").split("/") if part][-4:] or ["neuer_ordner"],
+                    "tree_slice": [part for part in user_new_f_path.strip("/").split("/") if part][-4:] or ["neuer_ordner"],
                     "branch_id": f"dst_new_{new_f_name.lower().replace(' ', '_')}",
                     "ai_confidence": 0.50,
                     "ai_reasoning": g_props[0].explanation,
@@ -1071,8 +1073,8 @@ async def get_distilled_purposes() -> Dict[str, Any]:
         "ok": True,
         "count": len(_LAST_DISTILLED_PURPOSES),
         "purposes": {
-            path: {
-                "folder_path": fp.folder_path,
+            to_user_path(path): {
+                "folder_path": to_user_path(fp.folder_path),
                 "purpose_summary": fp.purpose_summary,
                 "file_count": fp.file_count,
                 "document_types": list(fp.document_types),
