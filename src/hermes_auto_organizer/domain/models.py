@@ -266,3 +266,35 @@ class GDriveSelectiveMapping:
     exclude_patterns: tuple[str, ...] = ()
     status: str = "in_sync"
 
+
+@dataclass(frozen=True, slots=True)
+class FolderPurpose:
+    """Abstract purpose profile of an existing directory distilled from its files."""
+    folder_path: str
+    purpose_summary: str
+    file_count: int = 0
+    document_types: tuple[str, ...] = ()
+    characteristic_entities: tuple[str, ...] = ()
+    keywords: tuple[str, ...] = ()
+    common_extensions: tuple[str, ...] = ()
+    sample_file_names: tuple[str, ...] = ()
+    embedding_centroid: tuple[float, ...] = ()
+    last_distilled_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass(frozen=True, slots=True)
+class RoutingProposal:
+    """An autonomous routing proposal formulated by the program for user admission."""
+    id: UUID = field(default_factory=uuid4)
+    file_id: UUID = field(default_factory=uuid4)
+    file_name: str = ""
+    source_path: str = ""
+    suggested_target_folder: str = ""
+    is_new_folder: bool = False
+    confidence: float = 0.0
+    explanation: str = ""
+    state: RuleState = RuleState.DRAFT  # DRAFT = Yellow (Proposal), USER_APPROVED = Green
+    matched_document_type: str | None = None
+    matched_entities: tuple[str, ...] = ()
+    created_at: datetime = field(default_factory=_utc_now)
+
