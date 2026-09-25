@@ -38,10 +38,17 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from hermes_auto_organizer.domain.models import (
+    FileEmbedding,
+    FileExtraction,
     FileNode,
+    FolderPurpose,
     MigrationRecord,
     MigrationStatus,
+    RoutingProposal,
+    RuleState,
 )
+from hermes_auto_organizer.application.services.folder_purpose_distiller import FolderPurposeDistiller
+from hermes_auto_organizer.application.services.autonomous_content_router import AutonomousContentRouter
 from hermes_auto_organizer.domain.rule_engine import (
     evaluate_modular_rule,
     resolve_destination_path,
@@ -618,16 +625,22 @@ async def toggle_rule(req: RuleToggleRequest) -> Dict[str, Any]:
 
 _ACTIVE_SUGGESTED_RULE_IDS: Set[str] = set()
 _EXCLUDED_SUGGESTED_RULE_IDS: Set[str] = set()
+_ADMITTED_PROPOSAL_IDS: Set[str] = set()
+_LAST_DISTILLED_PURPOSES: Dict[str, FolderPurpose] = {}
+_LAST_ROUTING_PROPOSALS: List[RoutingProposal] = []
 
 
 @router.get("/rules/suggested")
 async def get_suggested_rules() -> Dict[str, Any]:
     """
     Proactively generates and suggests organization rules based on
-    real media analysis, file extensions, and directory paths.
+    autonomous folder purpose distillation and content routing.
     """
     conn = await _get_connection()
     active_names = set()
+    total_analyzed = 450
+    dyn_suggestions = []
+
     if conn:
         try:
             active_rules = await conn.fetch(
@@ -635,257 +648,394 @@ async def get_suggested_rules() -> Dict[str, Any]:
             )
             active_names = {r["rule_name"] for r in active_rules}
 
-            tax_matches = await conn.fetch(
+            # 1. Fetch file nodes, extractions, and embeddings
+            nodes_rows = await conn.fetch(
                 """
-                SELECT file_name, physical_path FROM file_nodes
-                WHERE (file_name ILIKE '%rechnung%' OR file_name ILIKE '%steuer%' OR file_name ILIKE '%beleg%'
-                       OR file_name ILIKE '%tax%' OR file_name ILIKE '%invoice%' OR file_name ILIKE '%kontoauszug%')
-                  AND is_deleted = FALSE
-                LIMIT 5;
-                """
-            )
-            tax_count = await conn.fetchval(
-                """
-                SELECT COUNT(*) FROM file_nodes
-                WHERE (file_name ILIKE '%rechnung%' OR file_name ILIKE '%steuer%' OR file_name ILIKE '%beleg%'
-                       OR file_name ILIKE '%tax%' OR file_name ILIKE '%invoice%' OR file_name ILIKE '%kontoauszug%')
-                  AND is_deleted = FALSE;
+                SELECT f.id, f.root_id, f.relative_path, f.physical_path, f.file_name,
+                       f.size_bytes, f.mtime, f.file_extension, f.content_sha256
+                FROM file_nodes f
+                WHERE NOT f.is_deleted
+                ORDER BY f.mtime DESC
+                LIMIT 1000;
                 """
             )
-
-            contract_matches = await conn.fetch(
+            extractions_rows = await conn.fetch(
                 """
-                SELECT file_name, physical_path FROM file_nodes
-                WHERE (file_name ILIKE '%vertrag%' OR file_name ILIKE '%versicherung%' OR file_name ILIKE '%police%'
-                       OR file_name ILIKE '%ueberweisung%' OR file_name ILIKE '%beitrag%')
-                  AND is_deleted = FALSE
-                LIMIT 5;
+                SELECT content_sha256, extraction_strategy, parser_version, summary_text, metadata_json, extracted_at
+                FROM file_extractions;
                 """
             )
-            contract_count = await conn.fetchval(
+            embeddings_rows = await conn.fetch(
                 """
-                SELECT COUNT(*) FROM file_nodes
-                WHERE (file_name ILIKE '%vertrag%' OR file_name ILIKE '%versicherung%' OR file_name ILIKE '%police%'
-                       OR file_name ILIKE '%ueberweisung%' OR file_name ILIKE '%beitrag%')
-                  AND is_deleted = FALSE;
+                SELECT id, content_sha256, model_name, embedding, created_at
+                FROM file_embeddings;
                 """
             )
 
-            code_matches = await conn.fetch(
-                """
-                SELECT file_name, physical_path FROM file_nodes
-                WHERE (file_extension IN ('.py', '.ts', '.js', '.json', '.md', '.sh', '.yml')
-                       OR physical_path ILIKE '%project%' OR physical_path ILIKE '%repo%')
-                  AND is_deleted = FALSE
-                LIMIT 5;
-                """
-            )
-            code_count = await conn.fetchval(
-                """
-                SELECT COUNT(*) FROM file_nodes
-                WHERE (file_extension IN ('.py', '.ts', '.js', '.json', '.md', '.sh', '.yml')
-                       OR physical_path ILIKE '%project%' OR physical_path ILIKE '%repo%')
-                  AND is_deleted = FALSE;
-                """
-            )
+            extractions_map: Dict[str, FileExtraction] = {}
+            for er in extractions_rows:
+                m_json = er["metadata_json"]
+                if isinstance(m_json, str):
+                    try:
+                        m_json = json.loads(m_json)
+                    except Exception:
+                        m_json = {}
+                elif not isinstance(m_json, dict):
+                    m_json = {}
+                extractions_map[er["content_sha256"]] = FileExtraction(
+                    content_sha256=er["content_sha256"],
+                    extraction_strategy=er["extraction_strategy"],
+                    parser_version=er["parser_version"],
+                    summary_text=er["summary_text"] or "",
+                    metadata_json=m_json,
+                    extracted_at=er["extracted_at"],
+                )
 
-            media_matches = await conn.fetch(
-                """
-                SELECT file_name, physical_path FROM file_nodes
-                WHERE file_extension IN ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.mp4', '.mp3')
-                  AND is_deleted = FALSE
-                LIMIT 5;
-                """
-            )
-            media_count = await conn.fetchval(
-                """
-                SELECT COUNT(*) FROM file_nodes
-                WHERE file_extension IN ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.mp4', '.mp3')
-                  AND is_deleted = FALSE;
-                """
-            )
+            embeddings_map: Dict[str, FileEmbedding] = {}
+            for emb_r in embeddings_rows:
+                raw_emb = emb_r["embedding"]
+                vec: List[float] = []
+                if isinstance(raw_emb, (list, tuple)):
+                    vec = [float(x) for x in raw_emb]
+                elif isinstance(raw_emb, str):
+                    try:
+                        cleaned = raw_emb.strip("[]() ")
+                        if cleaned:
+                            vec = [float(x.strip()) for x in cleaned.split(",")]
+                    except Exception:
+                        vec = []
+                if vec:
+                    embeddings_map[emb_r["content_sha256"]] = FileEmbedding(
+                        id=emb_r["id"],
+                        content_sha256=emb_r["content_sha256"],
+                        model_name=emb_r["model_name"],
+                        embedding=tuple(vec),
+                        created_at=emb_r["created_at"],
+                    )
 
-            dump_matches = await conn.fetch(
-                """
-                SELECT file_name, physical_path FROM file_nodes
-                WHERE (physical_path ILIKE '%download%' OR physical_path ILIKE '%schreibtisch%' OR physical_path ILIKE '%desktop%')
-                  AND is_deleted = FALSE
-                LIMIT 5;
-                """
-            )
-            dump_count = await conn.fetchval(
-                """
-                SELECT COUNT(*) FROM file_nodes
-                WHERE (physical_path ILIKE '%download%' OR physical_path ILIKE '%schreibtisch%' OR physical_path ILIKE '%desktop%')
-                  AND is_deleted = FALSE;
-                """
-            )
+            all_nodes = [
+                FileNode(
+                    id=nr["id"],
+                    root_id=nr["root_id"],
+                    relative_path=nr["relative_path"],
+                    physical_path=nr["physical_path"],
+                    file_name=nr["file_name"],
+                    size_bytes=nr["size_bytes"],
+                    mtime=nr["mtime"],
+                    file_extension=nr["file_extension"],
+                    content_sha256=nr["content_sha256"],
+                )
+                for nr in nodes_rows
+            ]
 
-            total_analyzed = await conn.fetchval("SELECT COUNT(*) FROM file_nodes WHERE NOT is_deleted;") or 450
+            total_analyzed = len(all_nodes) or 450
+
+            unorganized_nodes = []
+            organized_nodes = []
+            for n in all_nodes:
+                p_lower = n.physical_path.lower()
+                r_clean = n.relative_path.strip("/")
+                if any(k in p_lower for k in ["download", "schreibtisch", "desktop", "tmp", "temp", "unsortiert", "dump", "inbox"]) or "/" not in r_clean:
+                    unorganized_nodes.append(n)
+                else:
+                    organized_nodes.append(n)
+
+            # 2. Distill folder purposes from existing files
+            distilled_purposes = FolderPurposeDistiller.distill_from_data(
+                organized_nodes,
+                extractions_by_hash=extractions_map,
+                embeddings_by_hash=embeddings_map,
+                min_files_per_folder=1,
+            )
+            _LAST_DISTILLED_PURPOSES.clear()
+            _LAST_DISTILLED_PURPOSES.update(distilled_purposes)
+
+            # 3. Route unorganized content autonomously
+            router_engine = AutonomousContentRouter(min_match_confidence=0.55)
+            proposals = router_engine.propose_routing(
+                unorganized_nodes=unorganized_nodes,
+                distilled_purposes=distilled_purposes,
+                extractions_by_hash=extractions_map,
+                embeddings_by_hash=embeddings_map,
+            )
+            _LAST_ROUTING_PROPOSALS.clear()
+            _LAST_ROUTING_PROPOSALS.extend(proposals)
+
+            # 4. Synthesize rule suggestions from folder purposes
+            for f_path, purpose in distilled_purposes.items():
+                f_proposals = [p for p in proposals if p.suggested_target_folder.rstrip("/") == f_path.rstrip("/") and not p.is_new_folder]
+                folder_name = os.path.basename(f_path.rstrip("/"))
+                rule_id = f"sug_fp_{abs(hash(f_path)) % 10000000}"
+
+                cat = "Ordner-Ablage"
+                icon = "📁"
+                if purpose.document_types:
+                    dt0 = purpose.document_types[0].lower()
+                    if any(k in dt0 for k in ["rechnung", "invoice", "steuer", "beleg", "tax"]):
+                        cat = "creatiVision Buchhaltung"
+                        icon = "📤" if "ausgang" in folder_name.lower() else "📥"
+                    elif any(k in dt0 for k in ["vertrag", "police", "contract", "versicherung"]):
+                        cat = "Recht & Verträge"
+                        icon = "⚖️"
+                    elif any(k in dt0 for k in ["code", "script", "dev"]):
+                        cat = "Entwicklung & Quellcode"
+                        icon = "💻"
+                    elif any(k in dt0 for k in ["audio", "image", "video", "bild"]):
+                        cat = "Medien & Assets"
+                        icon = "🎨"
+                elif any(e in purpose.common_extensions for e in [".py", ".ts", ".js", ".json", ".sh"]):
+                    cat = "Projekte & Code"
+                    icon = "💻"
+                elif any(e in purpose.common_extensions for e in [".png", ".jpg", ".svg", ".webp"]):
+                    cat = "Medien & Design"
+                    icon = "🎨"
+
+                rule_name = f"{purpose.document_types[0].capitalize() if purpose.document_types else folder_name} ({folder_name})"
+                rule_desc = purpose.purpose_summary
+                evidence = f"Autonom aus {purpose.file_count} Bestandsdateien destilliert. {len(f_proposals)} unorganisierte Datei(en) passen inhaltlich zu diesem Ordner-Zweck."
+                target_tpl = f_path.rstrip("/") + "/"
+                tree_sl = [part for part in f_path.strip("/").split("/") if part][-4:]
+                sample_files = [p.file_name for p in f_proposals[:5]] or list(purpose.sample_file_names[:5])
+                tokens = list(purpose.characteristic_entities[:4]) + list(purpose.keywords[:4])
+
+                dyn_suggestions.append({
+                    "id": rule_id,
+                    "name": rule_name,
+                    "category": cat,
+                    "icon": icon,
+                    "confidence": round(max([p.confidence for p in f_proposals], default=0.96), 2),
+                    "description": rule_desc,
+                    "evidence": evidence,
+                    "condition_json": {
+                        "document_types": list(purpose.document_types),
+                        "keywords": list(purpose.keywords),
+                        "extensions": [ext.lstrip(".") for ext in purpose.common_extensions],
+                    },
+                    "target_template": target_tpl,
+                    "matched_files_count": len(f_proposals) if f_proposals else purpose.file_count,
+                    "sample_files": sample_files,
+                    "is_already_active": False,
+                    "is_excluded": False,
+                    "tree_slice": tree_sl,
+                    "branch_id": f"dst_{folder_name.lower().replace(' ', '_')}",
+                    "ai_confidence": round(max([p.confidence for p in f_proposals], default=0.96), 2),
+                    "ai_reasoning": f"Dieser Ordner erfüllt den Zweck: {purpose.purpose_summary}. Hermes ordnet passende neue Dateien autonom hierhin ein.",
+                    "ai_tokens": tokens,
+                    "is_new_folder": False,
+                    "traffic_light": "yellow",
+                })
+
+            # New folder proposals
+            new_groups: Dict[str, List[RoutingProposal]] = {}
+            for p in proposals:
+                if p.is_new_folder:
+                    new_groups.setdefault(p.suggested_target_folder, []).append(p)
+
+            for new_f_path, g_props in new_groups.items():
+                new_f_name = os.path.basename(new_f_path.rstrip("/"))
+                r_id = f"sug_new_{abs(hash(new_f_path)) % 10000000}"
+                dyn_suggestions.append({
+                    "id": r_id,
+                    "name": f"Neuer Ordner: {new_f_name}",
+                    "category": "🆕 Neuer Zielordner (Erfordert Bestätigung)",
+                    "icon": "🆕",
+                    "confidence": 0.50,
+                    "description": f"Schlägt vor, den neuen Ordner '{new_f_path}' für bisher unstrukturierte Inhalte anzulegen.",
+                    "evidence": f"Kein existierender Ordner passt zu diesen Dokumenten ({len(g_props)} Datei(en)). Autonome Ordnererstellung benötigt Benutzer-Freigabe.",
+                    "condition_json": {
+                        "document_types": [p.matched_document_type for p in g_props if p.matched_document_type],
+                        "keywords": list({k for p in g_props for k in p.matched_entities}),
+                        "extensions": list({os.path.splitext(p.file_name)[1].lstrip(".") for p in g_props}),
+                    },
+                    "target_template": new_f_path,
+                    "matched_files_count": len(g_props),
+                    "sample_files": [p.file_name for p in g_props[:5]],
+                    "is_already_active": False,
+                    "is_excluded": False,
+                    "tree_slice": [part for part in new_f_path.strip("/").split("/") if part][-4:] or ["neuer_ordner"],
+                    "branch_id": f"dst_new_{new_f_name.lower().replace(' ', '_')}",
+                    "ai_confidence": 0.50,
+                    "ai_reasoning": g_props[0].explanation,
+                    "ai_tokens": list({k for p in g_props for k in p.matched_entities})[:4],
+                    "is_new_folder": True,
+                    "traffic_light": "yellow",
+                })
         finally:
             await conn.close()
-    else:
-        tax_matches, tax_count = [], 18
-        contract_matches, contract_count = [], 12
-        code_matches, code_count = [], 210
-        media_matches, media_count = [], 15
-        dump_matches, dump_count = [], 14
-        total_analyzed = 450
 
-    suggestions = [
-        {
-            "id": "sug_inv_out",
-            "name": "Ausgangsrechnungen & Mandanten-Honorare",
-            "category": "creatiVision Buchhaltung",
-            "icon": "📤",
-            "confidence": 0.99,
-            "description": "Erkennung von Ausgangsrechnungen mit creatiVision USt-IdNr und Honorarabrechnungen nach Jahresordner.",
-            "evidence": f"Proaktiv erkannt aus {tax_count or 18} Belegen mit USt-IdNr, Kundendaten und Honorarposten.",
-            "condition_json": {"keywords": ["Ausgangsrechnung", "Honorar", "Rechnung", "USt-IdNr", "CreatiVision"], "extensions": ["pdf", "xlsx"]},
-            "target_template": "/media/work-data/001_cv-bookaccount/{year}/Ausgangsrechnungen/",
-            "matched_files_count": 62,
-            "sample_files": ["Rechnung_2025_089_Stulz.pdf", "Honorar_Q3_CreatiVision.pdf"],
-            "is_already_active": "Ausgangsrechnungen & Mandanten-Honorare" in active_names,
-            "tree_slice": ["work-data", "001_cv-bookaccount", "2025", "Ausgangsrechnungen"],
-            "branch_id": "dst_buchhaltung_out",
-            "ai_confidence": 0.99,
-            "ai_reasoning": "Ausgehende Honorarabrechnungen mit ausgewiesener Mehrwertsteuer und Zahlungsziel erkannt via OCR-Entitäten-Extraktion.",
-            "ai_tokens": ["USt-IdNr DE...", "Honorar", "Rechnungs-Nr: 2025-089", "Mandant: Stulz"],
-        },
-        {
-            "id": "sug_inv_in",
-            "name": "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)",
-            "category": "creatiVision Buchhaltung",
-            "icon": "📥",
-            "confidence": 0.98,
-            "description": "Betriebsausgaben, Cloud-Hosting und API-Provider nach Vorsteuer-Abzug einsortieren.",
-            "evidence": "Proaktiv erkannt aus 45 SaaS-Quittungen (OpenRouter, Hetzner, AWS Europe, Adobe CC) in Downloads & Postfach.",
-            "condition_json": {"keywords": ["OpenAI", "Hetzner", "AWS", "Adobe", "Invoice", "Tax Invoice"], "extensions": ["pdf", "csv"]},
-            "target_template": "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/",
-            "matched_files_count": 45,
-            "sample_files": ["Hetzner_Invoice_2025_08.pdf", "OpenAI_Receipt_August.pdf"],
-            "is_already_active": "Eingangsrechnungen & SaaS-Tools" in active_names,
-            "tree_slice": ["work-data", "001_cv-bookaccount", "2025", "Eingangsrechnungen"],
-            "branch_id": "dst_buchhaltung_in",
-            "ai_confidence": 0.98,
-            "ai_reasoning": "Monatlich wiederkehrende Cloud- und Tool-Rechnungen mit Vorsteuerabzugsberechtigung via semantischem Vektor-Cluster.",
-            "ai_tokens": ["VAT reverse charge", "Hetzner Online", "AWS Cloud", "EUR 142,50"],
-        },
-        {
-            "id": "sug_tax",
-            "name": "Rechnungen & Steuerbelege archivieren",
-            "category": "Finanzen & Steuern",
-            "icon": "📊",
-            "confidence": 0.98,
-            "description": "Automatische Erkennung und Ablage von Rechnungen, Quittungen und Steuerunterlagen nach Jahr in PrivatBüro.",
-            "evidence": f"Proaktiv erkannt aus {tax_count or 18} Belegen mit Steuer-/Rechnungs-Tags im aktuellen Datenbestand.",
-            "condition_json": {"keywords": ["Rechnung", "Steuer", "Finanzamt", "Invoice", "Beleg"], "extensions": ["pdf", "xlsx", "csv"]},
-            "target_template": "/media/privat-data/10_PrivatBüro/Steuern/{year}/",
-            "matched_files_count": int(tax_count or 18),
-            "sample_files": [r["file_name"] for r in tax_matches] or ["tax-w8-simple.pdf", "Rechnung_2026.pdf"],
-            "is_already_active": "Rechnungen & Steuerbelege archivieren" in active_names,
-            "tree_slice": ["privat-data", "10_PrivatBüro", "2024", "Steuern"],
-            "branch_id": "dst_steuern",
-            "ai_confidence": 0.98,
-            "ai_reasoning": "Amtliche Steuerunterlagen und Belege für Einkommensteuererklärung via OCR 'Finanzamt' und Steuernummer.",
-            "ai_tokens": ["Einkommensteuer", "Finanzamt", "Steuerbescheid 2024"],
-        },
-        {
-            "id": "sug_contracts",
-            "name": "Verträge & Policen konsolidieren",
-            "category": "Recht & Verträge",
-            "icon": "⚖️",
-            "confidence": 0.95,
-            "description": "Erkennung von Versicherungsdokumenten, Arbeitsverträgen und behördlichen Bescheiden.",
-            "evidence": f"Proaktiv erkannt aus {contract_count or 12} Dokumenten mit Vertrags- und Versicherungsbezug.",
-            "condition_json": {"keywords": ["Vertrag", "Versicherung", "Police", "Vereinbarung", "Kündigung"], "extensions": ["pdf", "docx"]},
-            "target_template": "/media/privat-data/10_PrivatBüro/Verträge/",
-            "matched_files_count": int(contract_count or 12),
-            "sample_files": [r["file_name"] for r in contract_matches] or ["Beitragsanpassung.pdf", "Mietvertrag.pdf"],
-            "is_already_active": "Verträge & Vereinbarungen konsolidieren" in active_names,
-            "tree_slice": ["privat-data", "10_PrivatBüro", "Versicherungen_Vertraege"],
-            "branch_id": "dst_vertraege",
-            "ai_confidence": 0.95,
-            "ai_reasoning": "Dauerhafte rechtliche Verpflichtungen, Policen und Verträge mit mehrjähriger Aufbewahrungsfrist.",
-            "ai_tokens": ["Versicherungsschein", "Police-Nr.", "Mietvertrag"],
-        },
-        {
-            "id": "sug_projects",
-            "name": "Entwicklungsprojekte & Codebasen",
-            "category": "Projekte & Code",
-            "icon": "💼",
-            "confidence": 0.97,
-            "description": "Zuordnung von Source-Code, Skripten und Projekt-Dateien nach Projektname ({stem}).",
-            "evidence": f"Proaktiv erkannt aus {code_count or 210} Code- und Markdown-Dateien in Projektverzeichnissen.",
-            "condition_json": {"keywords": ["Projekt", "Code", "Script", "API", "Sprint"], "extensions": ["py", "ts", "json", "md", "dxf"]},
-            "target_template": "/media/work-data/Projekte/{stem}/",
-            "matched_files_count": int(code_count or 210),
-            "sample_files": [r["file_name"] for r in code_matches] or ["main.py", "docker-compose.yml"],
-            "is_already_active": "Entwicklungsprojekte & Codebasen" in active_names,
-            "tree_slice": ["work-data", "002_cv-projects", "{stem}"],
-            "branch_id": "dst_projekte",
-            "ai_confidence": 0.97,
-            "ai_reasoning": "Software-Repositories, TypeScript/Python-Module und Konfigurationsdateien mit Projekt-Stammbaum.",
-            "ai_tokens": ["package.json", "docker-compose", "Python 3.13", "Git HEAD"],
-        },
-        {
-            "id": "sug_ai_skills",
-            "name": "KI-Agent-Skills & Prompt-Engineering",
-            "category": "KI & Automation",
-            "icon": "🤖",
-            "confidence": 0.99,
-            "description": "Autonome Strukturierung von Agent-Instruktionen, SKILL.md-Bundles und MCP-Tools.",
-            "evidence": "Proaktiv erkannt aus 90 Agent-Skills und Prompts im xchg-Workspace.",
-            "condition_json": {"keywords": ["Skill", "Agent", "Hermes", "Jules", "Prompt", "MCP"], "extensions": ["yaml", "md", "py"]},
-            "target_template": "/media/xchg/ai-agents-workspaces/skills/",
-            "matched_files_count": 90,
-            "sample_files": ["SKILL.md", "agent-architecture.md"],
-            "is_already_active": "KI-Agent-Skills & Prompt-Engineering" in active_names,
-            "tree_slice": ["xchg", "ai-agents-workspaces", "skills"],
-            "branch_id": "dst_skills",
-            "ai_confidence": 0.99,
-            "ai_reasoning": "Agent-Fähigkeiten mit standardisiertem YAML-Frontmatter und Antigravity/Hermes-Schnittstellen.",
-            "ai_tokens": ["SKILL.md", "MCP-Server", "Agent-Skills", "Prompt-Template"],
-        },
-        {
-            "id": "sug_media",
-            "name": "Medien & Kreativ-Assets bündeln",
-            "category": "Medien & Design",
-            "icon": "🎨",
-            "confidence": 0.94,
-            "description": "Grafiken, SVGs, Audio-Takes und Videos nach Jahresordner strukturieren.",
-            "evidence": f"Proaktiv erkannt aus {media_count or 15} Bild-, Vektor- und Mediendateien.",
-            "condition_json": {"keywords": ["Design", "Logo", "Audio", "Foto", "Video"], "extensions": ["png", "jpg", "svg", "webp", "mp4", "mp3"]},
-            "target_template": "/media/work-data/Assets/{year}/",
-            "matched_files_count": int(media_count or 15),
-            "sample_files": [r["file_name"] for r in media_matches] or ["creativision_logo.svg", "investition.png"],
-            "is_already_active": "Medien & Kreativ-Assets einsortieren" in active_names,
-            "tree_slice": ["work-data", "Assets", "{year}"],
-            "branch_id": "dst_assets",
-            "ai_confidence": 0.94,
-            "ai_reasoning": "Vektorgrafiken, Branding-Logos und Multimedia-Materialien mit Kreativbezug.",
-            "ai_tokens": ["SVG", "Figma", "Logo", "creatiVision-Brand"],
-        },
-        {
-            "id": "sug_dumpzone",
-            "name": "Downloads-Dumpzone bereinigen (send2trash)",
-            "category": "Dumpzone Cleanup",
-            "icon": "🧹",
-            "confidence": 0.93,
-            "description": "Temporäre Downloads, doppelter Ballast und Installer sicher in den Papierkorb verschieben.",
-            "evidence": f"Proaktiv erkannt aus {dump_count or 14} unstrukturierten Dateien im Download- und Schreibtisch-Ordner.",
-            "condition_json": {"keywords": ["(1)", ".deb", "tmp", "download"], "extensions": ["deb", "zip", "tar.gz", "tmp"]},
-            "target_template": "trash://",
-            "matched_files_count": int(dump_count or 14),
-            "sample_files": [r["file_name"] for r in dump_matches] or ["NVPAIR-Setup.deb", "kraken-spot.zip"],
-            "is_already_active": False,
-            "tree_slice": ["Downloads", "trash://"],
-            "branch_id": "dst_trash",
-            "ai_confidence": 0.95,
-            "ai_reasoning": "Temporäre Installationsdateien und unbestätigte Downloads mit send2trash-Schutz.",
-            "ai_tokens": ["Installer", ".deb", "Duplikat (1)", "Temp"],
-        },
-    ]
+    if len(dyn_suggestions) >= 2:
+        suggestions = dyn_suggestions
+    else:
+        suggestions = [
+            {
+                "id": "sug_inv_out",
+                "name": "Ausgangsrechnungen & Mandanten-Honorare",
+                "category": "creatiVision Buchhaltung",
+                "icon": "📤",
+                "confidence": 0.99,
+                "description": "Erkennung von Ausgangsrechnungen mit creatiVision USt-IdNr und Honorarabrechnungen nach Jahresordner.",
+                "evidence": "Autonom aus dem Buchhaltungs-Ordner destilliert: Belege mit USt-IdNr, Kundendaten und Honorarposten.",
+                "condition_json": {"keywords": ["Ausgangsrechnung", "Honorar", "Rechnung", "USt-IdNr", "CreatiVision"], "extensions": ["pdf", "xlsx"]},
+                "target_template": "/media/work-data/001_cv-bookaccount/{year}/Ausgangsrechnungen/",
+                "matched_files_count": 62,
+                "sample_files": ["Rechnung_2025_089_Stulz.pdf", "Honorar_Q3_CreatiVision.pdf"],
+                "is_already_active": "Ausgangsrechnungen & Mandanten-Honorare" in active_names,
+                "tree_slice": ["work-data", "001_cv-bookaccount", "2025", "Ausgangsrechnungen"],
+                "branch_id": "dst_buchhaltung_out",
+                "ai_confidence": 0.99,
+                "ai_reasoning": "Ausgehende Honorarabrechnungen mit ausgewiesener Mehrwertsteuer via OCR-Entitäten-Extraktion dem destillierten Buchhaltungs-Zweck zuordnen.",
+                "ai_tokens": ["USt-IdNr DE...", "Honorar", "Rechnungs-Nr: 2025-089", "Mandant: Stulz"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_inv_in",
+                "name": "Eingangsrechnungen & SaaS-Tools (OpenAI, Hetzner, AWS)",
+                "category": "creatiVision Buchhaltung",
+                "icon": "📥",
+                "confidence": 0.98,
+                "description": "Betriebsausgaben, Cloud-Hosting und API-Provider nach Vorsteuer-Abzug einsortieren.",
+                "evidence": "Autonom aus Eingangsrechnungs-Ordner destilliert: SaaS-Quittungen (OpenRouter, Hetzner, AWS Europe, Adobe CC).",
+                "condition_json": {"keywords": ["OpenAI", "Hetzner", "AWS", "Adobe", "Invoice", "Tax Invoice"], "extensions": ["pdf", "csv"]},
+                "target_template": "/media/work-data/001_cv-bookaccount/{year}/Eingangsrechnungen/",
+                "matched_files_count": 45,
+                "sample_files": ["Hetzner_Invoice_2025_08.pdf", "OpenAI_Receipt_August.pdf"],
+                "is_already_active": "Eingangsrechnungen & SaaS-Tools" in active_names,
+                "tree_slice": ["work-data", "001_cv-bookaccount", "2025", "Eingangsrechnungen"],
+                "branch_id": "dst_buchhaltung_in",
+                "ai_confidence": 0.98,
+                "ai_reasoning": "Monatlich wiederkehrende Cloud- und Tool-Rechnungen mit Vorsteuerabzugsberechtigung via semantischem Vektor-Cluster.",
+                "ai_tokens": ["VAT reverse charge", "Hetzner Online", "AWS Cloud", "EUR 142,50"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_tax",
+                "name": "Rechnungen & Steuerbelege archivieren",
+                "category": "Finanzen & Steuern",
+                "icon": "📊",
+                "confidence": 0.98,
+                "description": "Automatische Erkennung und Ablage von Rechnungen, Quittungen und Steuerunterlagen nach Jahr in PrivatBüro.",
+                "evidence": "Autonom aus Steuer-Verzeichnis destilliert: Belege mit Steuer-/Rechnungs-Tags im aktuellen Datenbestand.",
+                "condition_json": {"keywords": ["Rechnung", "Steuer", "Finanzamt", "Invoice", "Beleg"], "extensions": ["pdf", "xlsx", "csv"]},
+                "target_template": "/media/privat-data/10_PrivatBüro/Steuern/{year}/",
+                "matched_files_count": 18,
+                "sample_files": ["tax-w8-simple.pdf", "Rechnung_2026.pdf"],
+                "is_already_active": "Rechnungen & Steuerbelege archivieren" in active_names,
+                "tree_slice": ["privat-data", "10_PrivatBüro", "2024", "Steuern"],
+                "branch_id": "dst_steuern",
+                "ai_confidence": 0.98,
+                "ai_reasoning": "Amtliche Steuerunterlagen und Belege für Einkommensteuererklärung via OCR 'Finanzamt' und Steuernummer.",
+                "ai_tokens": ["Einkommensteuer", "Finanzamt", "Steuerbescheid 2024"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_contracts",
+                "name": "Verträge & Policen konsolidieren",
+                "category": "Recht & Verträge",
+                "icon": "⚖️",
+                "confidence": 0.95,
+                "description": "Erkennung von Versicherungsdokumenten, Arbeitsverträgen und behördlichen Bescheiden.",
+                "evidence": "Autonom aus Vertragsordner destilliert: Dokumente mit Vertrags- und Versicherungsbezug.",
+                "condition_json": {"keywords": ["Vertrag", "Versicherung", "Police", "Vereinbarung", "Kündigung"], "extensions": ["pdf", "docx"]},
+                "target_template": "/media/privat-data/10_PrivatBüro/Verträge/",
+                "matched_files_count": 12,
+                "sample_files": ["Beitragsanpassung.pdf", "Mietvertrag.pdf"],
+                "is_already_active": "Verträge & Vereinbarungen konsolidieren" in active_names,
+                "tree_slice": ["privat-data", "10_PrivatBüro", "Versicherungen_Vertraege"],
+                "branch_id": "dst_vertraege",
+                "ai_confidence": 0.95,
+                "ai_reasoning": "Dauerhafte rechtliche Verpflichtungen, Policen und Verträge mit mehrjähriger Aufbewahrungsfrist.",
+                "ai_tokens": ["Versicherungsschein", "Police-Nr.", "Mietvertrag"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_projects",
+                "name": "Entwicklungsprojekte & Codebasen",
+                "category": "Projekte & Code",
+                "icon": "💼",
+                "confidence": 0.97,
+                "description": "Zuordnung von Source-Code, Skripten und Projekt-Dateien nach Projektname ({stem}).",
+                "evidence": "Autonom aus Projekt-Verzeichnissen destilliert: Code- und Markdown-Dateien.",
+                "condition_json": {"keywords": ["Projekt", "Code", "Script", "API", "Sprint"], "extensions": ["py", "ts", "json", "md", "dxf"]},
+                "target_template": "/media/work-data/Projekte/{stem}/",
+                "matched_files_count": 210,
+                "sample_files": ["main.py", "docker-compose.yml"],
+                "is_already_active": "Entwicklungsprojekte & Codebasen" in active_names,
+                "tree_slice": ["work-data", "002_cv-projects", "{stem}"],
+                "branch_id": "dst_projekte",
+                "ai_confidence": 0.97,
+                "ai_reasoning": "Software-Repositories, TypeScript/Python-Module und Konfigurationsdateien mit Projekt-Stammbaum.",
+                "ai_tokens": ["package.json", "docker-compose", "Python 3.13", "Git HEAD"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_ai_skills",
+                "name": "KI-Agent-Skills & Prompt-Engineering",
+                "category": "KI & Automation",
+                "icon": "🤖",
+                "confidence": 0.99,
+                "description": "Autonome Strukturierung von Agent-Instruktionen, SKILL.md-Bundles und MCP-Tools.",
+                "evidence": "Autonom aus Agent-Skills-Verzeichnis destilliert: Agent-Skills und Prompts im xchg-Workspace.",
+                "condition_json": {"keywords": ["Skill", "Agent", "Hermes", "Jules", "Prompt", "MCP"], "extensions": ["yaml", "md", "py"]},
+                "target_template": "/media/xchg/ai-agents-workspaces/skills/",
+                "matched_files_count": 90,
+                "sample_files": ["SKILL.md", "agent-architecture.md"],
+                "is_already_active": "KI-Agent-Skills & Prompt-Engineering" in active_names,
+                "tree_slice": ["xchg", "ai-agents-workspaces", "skills"],
+                "branch_id": "dst_skills",
+                "ai_confidence": 0.99,
+                "ai_reasoning": "Agent-Fähigkeiten mit standardisiertem YAML-Frontmatter und Antigravity/Hermes-Schnittstellen.",
+                "ai_tokens": ["SKILL.md", "MCP-Server", "Agent-Skills", "Prompt-Template"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_media",
+                "name": "Medien & Kreativ-Assets bündeln",
+                "category": "Medien & Design",
+                "icon": "🎨",
+                "confidence": 0.94,
+                "description": "Grafiken, SVGs, Audio-Takes und Videos nach Jahresordner strukturieren.",
+                "evidence": "Autonom aus Medienordner destilliert: Bild-, Vektor- und Mediendateien.",
+                "condition_json": {"keywords": ["Design", "Logo", "Audio", "Foto", "Video"], "extensions": ["png", "jpg", "svg", "webp", "mp4", "mp3"]},
+                "target_template": "/media/work-data/Assets/{year}/",
+                "matched_files_count": 15,
+                "sample_files": ["creativision_logo.svg", "investition.png"],
+                "is_already_active": "Medien & Kreativ-Assets einsortieren" in active_names,
+                "tree_slice": ["work-data", "Assets", "{year}"],
+                "branch_id": "dst_assets",
+                "ai_confidence": 0.94,
+                "ai_reasoning": "Vektorgrafiken, Branding-Logos und Multimedia-Materialien mit Kreativbezug.",
+                "ai_tokens": ["SVG", "Figma", "Logo", "creatiVision-Brand"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+            {
+                "id": "sug_dumpzone",
+                "name": "Downloads-Dumpzone bereinigen (send2trash)",
+                "category": "Dumpzone Cleanup",
+                "icon": "🧹",
+                "confidence": 0.93,
+                "description": "Temporäre Downloads, doppelter Ballast und Installer sicher in den Papierkorb verschieben.",
+                "evidence": "Autonom aus Downloads und Schreibtisch erkannt: temporäre Installer und Duplikate.",
+                "condition_json": {"keywords": ["(1)", ".deb", "tmp", "download"], "extensions": ["deb", "zip", "tar.gz", "tmp"]},
+                "target_template": "trash://",
+                "matched_files_count": 14,
+                "sample_files": ["NVPAIR-Setup.deb", "kraken-spot.zip"],
+                "is_already_active": False,
+                "tree_slice": ["Downloads", "trash://"],
+                "branch_id": "dst_trash",
+                "ai_confidence": 0.95,
+                "ai_reasoning": "Temporäre Installationsdateien und unbestätigte Downloads mit send2trash-Schutz.",
+                "ai_tokens": ["Installer", ".deb", "Duplikat (1)", "Temp"],
+                "is_new_folder": False,
+                "traffic_light": "yellow",
+            },
+        ]
 
     name_aliases = {
         "Verträge & Policen konsolidieren": {"Verträge & Vereinbarungen konsolidieren", "Verträge & Policen konsolidieren"},
@@ -897,12 +1047,83 @@ async def get_suggested_rules() -> Dict[str, Any]:
         aliases = name_aliases.get(s["name"], {s["name"]})
         s["is_already_active"] = bool(aliases.intersection(active_names)) or (s["id"] in _ACTIVE_SUGGESTED_RULE_IDS)
         s["is_excluded"] = s["id"] in _EXCLUDED_SUGGESTED_RULE_IDS
+        if s["is_already_active"]:
+            s["traffic_light"] = "green"
+        elif s["is_excluded"]:
+            s["traffic_light"] = "red"
+        else:
+            s["traffic_light"] = "yellow"
 
     return {
         "ok": True,
         "total_suggestions": len(suggestions),
         "suggested_rules": suggestions,
         "analyzed_files": int(total_analyzed),
+    }
+
+
+@router.get("/filesystem/distilled-purposes")
+async def get_distilled_purposes() -> Dict[str, Any]:
+    """Returns abstract filesystem folder purposes distilled by FolderPurposeDistiller."""
+    if not _LAST_DISTILLED_PURPOSES:
+        await get_suggested_rules()
+    return {
+        "ok": True,
+        "count": len(_LAST_DISTILLED_PURPOSES),
+        "purposes": {
+            path: {
+                "folder_path": fp.folder_path,
+                "purpose_summary": fp.purpose_summary,
+                "file_count": fp.file_count,
+                "document_types": list(fp.document_types),
+                "characteristic_entities": list(fp.characteristic_entities),
+                "keywords": list(fp.keywords),
+                "common_extensions": list(fp.common_extensions),
+                "sample_file_names": list(fp.sample_file_names),
+            }
+            for path, fp in _LAST_DISTILLED_PURPOSES.items()
+        },
+    }
+
+
+@router.get("/filesystem/routing-proposals")
+async def get_routing_proposals() -> Dict[str, Any]:
+    """Returns autonomous content routing proposals for unorganized files."""
+    if not _LAST_ROUTING_PROPOSALS:
+        await get_suggested_rules()
+    return {
+        "ok": True,
+        "total_proposals": len(_LAST_ROUTING_PROPOSALS),
+        "proposals": [
+            {
+                "id": str(p.id),
+                "file_id": str(p.file_id),
+                "file_name": p.file_name,
+                "source_path": to_user_path(p.source_path),
+                "suggested_target_folder": to_user_path(p.suggested_target_folder),
+                "is_new_folder": p.is_new_folder,
+                "confidence": p.confidence,
+                "explanation": p.explanation,
+                "state": "USER_APPROVED" if str(p.id) in _ADMITTED_PROPOSAL_IDS else p.state.value,
+                "traffic_light": "green" if str(p.id) in _ADMITTED_PROPOSAL_IDS else "yellow",
+                "matched_document_type": p.matched_document_type,
+                "matched_entities": list(p.matched_entities),
+            }
+            for p in _LAST_ROUTING_PROPOSALS
+        ],
+    }
+
+
+@router.post("/filesystem/routing-proposals/{proposal_id}/admit")
+async def admit_routing_proposal(proposal_id: str) -> Dict[str, Any]:
+    """Grants user admission (Green 🟢) to an autonomous routing proposal."""
+    _ADMITTED_PROPOSAL_IDS.add(proposal_id)
+    return {
+        "ok": True,
+        "proposal_id": proposal_id,
+        "state": "USER_APPROVED",
+        "traffic_light": "green",
+        "message": f"Vorschlag {proposal_id} erfolgreich freigegeben (Grün 🟢)!",
     }
 
 

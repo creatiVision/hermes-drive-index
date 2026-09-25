@@ -8605,12 +8605,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" } },
               h("span", { style: { fontSize: "1.35rem" } }, "🤖"),
               h("h3", { style: { fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 } },
-                "Proaktiv vorgeschlagene Filter-Regeln (aus Medien- & Pfadanalyse)"
+                "Autonomer Content-Router & Ordner-Zweck-Destillation"
               ),
               h("span", { className: "auto-org-badge auto-org-badge-green" }, `${totalCount} KI-Vorschläge`)
             ),
             h("p", { style: { color: "#94a3b8", fontSize: "0.85rem", marginTop: "0.35rem", lineHeight: "1.4" } },
-              `Hermes hat Ihren realen Datenbestand (${suggestedRules.analyzed_files || 450} Dateien) analysiert. Nutzen Sie das Ampelsystem (🟡 = Vorschlag, 🟢 = Freigegeben) und Checkboxen zur expliziten Freigabe:`
+              `Hermes destilliert aus Ihrem Dateibestand (${suggestedRules.analyzed_files || 450} Dateien) den abstrakten Zweck jedes vorhandenen Ordners. Das Programm schlägt die Zuordnung vor (🟡 = Vorschlag); Sie erteilen lediglich die Freigabe (🟢 = Freigegeben):`
             )
           )
         ),
@@ -8695,6 +8695,26 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   h("span", { style: { fontSize: "0.75rem", color: "#60a5fa" } }, `${sr.matched_files_count || 0} Dateien • ${confPct}% Konfidenz`)
                 )
               ),
+
+              // New Folder Warning Prompt
+              sr.is_new_folder && h("div", {
+                style: {
+                  margin: "0.4rem 0",
+                  padding: "0.4rem 0.6rem",
+                  background: "rgba(234, 179, 8, 0.15)",
+                  border: "1px solid #eab308",
+                  borderRadius: "4px",
+                  color: "#fde047",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem"
+                }
+              }, [
+                h("span", null, "⚠️"),
+                h("span", null, "Neuer Zielordner vorgeschlagen: Erfordert Ihre explizite Freigabe (auf Grün schalten) vor Erstellung.")
+              ]),
 
               // Description & Evidence
               h("div", { style: { fontSize: "0.8125rem", color: "#cbd5e1", lineHeight: "1.4" } }, sr.description),
