@@ -650,3 +650,25 @@ def test_execute_real_indexing_batch_anomalies():
     assert "DUMP_ZONE_ITEM" in dump_insert_call[0][0]
     assert len(dump_insert_call[0][1]) == 1
     assert dump_insert_call[0][1][0][1] == dump_id
+
+
+def test_calculate_sync_plan_oserror_logged(caplog):
+    import logging
+    from hermes_auto_organizer.dashboard.plugin_api import calculate_sync_plan, SyncPlanRequest
+
+    req = SyncPlanRequest(mapping_id="m1")
+    mock_mapping = {
+        "id": "m1",
+        "name": "Test Mapping",
+        "local_path": "/fake/nonexistent/path/that/throws",
+        "drive_folder_path": "/drive/test",
+        "direction": "bidirectional",
+    }
+
+    with patch("hermes_auto_organizer.dashboard.plugin_api._IN_MEMORY_SYNC_MAPPINGS", [mock_mapping]),          patch("pathlib.Path.exists", return_value=True),          patch("pathlib.Path.is_dir", return_value=True),          patch("pathlib.Path.rglob", side_effect=OSError("Permission denied")):
+        with caplog.at_level(logging.WARNING):
+            import asyncio
+            res = asyncio.run(calculate_sync_plan(req))
+
+    assert res["ok"] is True
+    assert "Failed to read local filesystem sample for sync plan" in caplog.text

@@ -2230,8 +2230,8 @@ async def calculate_sync_plan(req: SyncPlanRequest) -> Dict[str, Any]:
                         "size_bytes": p.stat().st_size,
                         "reason": "Hash abgeglichen (aktuell)" if local_files_count % 3 == 0 else "Lokale Datei bereit zum Abgleich",
                     })
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.warning("Failed to read local filesystem sample for sync plan: %s", exc, exc_info=True)
 
     if not sample_items:
         sample_items = [
