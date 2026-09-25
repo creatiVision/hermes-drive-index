@@ -130,6 +130,7 @@ class DocumentParser:
                     "1",
                     "-l",
                     str(max_pages),
+                    "--",
                     str(resolved_path),
                     str(tmp_prefix),
                 ]
