@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
 from hermes_drive_index.core.local_scanner import (
-    compute_file_hashes,
     guess_mime_type,
     safe_trash,
     scan_local_directory,
@@ -46,3 +44,32 @@ def test_safe_trash(tmp_path: Path):
     res = safe_trash(target)
     assert res is True
     assert not target.exists()
+
+
+def test_safe_trash_exception_and_failure_logging(tmp_path: Path, monkeypatch, caplog):
+    import logging
+    import shutil
+    import subprocess
+
+    target = tmp_path / "trash_candidate.tmp"
+    target.write_text("temporary content")
+
+    # Mock shutil.which to pretend gio and trash are present
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/fake/bin/{cmd}")
+
+    def fake_run(cmd, capture_output=True, text=True, check=False):
+        if "gio" in cmd[0]:
+            raise OSError("gio binary execution error")
+        elif "trash" in cmd[0]:
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="trash command failed")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with caplog.at_level(logging.DEBUG):
+        res = safe_trash(target)
+
+    assert res is True
+    assert not target.exists()
+    assert "gio trash command failed: gio binary execution error" in caplog.text
+    assert "trash-put failed with returncode 1: trash command failed" in caplog.text
