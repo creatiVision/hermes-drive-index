@@ -38,8 +38,8 @@ def get_dir_size_fast(path: Path | str, max_depth: int = 2) -> int:
                         total += get_dir_size_fast(entry.path, max_depth=max_depth - 1)
                 except (OSError, PermissionError):
                     continue
-    except (OSError, PermissionError):
-        pass
+    except (OSError, PermissionError) as exc:
+        logger.debug("Failed or permission denied reading directory for size calculation: %s (%s)", path, exc)
     return total
 
 

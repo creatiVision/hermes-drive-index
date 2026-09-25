@@ -1,6 +1,8 @@
+
 """Optional OCR behavior tests."""
 
 from __future__ import annotations
+import pytest
 
 import subprocess
 from unittest import mock
@@ -228,3 +230,49 @@ def test_ocr_pdf_timeout_returns_none(tmp_path):
         mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ocrmypdf", timeout=120)),
     ):
         assert ocr.ocr_pdf(tmp_path / "scan.pdf") is None
+
+
+def test_ocr_image_success(tmp_path):
+    path = tmp_path / "scan.png"
+    with (
+        mock.patch.object(ocr, "ocr_available", return_value=True),
+        mock.patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = subprocess.CompletedProcess(["tesseract"], 0, stdout="image text\n")
+        result = ocr.ocr_image(path, timeout=30, extra_args=("--dpi", "300", "-l", "eng+deu"))
+
+        assert result == "image text\n"
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        cmd = args[0]
+        assert cmd[0] == "tesseract"
+        assert str(path) in cmd
+        assert "--dpi" in cmd and "300" in cmd
+        assert "-l" in cmd and "eng+deu" in cmd
+        assert kwargs["timeout"] == 30
+
+
+def test_ocr_extra_args_validation_rejects_unsafe():
+    # Unsupported or injection flags should raise ValueError via validate_ocr_args
+    with pytest.raises(ValueError, match="Unsupported Tesseract argument"):
+        ocr.validate_ocr_args(["--config", "/etc/passwd"], ocr._SAFE_TESSERACT_FLAGS, ocr._SAFE_TESSERACT_FLAGS_WITH_VALUES, "Tesseract")
+
+    with pytest.raises(ValueError, match="Unsupported Tesseract value"):
+        ocr.validate_ocr_args(["--dpi", "../etc/passwd"], ocr._SAFE_TESSERACT_FLAGS, ocr._SAFE_TESSERACT_FLAGS_WITH_VALUES, "Tesseract")
+
+    with pytest.raises(ValueError, match="Unsupported OCRmyPDF argument"):
+        ocr.validate_ocr_args(["--sidecar", "/tmp/out.txt"], ocr._SAFE_OCRMYPDF_FLAGS, ocr._SAFE_OCRMYPDF_FLAGS_WITH_VALUES, "OCRmyPDF")
+
+
+def test_ocr_pdf_rejects_unsafe_extra_args(tmp_path):
+    path = tmp_path / "scan.pdf"
+    with mock.patch.object(ocr, "ocr_available", return_value=True):
+        # ocr_pdf catches Exception and returns None when validate_ocr_args raises ValueError
+        assert ocr.ocr_pdf(path, extra_args=("--sidecar", "/tmp/out.txt")) is None
+
+
+def test_ocr_image_rejects_unsafe_extra_args(tmp_path):
+    path = tmp_path / "scan.png"
+    with mock.patch.object(ocr, "ocr_available", return_value=True):
+        # ocr_image catches Exception and returns None when validate_ocr_args raises ValueError
+        assert ocr.ocr_image(path, extra_args=("--config", "/etc/passwd")) is None
