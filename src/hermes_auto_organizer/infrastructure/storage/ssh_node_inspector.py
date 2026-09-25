@@ -50,8 +50,8 @@ class SSHNodeInspector(SSHNodePort):
             try:
                 if p.exists() and p.is_file():
                     return str(p)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Error checking SSH key candidate path %s: %s", p, exc)
         return None
 
     def __init__(self, node_configs: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
