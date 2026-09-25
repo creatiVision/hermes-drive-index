@@ -79,7 +79,9 @@ DB_HOST = os.getenv("HERMES_DB_HOST", "localhost")
 DB_PORT = int(os.getenv("HERMES_DB_PORT", "5433"))
 DB_USER = os.getenv("HERMES_DB_USER", "pgadmin")
 DB_PASS = os.getenv("HERMES_DB_PASSWORD", "81914287fd58ccba48967c0b8483dfc74cced7f28c14d196")
-DB_NAME = os.getenv("HERMES_DB_NAME", "agent_memory")
+DB_NAME = os.getenv("HERMES_ORGANIZER_DB_NAME", os.getenv("HERMES_DB_NAME", "agent_memory"))
+if DB_NAME in ("hermes_organizer", ""):
+    DB_NAME = "agent_memory"
 
 DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
