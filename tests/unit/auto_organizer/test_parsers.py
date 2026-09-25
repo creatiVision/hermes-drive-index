@@ -177,6 +177,16 @@ def test_doc_parser_ocr_pdf_subprocess_error(tmp_path: Path):
 
 @patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._PDFTOPPM_BIN", "/usr/bin/pdftoppm")
 @patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._TESSERACT_BIN", "/usr/bin/tesseract")
+def test_doc_parser_ocr_pdf_nonexistent_file(tmp_path: Path):
+    parser = DocumentParser()
+    non_existent_pdf = tmp_path / "does_not_exist.pdf"
+
+    extraction = parser._ocr_pdf(non_existent_pdf, "mock_sha256", total_pages=1)
+    assert extraction is None
+
+
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._PDFTOPPM_BIN", "/usr/bin/pdftoppm")
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._TESSERACT_BIN", "/usr/bin/tesseract")
 def test_doc_parser_ocr_pdf_command_construction(tmp_path: Path):
     parser = DocumentParser()
     pdf_file = tmp_path / "--help.pdf"
@@ -201,3 +211,4 @@ def test_doc_parser_ocr_pdf_command_construction(tmp_path: Path):
     dash_dash_idx = render_cmd.index("--")
     assert dash_dash_idx > 0
     assert render_cmd[dash_dash_idx + 1] == str(pdf_file.resolve())
+
