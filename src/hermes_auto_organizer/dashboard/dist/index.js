@@ -49,6 +49,15 @@
         background-color: #3b82f6 !important;
         color: #ffffff !important;
       }
+      .auto-org-container button:focus-visible,
+      .auto-org-container input:focus-visible,
+      .auto-org-container select:focus-visible,
+      .auto-org-container textarea:focus-visible,
+      .auto-org-container [tabindex]:focus-visible {
+        outline: 2px solid #38bdf8 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4) !important;
+      }
       .auto-org-step-card.disabled, .auto-org-step-card.locked {
         opacity: 0.42 !important;
         cursor: not-allowed !important;
@@ -613,23 +622,28 @@
     return h("div", {
       ref: menuRef,
       className: "auto-org-context-menu",
+      role: "menu",
+      "aria-label": `Statusoptionen für ${nodeName}`,
       style: { left: `${posX}px`, top: `${posY}px` },
       onClick: (e) => e.stopPropagation(),
       onContextMenu: (e) => e.preventDefault()
     },
       h("div", { className: "auto-org-context-menu-header" },
         h("div", { className: "auto-org-context-menu-title" },
-          h("span", null, nodeType.split(" ")[0]),
+          h("span", { "aria-hidden": "true" }, nodeType.split(" ")[0]),
           h("span", null, nodeName)
         ),
         nodePath && h("div", { className: "auto-org-context-menu-path", title: nodePath }, nodePath)
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "approved",
         className: `auto-org-context-menu-item approve ${currentState === "approved" ? "active" : ""}`,
+        "aria-label": "Freigeben (Grün): Genehmigt & aktiv einbezogen",
         onClick: () => { onSelectState("approved"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "🟢"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟢"),
         h("div", null,
           h("div", null, "Freigeben (Grün)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Genehmigt & aktiv einbezogen")
@@ -637,10 +651,13 @@
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "proposed",
         className: `auto-org-context-menu-item propose ${currentState === "proposed" ? "active" : ""}`,
+        "aria-label": "Als Vorschlag (Gelb): Vorgeschlagener Sync / Transfer",
         onClick: () => { onSelectState("proposed"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "🟡"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🟡"),
         h("div", null,
           h("div", null, "Als Vorschlag (Gelb)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Vorgeschlagener Sync / Transfer")
@@ -648,10 +665,13 @@
       ),
       h("button", {
         type: "button",
+        role: "menuitemradio",
+        "aria-checked": currentState === "excluded",
         className: `auto-org-context-menu-item exclude ${currentState === "excluded" ? "active" : ""}`,
+        "aria-label": "Nicht einbezogen (Grau): Ausschließen & nicht synchronisieren",
         onClick: () => { onSelectState("excluded"); onClose(); }
       },
-        h("span", { style: { fontSize: "1.1rem" } }, "⚪"),
+        h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "⚪"),
         h("div", null,
           h("div", null, "Nicht einbezogen (Grau)"),
           h("span", { className: "auto-org-context-menu-desc" }, "Ausschließen & nicht synchronisieren")
@@ -2765,6 +2785,15 @@
     const dragStartRef = useRef({ x: 0, y: 0 });
     const hasDraggedRef = useRef(false);
 
+    // Escape key handler to close window
+    useEffect(() => {
+      function handleKeyDown(e) {
+        if (e.key === "Escape") onClose();
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [onClose]);
+
     // Fetch /system-tree on mount
     useEffect(() => {
       let mounted = true;
@@ -3743,6 +3772,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
 
     return h("div", {
       className: "auto-org-multi-tree-modal",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": "auto-org-multi-tree-title",
       onClick: (e) => { if (e.target === e.currentTarget) onClose(); }
     },
       h("div", {
@@ -3752,7 +3784,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Top Header with Title and Mode Switcher
         h("div", { className: "auto-org-multi-tree-header" },
           h("div", { className: "auto-org-multi-tree-title" },
-            h("h3", null,
+            h("h3", { id: "auto-org-multi-tree-title" },
               h("span", null, viewMode === "folders2graph" ? "🕸️" : viewMode === "filesystem" ? "🌲" : "🌐"),
               viewMode === "folders2graph" ? "Obsidian folders2graph Struktur-Graph (Faltung & Sync)" :
               viewMode === "filesystem" ? "Realer Gesamter Dateibaum (Alle Mounts & Partitionen)" :
@@ -3800,7 +3832,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               className: "auto-org-modal-close",
               onClick: onClose,
               title: "Schließen",
-              "aria-label": "Fenster schließen"
+              "aria-label": "Dialog schließen"
             }, "✕")
           )
         ),
@@ -4466,6 +4498,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         type: "button",
         className: "auto-org-pipeline-focus-btn",
         title: "Diesen Pfad im interaktiven Graphen fokussieren",
+        "aria-label": "Diesen Pfad im interaktiven Graphen fokussieren",
         onClick: (e) => {
           e.stopPropagation();
           onFocusGraph(branchId || "dst_general");
@@ -4539,6 +4572,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         type: "button",
         className: "auto-org-pipeline-focus-btn",
         title: "Diesen Zweig im interaktiven Graphen fokussieren",
+        "aria-label": "Diesen Zweig im interaktiven Graphen fokussieren",
         onClick: (e) => {
           e.stopPropagation();
           onFocusGraph(branchId || slice[0]);
@@ -4677,12 +4711,20 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       const tgtDir = (targetPath || (files[0].destination_path ? files[0].destination_path.substring(0, files[0].destination_path.lastIndexOf('/')) : '/media/work-data/'));
       const rootState = itemStates[srcDir] || localStatus;
 
+      const treeTitle = title || `Visueller Dateibaum (${files.length} Dateien)`;
       return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
         h("div", { className: "auto-org-tree-header" },
-          h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
-            h("span", null, expanded ? "▼" : "▶"),
-            h("span", { style: { fontSize: "1.1rem" } }, "🌳"),
-            h("span", null, title || `Visueller Dateibaum (${files.length} Dateien)`)
+          h("button", {
+            type: "button",
+            className: "auto-org-tree-title",
+            style: { cursor: "pointer", background: "none", border: "none", color: "inherit", font: "inherit", padding: 0 },
+            onClick: () => setExpanded(!expanded),
+            "aria-expanded": expanded,
+            "aria-label": `${expanded ? "Einklappen" : "Ausklappen"}: ${treeTitle}`
+          },
+            h("span", { "aria-hidden": "true" }, expanded ? "▼" : "▶"),
+            h("span", { style: { fontSize: "1.1rem" }, "aria-hidden": "true" }, "🌳"),
+            h("span", null, treeTitle)
           ),
           showSwitch && h(OverlaySwitchButton, {
             status: rootState,
@@ -4889,12 +4931,20 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const tgtParts = tgtClean.split('/').filter(Boolean);
     const singleState = localStatus;
 
+    const singleTreeTitle = title || "Visuelle Pfad-Hierarchie";
     return h("div", { className: "auto-org-visual-tree-container", style: { position: "relative" } },
       h("div", { className: "auto-org-tree-header" },
-        h("div", { className: "auto-org-tree-title", style: { cursor: "pointer" }, onClick: () => setExpanded(!expanded) },
-          h("span", null, expanded ? "▼" : "▶"),
-          h("span", null, "🌳"),
-          h("span", null, title || "Visuelle Pfad-Hierarchie")
+        h("button", {
+          type: "button",
+          className: "auto-org-tree-title",
+          style: { cursor: "pointer", background: "none", border: "none", color: "inherit", font: "inherit", padding: 0 },
+          onClick: () => setExpanded(!expanded),
+          "aria-expanded": expanded,
+          "aria-label": `${expanded ? "Einklappen" : "Ausklappen"}: ${singleTreeTitle}`
+        },
+          h("span", { "aria-hidden": "true" }, expanded ? "▼" : "▶"),
+          h("span", { "aria-hidden": "true" }, "🌳"),
+          h("span", null, singleTreeTitle)
         ),
         showSwitch && h(OverlaySwitchButton, {
           status: singleState,
@@ -5562,6 +5612,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     // Modal state for top bar config tools: null | "mounts" | "roots" | "journal" | "sync"
     const [activeModal, setActiveModal] = useState(null);
     const [showDiagnosticTools, setShowDiagnosticTools] = useState(false);
+
+    // Escape key listener for config modals
+    useEffect(() => {
+      if (!activeModal) return;
+      function handleKeyDown(e) {
+        if (e.key === "Escape") setActiveModal(null);
+      }
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [activeModal]);
 
     // Application state
     const [stats, setStats] = useState(null);
@@ -6775,7 +6835,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               className: "auto-org-btn auto-org-btn-outline",
               onClick: loadData,
               disabled: loading,
-              title: "Daten neu laden"
+              title: "Daten neu laden",
+              "aria-label": "Daten neu laden"
             }, loading ? "..." : "↻ Aktualisieren")
           ),
           showDiagnosticTools && h("div", { className: "auto-org-toolbar-secondary-panel" },
@@ -8112,7 +8173,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                     node.sample_files && node.sample_files.length > 0 && h("button", {
                       type: "button",
                       className: "auto-org-tag-btn",
-                      onClick: () => toggleSampleExpand(node.id)
+                      onClick: () => toggleSampleExpand(node.id),
+                      "aria-expanded": isExpanded ? "true" : "false",
+                      "aria-label": isExpanded ? `Beispieldateien für ${node.name} ausblenden` : `Beispieldateien für ${node.name} anzeigen`
                     }, isExpanded ? "Beispiele ausblenden ▲" : "Beispiele anzeigen ▼")
                   )
                 ),

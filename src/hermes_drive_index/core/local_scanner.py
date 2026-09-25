@@ -6,15 +6,19 @@ and safe deletion using desktop/system trash.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
+import logging
 import mimetypes
 import os
-from pathlib import Path
 import shutil
 import subprocess
-from typing import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Sequence
+
+logger = logging.getLogger(__name__)
+
 
 DEFAULT_EXCLUDE_DIRS = {
     ".git",
@@ -55,6 +59,24 @@ class LocalFile:
     def web_view_link(self) -> str:
         return f"file://{self.path}"
 
+    def to_dict(self) -> dict:
+        """Fast dictionary conversion avoiding dataclasses.asdict reflection overhead."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "mime_type": self.mime_type,
+            "path": self.path,
+            "size": self.size,
+            "modified_time": self.modified_time,
+            "accessed_time": self.accessed_time,
+            "created_time": self.created_time,
+            "md5_checksum": self.md5_checksum,
+            "sha256_checksum": self.sha256_checksum,
+            "is_dir": self.is_dir,
+            "extension": self.extension,
+            "relative_path": self.relative_path,
+        }
+
 
 def safe_trash(path: Path | str) -> bool:
     """Move file or folder to desktop/system trash instead of unlinking.
@@ -78,8 +100,9 @@ def safe_trash(path: Path | str) -> bool:
                 )
                 if res.returncode == 0:
                     return True
-            except Exception:
-                pass
+                logger.debug("%s trash failed with returncode %d: %s", gio_cmd, res.returncode, res.stderr)
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.debug("%s trash command failed: %s", gio_cmd, exc)
 
     # 2. Try trash-put or trash
     for trash_cmd in ("trash-put", "trash"):
@@ -93,8 +116,9 @@ def safe_trash(path: Path | str) -> bool:
                 )
                 if res.returncode == 0:
                     return True
-            except Exception:
-                pass
+                logger.debug("%s failed with returncode %d: %s", trash_cmd, res.returncode, res.stderr)
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.debug("%s command failed: %s", trash_cmd, exc)
 
     # 3. Fallback: move to ~/.local/share/Trash/files/
     trash_dir = Path.home() / ".local" / "share" / "Trash" / "files"
@@ -167,10 +191,9 @@ def guess_mime_type(file_path: Path | str) -> str:
 
 def compute_file_hashes(file_path: Path | str, chunk_size: int = 65536) -> tuple[str, str]:
     """Compute (md5, sha256) hashes for a local file."""
-    p = Path(file_path)
     md5 = hashlib.md5()
     sha = hashlib.sha256()
-    with p.open("rb") as f:
+    with open(file_path, "rb") as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:

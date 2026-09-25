@@ -59,6 +59,10 @@ for cat, exts in TYPE_CATEGORIES.items():
     for ext in exts:
         EXT_TO_CATEGORY[ext] = cat
 
+# Pre-computed sets for fast O(1) extension category lookup in hot loops
+INSTALLER_EXTENSIONS = set(TYPE_CATEGORIES["Installers"])
+ARCHIVE_EXTENSIONS = set(TYPE_CATEGORIES["Archives"])
+
 # Obvious junk and temporary extensions safe to flag for deletion
 SAFE_DELETE_EXTENSIONS = {
     ".tmp",
@@ -108,6 +112,17 @@ class DuplicateGroup:
     recommended_keep_path: str
     reclaimable_bytes: int
     recommendation_reason: str
+
+    def to_dict(self) -> dict:
+        """Fast dictionary conversion avoiding dataclasses.asdict reflection overhead."""
+        return {
+            "group_type": self.group_type,
+            "match_key": self.match_key,
+            "files": self.files,
+            "recommended_keep_path": self.recommended_keep_path,
+            "reclaimable_bytes": self.reclaimable_bytes,
+            "recommendation_reason": self.recommendation_reason,
+        }
 
 
 def detect_duplicates(
@@ -173,9 +188,12 @@ def detect_duplicates(
             for hash_val, dupes in by_hash.items():
                 if len(dupes) > 1:
                     # Choose recommended keep: newest or shortest path
+                    # Choose recommended keep: newest or shortest path.
+                    # Optimized: Use ISO datetime string comparison directly to avoid repeated parsing in sort key
                     sorted_dupes = sorted(
                         dupes,
-                        key=lambda x: (-(datetime.fromisoformat(x.modified_time).timestamp() if x.modified_time else 0), len(x.path)),
+                        key=lambda x: (x.modified_time or "", -len(x.path)),
+                        reverse=True,
                     )
                     keep = sorted_dupes[0]
                     reclaimable = sum(d.size for d in sorted_dupes[1:])
@@ -185,7 +203,7 @@ def detect_duplicates(
                         DuplicateGroup(
                             group_type="exact",
                             match_key=f"MD5:{hash_val[:10]}",
-                            files=[asdict(d) for d in sorted_dupes],
+                            files=[d.to_dict() for d in sorted_dupes],
                             recommended_keep_path=keep.path,
                             reclaimable_bytes=reclaimable,
                             recommendation_reason="Byte-for-byte identical; recommend keeping newest file",
@@ -215,10 +233,12 @@ def detect_duplicates(
                 for _c, stem in cluster
             )
 
-            # Pick keep candidate: prefer file with latest date
+            # Pick keep candidate: prefer file with latest date.
+            # Optimized: Use ISO datetime string comparison directly to avoid repeated parsing in sort key
             sorted_cluster = sorted(
                 [c for c, _stem in cluster],
-                key=lambda x: (-(datetime.fromisoformat(x.modified_time).timestamp() if x.modified_time else 0), len(x.name)),
+                key=lambda x: (x.modified_time or "", -len(x.name)),
+                reverse=True,
             )
             keep = sorted_cluster[0]
             reclaimable = sum(c.size for c in sorted_cluster[1:])
@@ -228,7 +248,7 @@ def detect_duplicates(
                     DuplicateGroup(
                         group_type="version_variant",
                         match_key=f"{norm_key}{ext}",
-                        files=[asdict(c) for c in sorted_cluster],
+                        files=[c.to_dict() for c in sorted_cluster],
                         recommended_keep_path=keep.path,
                         reclaimable_bytes=reclaimable,
                         recommendation_reason="Detected version suffix variants (e.g. _v2, _final, copy); verify which one is final",
@@ -239,7 +259,7 @@ def detect_duplicates(
                     DuplicateGroup(
                         group_type="near",
                         match_key=f"{norm_key}{ext}",
-                        files=[asdict(c) for c in sorted_cluster],
+                        files=[c.to_dict() for c in sorted_cluster],
                         recommended_keep_path=keep.path,
                         reclaimable_bytes=reclaimable,
                         recommendation_reason="Near identical names with minor formatting differences",
@@ -256,7 +276,7 @@ def detect_duplicates(
         "near_duplicates_count": len(near_groups),
         "total_reclaimable_bytes": total_reclaimable,
         "total_reclaimable_mb": round(total_reclaimable / (1024 * 1024), 2),
-        "groups": [asdict(g) for g in all_groups],
+        "groups": [g.to_dict() for g in all_groups],
     }
 
 
@@ -273,6 +293,18 @@ class OldFileItem:
     age_days: int
     category: str
     reason: str
+
+    def to_dict(self) -> dict:
+        """Fast dictionary conversion avoiding dataclasses.asdict reflection overhead."""
+        return {
+            "path": self.path,
+            "name": self.name,
+            "size_bytes": self.size_bytes,
+            "modified_time": self.modified_time,
+            "age_days": self.age_days,
+            "category": self.category,
+            "reason": self.reason,
+        }
 
 
 def classify_old_files(
@@ -327,7 +359,7 @@ def classify_old_files(
                     reason=f"Temporary/junk file extension ({ext or name})",
                 )
             )
-        elif ext in TYPE_CATEGORIES["Installers"] and age_days >= installer_threshold_days:
+        elif ext in INSTALLER_EXTENSIONS and age_days >= installer_threshold_days:
             tier1_safe.append(
                 OldFileItem(
                     path=path_str,
@@ -339,7 +371,7 @@ def classify_old_files(
                     reason=f"Software installer older than {installer_threshold_days} days ({age_days} days old)",
                 )
             )
-        elif ext in TYPE_CATEGORIES["Archives"] and age_days >= days_threshold and ("Downloads" in path_str or "tmp" in path_str):
+        elif ext in ARCHIVE_EXTENSIONS and age_days >= days_threshold and ("Downloads" in path_str or "tmp" in path_str):
             tier1_safe.append(
                 OldFileItem(
                     path=path_str,
@@ -387,13 +419,13 @@ def classify_old_files(
             "count": len(tier1_safe),
             "total_bytes": tier1_bytes,
             "total_mb": round(tier1_bytes / (1024 * 1024), 2),
-            "items": [asdict(i) for i in tier1_safe],
+            "items": [i.to_dict() for i in tier1_safe],
         },
         "review_needed": {
             "count": len(tier2_review),
             "total_bytes": tier2_bytes,
             "total_mb": round(tier2_bytes / (1024 * 1024), 2),
-            "items": [asdict(i) for i in tier2_review],
+            "items": [i.to_dict() for i in tier2_review],
         },
         "active_files_count": len(tier3_active),
     }

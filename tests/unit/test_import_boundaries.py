@@ -32,11 +32,15 @@ def test_core_sources_have_no_hermes_imports():
 
 
 def test_importing_core_and_api_does_not_load_adapter():
-    for mod in [m for m in sys.modules if m.startswith("hermes_drive_index")]:
-        del sys.modules[mod]
-    import hermes_drive_index.api  # noqa: F401
-    import hermes_drive_index.core.orchestrator  # noqa: F401
-    import hermes_drive_index.core.search  # noqa: F401
+    saved_modules = {m: sys.modules[m] for m in sys.modules if m.startswith("hermes_drive_index")}
+    try:
+        for mod in saved_modules:
+            del sys.modules[mod]
+        import hermes_drive_index.api  # noqa: F401
+        import hermes_drive_index.core.orchestrator  # noqa: F401
+        import hermes_drive_index.core.search  # noqa: F401
 
-    adapter_loaded = [m for m in sys.modules if "hermes_adapter" in m]
-    assert not adapter_loaded, f"core/api import pulled in adapter modules: {adapter_loaded}"
+        adapter_loaded = [m for m in sys.modules if "hermes_adapter" in m]
+        assert not adapter_loaded, f"core/api import pulled in adapter modules: {adapter_loaded}"
+    finally:
+        sys.modules.update(saved_modules)
