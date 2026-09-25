@@ -1921,6 +1921,7 @@
               max: "0.0080",
               step: "0.0005",
               value: physicsParams.gravity,
+              "aria-label": "Gravitation (Zentrum)",
               onChange: (e) => setPhysicsParams(p => ({ ...p, gravity: parseFloat(e.target.value) })),
               style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
             })
@@ -1937,6 +1938,7 @@
               max: "4000",
               step: "100",
               value: physicsParams.repulsion,
+              "aria-label": "Abstoßung (Repulsion)",
               onChange: (e) => setPhysicsParams(p => ({ ...p, repulsion: parseFloat(e.target.value) })),
               style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
             })
@@ -1953,6 +1955,7 @@
               max: "2.5",
               step: "0.1",
               value: physicsParams.linkDistance,
+              "aria-label": "Kanten-Länge (Abstand)",
               onChange: (e) => setPhysicsParams(p => ({ ...p, linkDistance: parseFloat(e.target.value) })),
               style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
             })
@@ -1969,6 +1972,7 @@
               max: "0.100",
               step: "0.005",
               value: physicsParams.linkStrength,
+              "aria-label": "Feder-Härte (Stiffness)",
               onChange: (e) => setPhysicsParams(p => ({ ...p, linkStrength: parseFloat(e.target.value) })),
               style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
             })
@@ -1985,6 +1989,7 @@
               max: "0.95",
               step: "0.01",
               value: physicsParams.damping,
+              "aria-label": "Dämpfung (Trägheit)",
               onChange: (e) => setPhysicsParams(p => ({ ...p, damping: parseFloat(e.target.value) })),
               style: { width: "100%", accentColor: "#38bdf8", cursor: "pointer" }
             })
@@ -8290,8 +8295,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Rule Name & Description
         h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" } },
           h("div", null,
-            h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Regel-Name"),
+            h("label", { htmlFor: "rule-name-input", style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Regel-Name"),
             h("input", {
+              id: "rule-name-input",
               className: "auto-org-input",
               style: { width: "100%" },
               placeholder: "z.B. Rechnungen automatisch archivieren",
@@ -8300,8 +8306,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             })
           ),
           h("div", null,
-            h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Beschreibung / Notiz"),
+            h("label", { htmlFor: "rule-desc-input", style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Beschreibung / Notiz"),
             h("input", {
+              id: "rule-desc-input",
               className: "auto-org-input",
               style: { width: "100%" },
               placeholder: "z.B. Verschiebt PDFs mit 'Rechnung' älter als 14 Tage",
@@ -9367,8 +9374,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           h("form", { onSubmit: handleSaveSyncMapping, style: { display: "flex", flexDirection: "column", gap: "0.85rem" } },
             h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "0.75rem" } },
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Bezeichnung / Name"),
+                h("label", { htmlFor: "sync-name-input", style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Bezeichnung / Name"),
                 h("input", {
+                  id: "sync-name-input",
                   type: "text",
                   className: "auto-org-input",
                   style: { width: "100%" },
@@ -9379,8 +9387,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 })
               ),
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Google Drive Pfad"),
+                h("label", { htmlFor: "sync-drive-path-input", style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Google Drive Pfad"),
                 h("input", {
+                  id: "sync-drive-path-input",
                   type: "text",
                   className: "auto-org-input",
                   style: { width: "100%", fontFamily: "monospace" },
@@ -9391,8 +9400,9 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                 })
               ),
               h("div", null,
-                h("label", { style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Lokaler Ziel-Speicherort (Host-Pfad)"),
+                h("label", { htmlFor: "sync-local-path-input", style: { fontSize: "0.75rem", color: "#94a3b8", display: "block", marginBottom: "0.25rem" } }, "Lokaler Ziel-Speicherort (Host-Pfad)"),
                 h("input", {
+                  id: "sync-local-path-input",
                   type: "text",
                   className: "auto-org-input",
                   style: { width: "100%", fontFamily: "monospace" },

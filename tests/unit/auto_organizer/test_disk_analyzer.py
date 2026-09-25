@@ -1,11 +1,13 @@
 """Tests for FastDiskScanner and DiskAnalyzerUseCase."""
 
 from pathlib import Path
-import pytest
 
-from hermes_auto_organizer.application.use_cases.disk_analyzer import DiskAnalyzerUseCase
-from hermes_auto_organizer.domain.models import CleanupLevel
-from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import FastDiskScanner
+from hermes_auto_organizer.application.use_cases.disk_analyzer import (
+    DiskAnalyzerUseCase,
+)
+from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import (
+    FastDiskScanner,
+)
 
 
 def test_fast_disk_scanner_and_analyzer_csv(tmp_path: Path):
@@ -49,3 +51,20 @@ def test_evaluate_trash_candidates_filtering(tmp_path: Path):
     assert not any(p == "/etc" for p in paths)
     assert not any("data" in p for p in paths)  # nested pruned
     assert any("large.mkv" in p for p in paths)
+
+
+def test_get_dir_size_fast_handles_os_error(caplog, monkeypatch):
+    import logging
+
+    from hermes_auto_organizer.infrastructure.storage.fast_disk_scanner import (
+        get_dir_size_fast,
+    )
+
+    def mock_scandir(p):
+        raise PermissionError("Access denied")
+
+    monkeypatch.setattr("os.scandir", mock_scandir)
+    with caplog.at_level(logging.DEBUG):
+        size = get_dir_size_fast("/restricted_dir")
+        assert size == 0
+        assert "Failed or permission denied reading directory for size calculation: /restricted_dir" in caplog.text

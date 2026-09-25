@@ -115,6 +115,8 @@ class DocumentParser:
             return None
         try:
             resolved_path = Path(path).resolve()
+            if not resolved_path.is_file():
+                return None
             with tempfile.TemporaryDirectory(prefix="ocr_pdf_") as tmpdir:
                 tmp_prefix = Path(tmpdir) / "page"
                 # Render first up to 3 pages
@@ -128,6 +130,7 @@ class DocumentParser:
                     "1",
                     "-l",
                     str(max_pages),
+                    "--",
                     str(resolved_path),
                     str(tmp_prefix),
                 ]

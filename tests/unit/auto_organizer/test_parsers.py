@@ -173,3 +173,42 @@ def test_doc_parser_ocr_pdf_subprocess_error(tmp_path: Path):
         extraction = parser._ocr_pdf(pdf_file, "mock_sha256", total_pages=1)
 
     assert extraction is None
+
+
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._PDFTOPPM_BIN", "/usr/bin/pdftoppm")
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._TESSERACT_BIN", "/usr/bin/tesseract")
+def test_doc_parser_ocr_pdf_nonexistent_file(tmp_path: Path):
+    parser = DocumentParser()
+    non_existent_pdf = tmp_path / "does_not_exist.pdf"
+
+    extraction = parser._ocr_pdf(non_existent_pdf, "mock_sha256", total_pages=1)
+    assert extraction is None
+
+
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._PDFTOPPM_BIN", "/usr/bin/pdftoppm")
+@patch("hermes_auto_organizer.infrastructure.parsers.doc_parser._TESSERACT_BIN", "/usr/bin/tesseract")
+def test_doc_parser_ocr_pdf_command_construction(tmp_path: Path):
+    parser = DocumentParser()
+    pdf_file = tmp_path / "--help.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 header")
+
+    called_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        mock_proc = MagicMock()
+        mock_proc.stdout = "sample text"
+        mock_proc.returncode = 0
+        return mock_proc
+
+    with patch("subprocess.run", side_effect=fake_run), patch("pathlib.Path.glob", return_value=[tmp_path / "page-1.png"]):
+        extraction = parser._ocr_pdf(pdf_file, "mock_sha256", total_pages=1)
+
+    assert extraction is not None
+    assert len(called_cmds) >= 1
+    render_cmd = called_cmds[0]
+    assert render_cmd[0] == "/usr/bin/pdftoppm"
+    dash_dash_idx = render_cmd.index("--")
+    assert dash_dash_idx > 0
+    assert render_cmd[dash_dash_idx + 1] == str(pdf_file.resolve())
+
