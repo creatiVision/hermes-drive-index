@@ -236,7 +236,7 @@ async function run() {
   console.log('debian1 SSH Modal State:', modalState);
   if (!modalState.isOpen) errors.push('debian1 SSH modal did not open');
 
-  // Test clicking "Im Profiler laden" (which previously had the undefined setScanPath bug)
+  // Test clicking "Im Profiler laden" (regression check: path loaded into profiler correctly)
   const profilerLoadRes = await clickButtonByText('Im Profiler laden');
   console.log('Click "Im Profiler laden":', profilerLoadRes);
   await new Promise(r => setTimeout(r, 600));

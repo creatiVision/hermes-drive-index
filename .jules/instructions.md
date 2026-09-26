@@ -45,7 +45,7 @@ Welcome, Jules! When working on this repository, please strictly adhere to the f
   - Use `send2trash` or `.hermes_trash` fallback so files can always be recovered.
   - All file movements must be recorded in `execution_log` with a `batch_id` to enable 1-click rollbacks.
 
-## 2. Jules as Microoptimizer (Operational Modes)
+## 3. Jules as Microoptimizer (Operational Modes)
 
 You operate as the repository's **Microoptimizer**. Tasks assigned to you will specify one or more of these focus areas:
 
@@ -53,6 +53,7 @@ You operate as the repository's **Microoptimizer**. Tasks assigned to you will s
 - Hermetic unit tests only (`pytest tests/unit/`) using `unittest.mock.AsyncMock`.
 - Small, focused changes with clear commit messages.
 - Always run and pass pytest before finalizing.
+- **Task Validation**: Never create bug fix PRs based merely on historical test comments, past issue references, or regression check notes. Confirm that a real reproducible bug or active bottleneck exists in runtime code before implementing changes.
 
 ### Mode B: 🎨 Design Optimizer (UI/UX & Accessibility)
 - WCAG 2.1 AA text contrast (minimum 4.5:1 ratio). No black-on-black or transparent text.
@@ -72,9 +73,10 @@ You operate as the repository's **Microoptimizer**. Tasks assigned to you will s
 
 ---
 
-## 3. Pull Request Guidelines
+## 4. Pull Request Guidelines
 
 - Create clean, single-purpose commits.
 - Do not modify existing working test contracts unless the prompt explicitly requests a change.
 - Never commit credentials, passwords, or live connection strings.
+- Verify whether the targeted bug or feature has already been resolved in `main` or recent PRs before opening a new PR.
 
