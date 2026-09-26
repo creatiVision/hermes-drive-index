@@ -8517,10 +8517,10 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             // Placeholders
             h("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" } },
               h("span", { style: { fontSize: "0.75rem", color: "#94a3b8" } }, "Platzhalter einfügen:"),
-              h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{year}") }, "+ {year}"),
-              h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{month}") }, "+ {month}"),
-              h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{stem}") }, "+ {stem}"),
-              h("button", { type: "button", className: "auto-org-tag-btn", onClick: () => appendPlaceholder("{ext}") }, "+ {ext}")
+              h("button", { type: "button", className: "auto-org-tag-btn", "aria-label": "Platzhalter Jahr einfügen", onClick: () => appendPlaceholder("{year}") }, "+ {year}"),
+              h("button", { type: "button", className: "auto-org-tag-btn", "aria-label": "Platzhalter Monat einfügen", onClick: () => appendPlaceholder("{month}") }, "+ {month}"),
+              h("button", { type: "button", className: "auto-org-tag-btn", "aria-label": "Platzhalter Dateiname-Stamm einfügen", onClick: () => appendPlaceholder("{stem}") }, "+ {stem}"),
+              h("button", { type: "button", className: "auto-org-tag-btn", "aria-label": "Platzhalter Dateiendung einfügen", onClick: () => appendPlaceholder("{ext}") }, "+ {ext}")
             )
           )
         ),
