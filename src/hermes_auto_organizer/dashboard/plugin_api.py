@@ -301,8 +301,8 @@ async def health_check() -> Dict[str, Any]:
             )
             table_count = int(row["c"]) if row else 0
             db_ok = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Health check DB query failed: %s", exc)
         finally:
             await conn.close()
 
@@ -1015,8 +1015,8 @@ async def switch_suggested_rule(req: RuleSwitchRequest) -> Dict[str, Any]:
                 "UPDATE organization_rules SET state = $1, updated_at = NOW() WHERE id::text = $2 OR rule_name = $2",
                 db_state, req.rule_id
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed updating rule '%s' state in DB: %s", req.rule_id, exc)
         finally:
             await conn.close()
 
@@ -3027,8 +3027,8 @@ def _load_syncthing_metadata() -> Dict[str, Any]:
                             result["devices"][did]["address"] = str(info.get("address", ""))
                             result["devices"][did]["in_bytes"] = int(info.get("inBytesTotal", 0))
                             result["devices"][did]["out_bytes"] = int(info.get("outBytesTotal", 0))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed reading Syncthing connection stats: %s", exc)
     except Exception as exc:
         logger.warning("Error reading Syncthing configuration: %s", exc)
 
@@ -4284,8 +4284,8 @@ async def browse_directory(path: str = Query(..., description="Target directory 
                     direct_files += 1
                     try:
                         direct_bytes += entry.stat().st_size
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        logger.debug("Failed stat for entry %s: %s", entry.path, exc)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Keine Leseberechtigung für dieses Verzeichnis")
 
