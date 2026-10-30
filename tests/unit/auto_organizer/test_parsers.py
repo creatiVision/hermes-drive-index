@@ -212,3 +212,58 @@ def test_doc_parser_ocr_pdf_command_construction(tmp_path: Path):
     assert dash_dash_idx > 0
     assert render_cmd[dash_dash_idx + 1] == str(pdf_file.resolve())
 
+
+
+@patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract")
+def test_image_parser_command_construction_dash_filename(tmp_path: Path):
+    parser = ImageParser()
+    img_file = tmp_path / "--help.png"
+    img_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
+
+    called_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        mock_proc = MagicMock()
+        mock_proc.stdout = "ocr text"
+        mock_proc.returncode = 0
+        return mock_proc
+
+    with patch("hermes_auto_organizer.infrastructure.parsers.image_parser._TESSERACT_BIN", "/usr/bin/tesseract"), \
+         patch("subprocess.run", side_effect=fake_run):
+        extraction = asyncio.run(parser.extract_content(img_file))
+
+    assert extraction.extraction_strategy == "ocr_tesseract"
+    assert len(called_cmds) == 1
+    cmd = called_cmds[0]
+    assert cmd[0] == "/usr/bin/tesseract"
+    dash_dash_idx = cmd.index("--")
+    assert dash_dash_idx == 1
+    assert cmd[dash_dash_idx + 1] == str(img_file.resolve())
+
+
+def test_media_parser_command_construction_dash_filename(tmp_path: Path):
+    parser = MediaParser()
+    video_file = tmp_path / "--version.mp4"
+    video_file.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 20)
+
+    called_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        mock_proc = MagicMock()
+        mock_proc.stdout = '{"format": {"duration": "10.0"}, "streams": [{"codec_type": "video", "width": 1920, "height": 1080, "codec_name": "h264"}]}'
+        mock_proc.returncode = 0
+        return mock_proc
+
+    with patch("shutil.which", return_value="/usr/bin/ffprobe"), \
+         patch("subprocess.run", side_effect=fake_run):
+        extraction = asyncio.run(parser.extract_content(video_file))
+
+    assert extraction.extraction_strategy == "media_video_ffprobe"
+    assert len(called_cmds) == 1
+    cmd = called_cmds[0]
+    assert cmd[0] == "ffprobe"
+    dash_dash_idx = cmd.index("--")
+    assert dash_dash_idx > 0
+    assert cmd[dash_dash_idx + 1] == str(video_file.resolve())

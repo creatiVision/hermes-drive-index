@@ -51,7 +51,7 @@ class SSHNodeInspector(SSHNodePort):
                 if p.exists() and p.is_file():
                     return str(p)
             except OSError as exc:
-                logger.debug("Error checking SSH key candidate path %s: %s", p, exc)
+                logger.debug("Failed checking candidate SSH key path %s: %s", p, exc)
         return None
 
     def __init__(self, node_configs: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
@@ -227,7 +227,8 @@ class SSHNodeInspector(SSHNodePort):
                     used_b = int(used)
                     avail_b = int(avail)
                     pct = float(pcent.rstrip("%"))
-                except ValueError:
+                except ValueError as exc:
+                    logger.debug("Skipping unparseable mount line %r: %s", line, exc)
                     continue
 
                 mounts.append({
@@ -268,7 +269,8 @@ class SSHNodeInspector(SSHNodePort):
                     "is_database": "postgres" in c.get("Names", "").lower() or "pg" in c.get("Names", "").lower(),
                     "is_mcp": "mcp-" in c.get("Names", "").lower(),
                 })
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
+                logger.debug("Failed to parse container JSON line %r: %s", line, exc)
                 continue
 
         return services
