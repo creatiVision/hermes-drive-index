@@ -14,8 +14,6 @@ import pytest
 from hermes_auto_organizer.domain.profiler_models import (
     DisruptionType,
     FolderProfile,
-    LifecycleDistribution,
-    NaturalLanguageRule,
     OutlierItem,
     SolutionProposal,
 )
@@ -389,3 +387,21 @@ def test_obsidian_export_fallback_exception_handling(
         "Failed fallback scan_and_profile during Obsidian export: Scan error test"
         in caplog.text
     )
+
+
+def test_profiler_logging_on_filesystem_error(tmp_path: Path, caplog):
+    import logging
+    profiler = RecursiveSubtreeProfiler()
+
+    non_existent = tmp_path / "inaccessible"
+    non_existent.mkdir()
+
+    with caplog.at_level(logging.DEBUG, logger="hermes_auto_organizer.storage.recursive_profiler"):
+        # Make path unreadable/cause error or test profiling non-existent child directly
+        profile = profiler.profile_directory(non_existent)
+        assert profile is not None
+
+        # Simulate _profile_node call on non-existent path
+        profiler._profile_node(tmp_path / "does_not_exist", current_depth=0, max_depth=8, include_hidden=False)
+
+    assert any("Could not scan directory" in record.message for record in caplog.records)
