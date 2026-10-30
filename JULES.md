@@ -34,6 +34,7 @@ In this repository, macro-architecture, high-level planning, and final PR merges
 - **Hermetic Testing**: All tests must be self-contained unit tests (`pytest tests/unit/`) using `unittest.mock.AsyncMock` for database queries and `tmp_path` for files. Zero network or live DB calls.
 - **Contract Preservation**: Never break existing API schemas or test assertions.
 - **Atomic Commits**: Small, clean, single-purpose commits with explanatory messages.
+- **Task Validation**: Never create bug fix PRs based merely on historical test comments or past issue notes. Verify whether the bug is active or already resolved before opening a PR.
 
 ### 2. 🎨 Design Optimizer (UI/UX & Accessibility Polish)
 - **WCAG 2.1 AA Contrast Enforcement**: Minimum 4.5:1 contrast ratio for normal text. Zero dark-on-dark or transparent text.
