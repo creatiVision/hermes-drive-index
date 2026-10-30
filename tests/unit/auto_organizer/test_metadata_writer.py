@@ -45,3 +45,17 @@ def test_read_metadata_nonexistent_file(tmp_path: Path):
     non_existent = tmp_path / "does_not_exist.pdf"
     meta = read_file_metadata(non_existent)
     assert meta == {}
+
+
+def test_read_metadata_corrupt_json(tmp_path: Path, caplog):
+    import logging
+    import os
+    test_file = tmp_path / "corrupt_meta.pdf"
+    test_file.write_bytes(b"test")
+
+    if hasattr(os, "setxattr"):
+        os.setxattr(str(test_file), "user.hermes.meta", b"{invalid_json")
+        with caplog.at_level(logging.WARNING):
+            meta = read_file_metadata(test_file)
+        assert "meta" not in meta
+        assert "Failed to parse metadata JSON" in caplog.text

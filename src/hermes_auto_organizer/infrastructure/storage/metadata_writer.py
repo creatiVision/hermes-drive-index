@@ -36,8 +36,6 @@ def write_file_metadata(
     if not p.exists() or not hasattr(os, "setxattr"):
         return False
 
-    success = True
-
     try:
         # 1. Standard desktop tags (Freedesktop / XDG standard)
         if tags:
@@ -105,7 +103,7 @@ def read_file_metadata(path: Path | str) -> Dict[str, Any]:
     if meta_raw:
         try:
             result["meta"] = json.loads(meta_raw)
-        except Exception:
-            pass
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning("Failed to parse metadata JSON for %s: %s", p, exc)
 
     return result
