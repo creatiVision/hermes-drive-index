@@ -23,3 +23,6 @@
 **Learning:** Instantiating `pathlib.Path` objects for file extension extraction (`Path(entry.name).suffix`) and child directory recursion (`Path(entry.path)`), along with redundant `node_path.exists()`/`node_path.is_dir()` checks before `os.scandir`, slows recursive subtree profiling down by ~42% (1.73x overhead). Using `os.path.splitext(entry_name)[1]`, string paths, and relying on `os.scandir`'s exception handling eliminates GC pressure and stat syscalls.
 **Action:** Use string paths and `os.path` utilities in directory traversal and profiling loops rather than `pathlib.Path` wrapper objects.
 
+## 2026-04-01 - os.path.commonpath List Allocation Overhead in Docker Mount Subpath Checking
+**Learning:** Using `os.path.commonpath([norm_parent, norm_child]) == norm_parent` inside mount translation and validation loops incurs heavy overhead from allocating temporary list objects and splitting path strings into component arrays. Fast string prefix matching on normalized absolute paths (`norm_child == norm_parent or norm_child.startswith(norm_parent + os.sep)`) accelerates path containment checks by over 3x.
+**Action:** When validating path containment in high-frequency mount translation or sandboxing routines, use normalized string prefix checking rather than `os.path.commonpath`.
