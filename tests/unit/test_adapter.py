@@ -93,3 +93,40 @@ def test_update_default_is_incremental_manifest(monkeypatch):
     assert payload["success"] is True
     assert calls["incremental"] is True
     assert payload["requested_mode"] == "incremental_manifest"
+
+
+def test_file_organizer_analyze_handler_success_and_error_paths(monkeypatch):
+    from hermes_drive_index.hermes_adapter.tools import file_organizer_analyze_handler
+
+    # 1. Intent check failing (proceed = False)
+    monkeypatch.setattr(adapter_tools, "intent_check", lambda user_intent, folder_path: {"proceed": False, "message": "Intent rejected"})
+    res = json.loads(file_organizer_analyze_handler("/some/path", "organize"))
+    assert res["success"] is False
+    assert res["message"] == "Intent rejected"
+    assert "package_version" in res
+
+    # 2. Access check failing (accessible = False)
+    monkeypatch.setattr(adapter_tools, "intent_check", lambda user_intent, folder_path: {"proceed": True})
+    monkeypatch.setattr(adapter_tools, "access_check", lambda folder_path: {"accessible": False, "reason": "Permission denied"})
+    res = json.loads(file_organizer_analyze_handler("/some/path", "organize"))
+    assert res["success"] is False
+    assert res["access_check"] == {"accessible": False, "reason": "Permission denied"}
+    assert "package_version" in res
+
+    # 3. Exception path (e.g. exception in analyse_first)
+    monkeypatch.setattr(adapter_tools, "access_check", lambda folder_path: {"accessible": True})
+    def raise_exc(folder_path):
+        raise RuntimeError("Disk read error")
+    monkeypatch.setattr(adapter_tools, "analyse_first", raise_exc)
+    res = json.loads(file_organizer_analyze_handler("/some/path", "organize"))
+    assert res["success"] is False
+    assert "Disk read error" in res["error"]
+    assert "package_version" in res
+
+    # 4. Success path
+    monkeypatch.setattr(adapter_tools, "analyse_first", lambda folder_path: {"file_count": 10, "orphan_count": 2})
+    res = json.loads(file_organizer_analyze_handler("/some/path", "organize"))
+    assert res["success"] is True
+    assert res["file_count"] == 10
+    assert res["orphan_count"] == 2
+    assert "package_version" in res
