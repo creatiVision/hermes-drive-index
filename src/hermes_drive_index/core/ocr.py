@@ -7,10 +7,10 @@ hard OCR dependencies. Missing tools, timeouts, and command failures return
 
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Any
 
 _SAFE_OCRMYPDF_FLAGS_WITH_VALUES = {
