@@ -12,9 +12,9 @@ See LICENSE in the repository root for license information.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 from hermes_auto_organizer.domain.models import FileExtraction
 from hermes_auto_organizer.infrastructure.storage.hashing import compute_full_sha256
@@ -53,11 +53,21 @@ class ImageParser:
             )
 
         try:
+            resolved_path = Path(path).resolve()
+            if not resolved_path.is_file():
+                return FileExtraction(
+                    content_sha256=sha256,
+                    extraction_strategy="ocr_error",
+                    summary_text=f"Image {path.name} (file not found).",
+                    metadata_json={"error": "file not found"},
+                )
+
             # Run tesseract directly to stdout
             proc = subprocess.run(
                 [
                     _TESSERACT_BIN,
-                    str(path),
+                    "--",
+                    str(resolved_path),
                     "stdout",
                     "-l",
                     self.languages,
