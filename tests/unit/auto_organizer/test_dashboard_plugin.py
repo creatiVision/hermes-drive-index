@@ -672,3 +672,108 @@ def test_calculate_sync_plan_oserror_logged(caplog):
 
     assert res["ok"] is True
     assert "Failed to read local filesystem sample for sync plan" in caplog.text
+
+
+def test_suggested_rules_content_distillation_and_routing():
+    """Verify autonomous folder purpose distillation and content routing in suggested rules."""
+    from unittest.mock import AsyncMock, MagicMock
+    from uuid import uuid4
+    from datetime import datetime, timezone
+
+    mock_conn = MagicMock()
+    mock_conn.close = AsyncMock()
+
+    node_bookkeeping = {
+        "id": uuid4(),
+        "root_id": uuid4(),
+        "relative_path": "001_cv-bookaccount/2026/Eingangsrechnungen/Hetzner_Inv.pdf",
+        "physical_path": "/media/work-data/001_cv-bookaccount/2026/Eingangsrechnungen/Hetzner_Inv.pdf",
+        "file_name": "Hetzner_Inv.pdf",
+        "size_bytes": 10240,
+        "mtime": datetime.now(timezone.utc),
+        "file_extension": ".pdf",
+        "content_sha256": "sha_hetzner",
+    }
+    node_unorganized = {
+        "id": uuid4(),
+        "root_id": uuid4(),
+        "relative_path": "Downloads/Unsorted_Invoice.pdf",
+        "physical_path": "/home/mb/Downloads/Unsorted_Invoice.pdf",
+        "file_name": "Unsorted_Invoice.pdf",
+        "size_bytes": 12000,
+        "mtime": datetime.now(timezone.utc),
+        "file_extension": ".pdf",
+        "content_sha256": "sha_unsorted",
+    }
+
+    extraction_hetzner = {
+        "content_sha256": "sha_hetzner",
+        "extraction_strategy": "pdf_text",
+        "parser_version": 1,
+        "summary_text": "Rechnung Hetzner Online",
+        "metadata_json": {
+            "document_type": "rechnung",
+            "entities": {"vendor": "Hetzner", "vat": "DE123456789"},
+            "keywords": ["rechnung", "hetzner", "ust-idnr"],
+        },
+        "extracted_at": datetime.now(timezone.utc),
+    }
+    extraction_unsorted = {
+        "content_sha256": "sha_unsorted",
+        "extraction_strategy": "pdf_text",
+        "parser_version": 1,
+        "summary_text": "Neue Rechnung Cloud",
+        "metadata_json": {
+            "document_type": "rechnung",
+            "entities": {"vendor": "Hetzner", "amount": "150.00"},
+            "keywords": ["rechnung", "hetzner"],
+        },
+        "extracted_at": datetime.now(timezone.utc),
+    }
+
+    async def mock_fetch(query, *args):
+        if "FROM organization_rules" in query:
+            return []
+        if "FROM file_nodes" in query:
+            return [node_bookkeeping, node_unorganized]
+        if "FROM file_extractions" in query:
+            return [extraction_hetzner, extraction_unsorted]
+        if "FROM file_embeddings" in query:
+            return []
+        return []
+
+    mock_conn.fetch = AsyncMock(side_effect=mock_fetch)
+
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=mock_conn):
+        res = client.get("/api/plugins/auto-organizer/rules/suggested")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert len(data["suggested_rules"]) >= 1
+
+        # Check distilled purpose endpoint
+        res_dp = client.get("/api/plugins/auto-organizer/filesystem/distilled-purposes")
+        assert res_dp.status_code == 200
+        dp_data = res_dp.json()
+        assert dp_data["ok"] is True
+        assert dp_data["count"] >= 1
+
+        # Check routing proposals endpoint
+        res_prop = client.get("/api/plugins/auto-organizer/filesystem/routing-proposals")
+        assert res_prop.status_code == 200
+        prop_data = res_prop.json()
+        assert prop_data["ok"] is True
+        assert prop_data["total_proposals"] >= 1
+        first_prop = prop_data["proposals"][0]
+        assert first_prop["traffic_light"] == "yellow"
+        assert first_prop["state"] == "DRAFT"
+
+        # Admit proposal (turn to Green 🟢)
+        prop_id = first_prop["id"]
+        res_admit = client.post(f"/api/plugins/auto-organizer/filesystem/routing-proposals/{prop_id}/admit")
+        assert res_admit.status_code == 200
+        admit_data = res_admit.json()
+        assert admit_data["ok"] is True
+        assert admit_data["traffic_light"] == "green"
+        assert admit_data["state"] == "USER_APPROVED"
+
