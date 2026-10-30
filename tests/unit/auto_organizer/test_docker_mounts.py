@@ -155,3 +155,15 @@ def test_is_safe_subpath():
     assert _is_safe_subpath(None, "/opt/data") is False
     assert _is_safe_subpath("/opt/data", None) is False
 
+
+
+def test_path_traversal_prevention():
+    svc = DockerMountService()
+
+    # Host to container path traversal attempt
+    traversal_host = "/home/mb/Downloads/../../etc/passwd"
+    assert svc.translate_to_container_path(traversal_host) is None
+
+    # Container to host path traversal attempt
+    traversal_container = "/opt/data/downloads/../../etc/passwd"
+    assert svc.translate_to_host_path(traversal_container) is None
