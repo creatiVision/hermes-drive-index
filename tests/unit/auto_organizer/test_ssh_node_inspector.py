@@ -170,5 +170,32 @@ def test_find_key_path_oserror_logged(caplog):
     with caplog.at_level("DEBUG"), patch.object(Path, "exists", mock_exists):
         key_path = SSHNodeInspector._find_key_path("id_err_key")
         assert key_path is None
-        assert "Error checking SSH key candidate path" in caplog.text
+        assert "Failed checking candidate SSH key path" in caplog.text
         assert "Permission denied" in caplog.text
+
+
+def test_get_node_mounts_unparseable_line_logged(caplog):
+    inspector = SSHNodeInspector()
+    bad_df = (
+        "Filesystem     Type      1B-blocks          Used     Available Use% Mounted on\n"
+        "/dev/sda2      ext4  invalid_number  982681686016  866438000640  54% /media/sdc2-2tb-work-privat-xchg\n"
+        "/dev/sdc1      ext4 10000000000000 9700000000000  300000000000  97% /media/ext10tb\n"
+    )
+    with caplog.at_level("DEBUG"), patch.object(inspector, "execute_remote", return_value=(True, bad_df, 10.0)):
+        mounts = inspector.get_node_mounts("debian1")
+        assert len(mounts) == 1
+        assert mounts[0]["mounted_on"] == "/media/ext10tb"
+        assert "Skipping unparseable mount line" in caplog.text
+
+
+def test_get_node_docker_services_invalid_json_logged(caplog):
+    inspector = SSHNodeInspector()
+    bad_docker = (
+        '{"ID":"a1b2c3d4e5f6","Names":"shared-pg","Image":"postgres:16","Status":"Up 4 hours","Ports":"0.0.0.0:5432->5432/tcp"}\n'
+        '{"invalid json line here ...\n'
+    )
+    with caplog.at_level("DEBUG"), patch.object(inspector, "execute_remote", return_value=(True, bad_docker, 10.0)):
+        services = inspector.get_node_docker_services("debian1")
+        assert len(services) == 1
+        assert services[0]["name"] == "shared-pg"
+        assert "Failed to parse container JSON line" in caplog.text
