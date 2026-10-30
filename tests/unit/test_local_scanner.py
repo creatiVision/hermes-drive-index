@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+
 import pytest
 
 from hermes_drive_index.core.local_scanner import (
@@ -127,3 +128,26 @@ def test_compute_file_hashes_nonexistent_file(tmp_path: Path):
     non_existent = tmp_path / "does_not_exist.txt"
     with pytest.raises(FileNotFoundError):
         compute_file_hashes(non_existent)
+
+
+def test_scan_local_directory_hash_oserror(tmp_path: Path, monkeypatch, caplog):
+    import logging
+
+    import hermes_drive_index.core.local_scanner as local_scanner_module
+
+    f1 = tmp_path / "file1.txt"
+    f1.write_text("hello world")
+
+    def fake_compute_hashes(path):
+        raise OSError("Permission denied reading file")
+
+    monkeypatch.setattr(local_scanner_module, "compute_file_hashes", fake_compute_hashes)
+
+    with caplog.at_level(logging.DEBUG):
+        files = scan_local_directory(tmp_path, compute_hashes=True)
+
+    assert len(files) == 1
+    assert files[0].md5_checksum is None
+    assert files[0].sha256_checksum is None
+    assert "Failed to compute hashes for" in caplog.text
+    assert "Permission denied reading file" in caplog.text
