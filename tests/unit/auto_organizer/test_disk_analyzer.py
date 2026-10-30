@@ -68,3 +68,26 @@ def test_get_dir_size_fast_handles_os_error(caplog, monkeypatch):
         size = get_dir_size_fast("/restricted_dir")
         assert size == 0
         assert "Failed or permission denied reading directory for size calculation: /restricted_dir" in caplog.text
+
+
+def test_get_mount_usages_handles_os_errors(caplog, monkeypatch):
+    import logging
+    from pathlib import Path
+
+    scanner = FastDiskScanner()
+
+    def mock_iterdir(self):
+        raise PermissionError("Media access denied")
+
+    monkeypatch.setattr(Path, "iterdir", mock_iterdir)
+
+    def mock_disk_usage(path):
+        raise OSError("Disk usage error")
+
+    monkeypatch.setattr("shutil.disk_usage", mock_disk_usage)
+
+    with caplog.at_level(logging.DEBUG):
+        mounts = scanner.get_mount_usages()
+        assert mounts == []
+        assert "Failed or permission denied inspecting /media directory: Media access denied" in caplog.text
+        assert "Failed or permission denied retrieving disk usage for /: Disk usage error" in caplog.text
