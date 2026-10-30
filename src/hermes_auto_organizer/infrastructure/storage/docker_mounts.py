@@ -323,7 +323,9 @@ class DockerMountService:
             c_base = best_match["container_path"]
             if rel == ".":
                 return c_base
-            return os.path.normpath(os.path.join(c_base, rel))
+            target_path = os.path.normpath(os.path.join(c_base, rel))
+            if _is_safe_subpath(c_base, target_path):
+                return target_path
 
         return None
 
@@ -350,7 +352,9 @@ class DockerMountService:
                 h_base = best_match["host_path"]
                 if rel == ".":
                     return h_base
-                return os.path.normpath(os.path.join(h_base, rel))
+                target_path = os.path.normpath(os.path.join(h_base, rel))
+                if _is_safe_subpath(h_base, target_path):
+                    return target_path
             return None
 
         for m in mounts:
