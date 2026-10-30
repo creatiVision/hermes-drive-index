@@ -70,8 +70,8 @@ class SymlinkMigratorUseCase:
         size_bytes = 0
         try:
             size_bytes = sum(f.stat().st_size for f in Path(dest_path).rglob("*") if f.is_file())
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.warning("Failed to calculate migrated directory size for '%s': %s", dest_path, exc)
 
         record = MigrationRecord(
             source_path=src,
