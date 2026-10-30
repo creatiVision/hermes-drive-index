@@ -672,3 +672,26 @@ def test_calculate_sync_plan_oserror_logged(caplog):
 
     assert res["ok"] is True
     assert "Failed to read local filesystem sample for sync plan" in caplog.text
+
+
+def test_filesystem_tree_browse_endpoint_handles_stat_oserror():
+    from unittest.mock import MagicMock
+    mock_entry = MagicMock()
+    mock_entry.name = "unreadable.txt"
+    mock_entry.path = "/media/work-data/unreadable.txt"
+    mock_entry.is_dir.return_value = False
+    mock_entry.is_file.return_value = True
+    mock_entry.stat.side_effect = OSError("Permission denied")
+
+    mock_scandir = MagicMock()
+    mock_scandir.__enter__.return_value = [mock_entry]
+
+    with patch("os.path.exists", return_value=True), \
+         patch("os.path.isdir", return_value=True), \
+         patch("os.scandir", return_value=mock_scandir):
+        res = client.get("/api/plugins/auto-organizer/filesystem-tree/browse?path=/media/work-data")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["direct_files_count"] == 1
+        assert data["direct_bytes"] == 0

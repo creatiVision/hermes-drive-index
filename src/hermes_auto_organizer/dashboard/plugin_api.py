@@ -4284,8 +4284,8 @@ async def browse_directory(path: str = Query(..., description="Target directory 
                     direct_files += 1
                     try:
                         direct_bytes += entry.stat().st_size
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        logger.debug("Failed to stat entry %s: %s", entry.path, exc)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Keine Leseberechtigung für dieses Verzeichnis")
 
