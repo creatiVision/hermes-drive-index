@@ -117,8 +117,8 @@ class FastDiskScanner:
                     p_str = str(entry)
                     if entry.is_dir() and p_str not in mounts_to_check:
                         mounts_to_check.append(p_str)
-            except OSError:
-                pass
+            except (OSError, PermissionError) as exc:
+                logger.debug("Failed or permission denied inspecting /media directory: %s", exc)
 
         results: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -141,6 +141,7 @@ class FastDiskScanner:
                     "free_gb": round(usage.free / (1024 ** 3), 2),
                     "usage_percent": round((usage.used / usage.total) * 100, 1),
                 })
-            except OSError:
+            except (OSError, PermissionError) as exc:
+                logger.debug("Failed or permission denied retrieving disk usage for %s: %s", m, exc)
                 continue
         return results
