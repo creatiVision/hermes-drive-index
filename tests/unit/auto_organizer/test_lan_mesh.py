@@ -86,3 +86,17 @@ def test_lan_mesh_root_triage_execution_and_rollback(tmp_path: Path):
     assert not (target_dir / "tutorial.mp4").exists()
     assert not (target_dir / "bank_statement.pdf").exists()
 
+
+def test_lan_mesh_scanner_devices_exception_logging(caplog):
+    import logging
+    from unittest.mock import patch
+
+    scanner = LanMeshScanner()
+    with caplog.at_level(logging.DEBUG):
+        with patch("hermes_auto_organizer.infrastructure.storage.ssh_node_inspector.SSHNodeInspector.resolve_active_host", side_effect=RuntimeError("Connection timeout")):
+            devices = scanner.get_devices()
+            assert len(devices) == 3
+            debian = next(d for d in devices if d["name"] == "debian1")
+            assert debian["address"] == "192.168.178.89"
+            assert debian["is_online"] is False
+            assert "Failed to resolve active host 'debian1': Connection timeout" in caplog.text
