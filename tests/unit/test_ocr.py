@@ -2,10 +2,11 @@
 """Optional OCR behavior tests."""
 
 from __future__ import annotations
-import pytest
 
 import subprocess
 from unittest import mock
+
+import pytest
 
 from hermes_drive_index.config import default_config
 from hermes_drive_index.core import extract, ocr
