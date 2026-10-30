@@ -331,3 +331,26 @@ def test_desktop_and_downloads_thematic_outliers(tmp_path: Path):
     assert types[str(empty_dir)][0] == DisruptionType.CLEANABLE_TEMP
     assert types[str(empty_dir)][1] == "CLEAN"
 
+
+
+def test_export_to_obsidian_fallback_when_scan_fails(tmp_path: Path, monkeypatch, caplog):
+    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import SubtreeProfilerService
+    import logging
+
+    service = SubtreeProfilerService()
+
+    def mock_scan_and_profile(*args, **kwargs):
+        raise RuntimeError("Scan error")
+
+    monkeypatch.setattr(service, "scan_and_profile", mock_scan_and_profile)
+
+    vault_dir = tmp_path / "ObsidianVaultFallback"
+    vault_dir.mkdir()
+
+    with caplog.at_level(logging.WARNING):
+        index_path = service.export_to_obsidian(vault_dir)
+
+    assert Path(index_path).exists()
+    assert service.current_profile is not None
+    assert service.current_profile.name == "Downloads"
+    assert "Failed to perform default scan in export_to_obsidian: Scan error" in caplog.text

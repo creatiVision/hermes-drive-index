@@ -191,12 +191,11 @@ class SubtreeProfilerService:
         if not self._current_profile:
             try:
                 self.scan_and_profile("/home/mb/Downloads", node_id="laptop", max_depth=2)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to perform default scan in export_to_obsidian: %s", exc)
 
         if not self._current_profile:
-            from hermes_auto_organizer.domain.models import SubtreeProfile
-            self._current_profile = SubtreeProfile(
+            self._current_profile = FolderProfile(
                 path="/home/mb/Downloads",
                 name="Downloads",
                 depth=0,
@@ -205,8 +204,7 @@ class SubtreeProfilerService:
                 total_subdirs_count=0,
                 mime_entropy=0.0,
                 dominant_extension=".pdf",
-                direct_files=[],
-                children=[],
+                subfolders=[],
             )
 
         diff_nodes = self.generate_tree_diff()
