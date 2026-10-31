@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+
 import pytest
 
 from hermes_drive_index.core.local_scanner import (
@@ -87,7 +88,10 @@ def test_compute_file_hashes_basic(tmp_path: Path):
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
     # Test with Path object
-    md5, sha256 = compute_file_hashes(test_file)
+    result = compute_file_hashes(test_file)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    md5, sha256 = result
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
@@ -109,7 +113,8 @@ def test_compute_file_hashes_empty_file(tmp_path: Path):
     assert sha256 == expected_sha256
 
 
-def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
+@pytest.mark.parametrize("chunk_size", [1, 10, 50, 100, 1000])
+def test_compute_file_hashes_custom_chunk_sizes(tmp_path: Path, chunk_size: int):
     content = b"A" * 100
     test_file = tmp_path / "chunks.txt"
     test_file.write_bytes(content)
@@ -117,8 +122,8 @@ def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
     expected_md5 = hashlib.md5(content).hexdigest()
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
-    # Read with chunk size smaller than content length to test iteration
-    md5, sha256 = compute_file_hashes(test_file, chunk_size=10)
+    # Read with chunk size smaller, equal, or larger than content length
+    md5, sha256 = compute_file_hashes(test_file, chunk_size=chunk_size)
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
@@ -127,3 +132,26 @@ def test_compute_file_hashes_nonexistent_file(tmp_path: Path):
     non_existent = tmp_path / "does_not_exist.txt"
     with pytest.raises(FileNotFoundError):
         compute_file_hashes(non_existent)
+
+
+def test_scan_local_directory_hash_os_error(tmp_path: Path, monkeypatch, caplog):
+    import logging
+
+    from hermes_drive_index.core.local_scanner import scan_local_directory
+
+    test_file = tmp_path / "unreadable.txt"
+    test_file.write_text("sample content")
+
+    def mock_compute_hashes(file_path, chunk_size=65536):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr("hermes_drive_index.core.local_scanner.compute_file_hashes", mock_compute_hashes)
+
+    with caplog.at_level(logging.DEBUG):
+        files = scan_local_directory(tmp_path, compute_hashes=True)
+
+    assert len(files) == 1
+    assert files[0].md5_checksum is None
+    assert files[0].sha256_checksum is None
+    assert "Failed to compute hashes for" in caplog.text
+    assert "Permission denied" in caplog.text
