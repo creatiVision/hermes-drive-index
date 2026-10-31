@@ -29,7 +29,9 @@ class SemanticEnricher:
     """Uses LLM and NLP heuristics to generate summaries, keywords, and document tags."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: str = "openai/gpt-4o-mini") -> None:
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+        key_candidates = [api_key, os.getenv("OPENROUTER_API_KEY"), os.getenv("OPENAI_API_KEY")]
+        valid_key = next((k.strip() for k in key_candidates if k and k.strip()), None)
+        self.api_key: Optional[str] = valid_key
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or "https://openrouter.ai/api/v1"
         self.model = model
 

@@ -88,7 +88,10 @@ def test_compute_file_hashes_basic(tmp_path: Path):
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
     # Test with Path object
-    md5, sha256 = compute_file_hashes(test_file)
+    result = compute_file_hashes(test_file)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    md5, sha256 = result
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
@@ -133,6 +136,8 @@ def test_compute_file_hashes_nonexistent_file(tmp_path: Path):
 
 def test_scan_local_directory_hash_os_error(tmp_path: Path, monkeypatch, caplog):
     import logging
+
+    from hermes_drive_index.core.local_scanner import scan_local_directory
 
     test_file = tmp_path / "unreadable.txt"
     test_file.write_text("sample content")

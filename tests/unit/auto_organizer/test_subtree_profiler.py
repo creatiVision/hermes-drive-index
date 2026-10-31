@@ -14,8 +14,6 @@ import pytest
 from hermes_auto_organizer.domain.profiler_models import (
     DisruptionType,
     FolderProfile,
-    LifecycleDistribution,
-    NaturalLanguageRule,
     OutlierItem,
     SolutionProposal,
 )
@@ -99,7 +97,18 @@ def test_dump_zone_detection(tmp_path: Path):
     # Create a chaotic dump zone folder with 20 files of 10 different extensions
     dump_dir = tmp_path / "DumpZone"
     dump_dir.mkdir()
-    extensions = [".pdf", ".docx", ".zip", ".jpg", ".png", ".exe", ".iso", ".txt", ".csv", ".mp4"]
+    extensions = [
+        ".pdf",
+        ".docx",
+        ".zip",
+        ".jpg",
+        ".png",
+        ".exe",
+        ".iso",
+        ".txt",
+        ".csv",
+        ".mp4",
+    ]
     for i in range(20):
         ext = extensions[i % len(extensions)]
         f = dump_dir / f"file_{i}{ext}"
@@ -154,6 +163,7 @@ def test_natural_language_rules_synthesis(tmp_path: Path):
         f = downloads / f"installer_{i}{ext}"
         f.write_text("installer data")
         import os
+
         os.utime(f, (old_time, old_time))
 
     profile = profiler.profile_directory(downloads)
@@ -199,7 +209,9 @@ def test_tree_diff_projection(tmp_path: Path):
         resolved_outliers=[outlier],
     )
 
-    moved_node = next((n for n in diff_nodes if n.source_path == str(sub_project)), None)
+    moved_node = next(
+        (n for n in diff_nodes if n.source_path == str(sub_project)), None
+    )
     assert moved_node is not None
     assert moved_node.action == "MOVE"
     assert moved_node.target_path == str(tmp_path / "Projekte" / "StandaloneProject")
@@ -207,7 +219,9 @@ def test_tree_diff_projection(tmp_path: Path):
 
 
 def test_subtree_profiler_service_and_obsidian_export(tmp_path: Path):
-    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import SubtreeProfilerService
+    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import (
+        SubtreeProfilerService,
+    )
 
     # Setup test workspace
     workspace = tmp_path / "Workspace"
@@ -243,7 +257,9 @@ def test_subtree_profiler_service_and_obsidian_export(tmp_path: Path):
 
 
 def test_subtree_profiler_execution_and_rollback(tmp_path: Path):
-    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import SubtreeProfilerService
+    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import (
+        SubtreeProfilerService,
+    )
 
     workspace = tmp_path / "Workspace"
     workspace.mkdir()
@@ -265,7 +281,9 @@ def test_subtree_profiler_execution_and_rollback(tmp_path: Path):
     assert len(outliers) >= 1
     outlier = outliers[0]
     target_dest = str(target_projekte / "MyRepo")
-    service.resolve_outlier(outlier.id, status="approved", custom_target_path=target_dest)
+    service.resolve_outlier(
+        outlier.id, status="approved", custom_target_path=target_dest
+    )
 
     # Generate tree diff
     diff_nodes = service.generate_tree_diff()
@@ -315,7 +333,14 @@ def test_desktop_and_downloads_thematic_outliers(tmp_path: Path):
     profile = profiler.profile_directory(desktop)
     outliers = profiler.detect_outliers(profile)
 
-    types = {o.source_path: (o.disruption_type, o.proposal.action_type, o.proposal.target_path) for o in outliers}
+    types = {
+        o.source_path: (
+            o.disruption_type,
+            o.proposal.action_type,
+            o.proposal.target_path,
+        )
+        for o in outliers
+    }
 
     assert str(tickets) in types
     assert types[str(tickets)][0] == DisruptionType.TYPE_OUTLIER
@@ -331,3 +356,52 @@ def test_desktop_and_downloads_thematic_outliers(tmp_path: Path):
     assert types[str(empty_dir)][0] == DisruptionType.CLEANABLE_TEMP
     assert types[str(empty_dir)][1] == "CLEAN"
 
+
+def test_obsidian_export_fallback_exception_handling(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    from unittest.mock import patch
+    import logging
+    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import (
+        SubtreeProfilerService,
+    )
+
+    service = SubtreeProfilerService()
+    assert service.current_profile is None
+
+    vault_dir = tmp_path / "ObsidianVault"
+    vault_dir.mkdir()
+
+    with caplog.at_level(
+        logging.WARNING, logger="hermes.auto_organizer.profiler_service"
+    ):
+        with patch.object(
+            service, "scan_and_profile", side_effect=RuntimeError("Scan error test")
+        ):
+            index_path = service.export_to_obsidian(vault_dir)
+
+    assert service.current_profile is not None
+    assert service.current_profile.name == "Downloads"
+    assert Path(index_path).exists()
+    assert (
+        "Failed fallback scan_and_profile during Obsidian export: Scan error test"
+        in caplog.text
+    )
+
+
+def test_profiler_logging_on_filesystem_error(tmp_path: Path, caplog):
+    import logging
+    profiler = RecursiveSubtreeProfiler()
+
+    non_existent = tmp_path / "inaccessible"
+    non_existent.mkdir()
+
+    with caplog.at_level(logging.DEBUG, logger="hermes_auto_organizer.storage.recursive_profiler"):
+        # Make path unreadable/cause error or test profiling non-existent child directly
+        profile = profiler.profile_directory(non_existent)
+        assert profile is not None
+
+        # Simulate _profile_node call on non-existent path
+        profiler._profile_node(tmp_path / "does_not_exist", current_depth=0, max_depth=8, include_hidden=False)
+
+    assert any("Could not scan directory" in record.message for record in caplog.records)
