@@ -516,6 +516,30 @@ def test_suggested_rule_switch_endpoint():
         assert "rule_test_1" not in data["excluded_rules"]
 
 
+def test_suggested_rule_switch_endpoint_db_exception():
+    mock_conn = AsyncMock()
+    mock_conn.execute.side_effect = Exception("DB update error")
+    mock_conn.close = AsyncMock()
+
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=mock_conn), \
+         patch("hermes_auto_organizer.dashboard.plugin_api.logger.warning") as mock_warn:
+        res = client.post(
+            "/api/plugins/auto-organizer/rules/suggested/switch",
+            json={"rule_id": "rule_err_test", "state": "approved"}
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["state"] == "approved"
+        assert "rule_err_test" in data["approved_rules"]
+
+        mock_conn.execute.assert_called_once()
+        mock_conn.close.assert_called_once()
+        mock_warn.assert_called_once()
+        assert mock_warn.call_args[0][0] == "Failed updating rule '%s' state in DB: %s"
+        assert mock_warn.call_args[0][1] == "rule_err_test"
+
+
 def test_emergent_category_switch_endpoint():
     # Approve category
     res = client.post("/api/plugins/auto-organizer/taxonomy/emergent/category-switch", json={"category_id": "cat_test_fin", "state": "approved"})
