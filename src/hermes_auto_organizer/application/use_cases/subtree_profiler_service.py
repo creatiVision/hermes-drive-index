@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 try:
     from send2trash import send2trash
+
     _HAS_SEND2TRASH = True
 except ImportError:
     _HAS_SEND2TRASH = False
@@ -97,7 +98,10 @@ class SubtreeProfilerService:
         self._current_node_id = (node_id or "laptop").strip()
 
         if self._current_node_id not in ("laptop", "local", "localhost"):
-            from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+            from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import (
+                SSHNodeInspector,
+            )
+
             ssh_inspector = SSHNodeInspector()
             profile = ssh_inspector.profile_remote_subtree(
                 node_id=self._current_node_id,
@@ -106,7 +110,9 @@ class SubtreeProfilerService:
                 include_hidden=include_hidden,
             )
         else:
-            profile = self._profiler.profile_directory(path, max_depth=max_depth, include_hidden=include_hidden)
+            profile = self._profiler.profile_directory(
+                path, max_depth=max_depth, include_hidden=include_hidden
+            )
 
         disruptions = self._profiler.detect_disruptions(profile)
         outliers = self._profiler.detect_outliers(profile)
@@ -190,13 +196,18 @@ class SubtreeProfilerService:
         """Exports currently analyzed tree and diff to Obsidian for Extended Graph visualization."""
         if not self._current_profile:
             try:
-                self.scan_and_profile("/home/mb/Downloads", node_id="laptop", max_depth=2)
-            except Exception:
-                pass
+                self.scan_and_profile(
+                    "/home/mb/Downloads", node_id="laptop", max_depth=2
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed fallback scan_and_profile during Obsidian export: %s", exc
+                )
 
         if not self._current_profile:
-            from hermes_auto_organizer.domain.models import SubtreeProfile
-            self._current_profile = SubtreeProfile(
+            from hermes_auto_organizer.domain.profiler_models import FolderProfile
+
+            self._current_profile = FolderProfile(
                 path="/home/mb/Downloads",
                 name="Downloads",
                 depth=0,
@@ -205,8 +216,6 @@ class SubtreeProfilerService:
                 total_subdirs_count=0,
                 mime_entropy=0.0,
                 dominant_extension=".pdf",
-                direct_files=[],
-                children=[],
             )
 
         diff_nodes = self.generate_tree_diff()
@@ -245,7 +254,12 @@ class SubtreeProfilerService:
                     if rec:
                         executed.append(rec)
                 except Exception as e:
-                    logger.error("Failed remote execute tree-diff node %s -> %s: %s", node.source_path, node.target_path, e)
+                    logger.error(
+                        "Failed remote execute tree-diff node %s -> %s: %s",
+                        node.source_path,
+                        node.target_path,
+                        e,
+                    )
                     errors.append({"source": node.source_path, "error": str(e)})
                 continue
 
@@ -288,7 +302,9 @@ class SubtreeProfilerService:
                     if src.is_dir():
                         is_cross_device = False
                         try:
-                            is_cross_device = src.stat().st_dev != dst.parent.stat().st_dev
+                            is_cross_device = (
+                                src.stat().st_dev != dst.parent.stat().st_dev
+                            )
                         except OSError:
                             pass
 
@@ -325,7 +341,12 @@ class SubtreeProfilerService:
                         executed.append(rec)
 
             except Exception as e:
-                logger.error("Failed to execute tree-diff node %s -> %s: %s", node.source_path, node.target_path, e)
+                logger.error(
+                    "Failed to execute tree-diff node %s -> %s: %s",
+                    node.source_path,
+                    node.target_path,
+                    e,
+                )
                 errors.append({"source": node.source_path, "error": str(e)})
 
         self._execution_history[batch_uuid] = executed
@@ -343,7 +364,10 @@ class SubtreeProfilerService:
         batch_uuid: UUID,
     ) -> Optional[ExecutionRecord]:
         """Executes a move, archive or clean operation remotely via SSH."""
-        from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+        from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import (
+            SSHNodeInspector,
+        )
+
         inspector = SSHNodeInspector()
         node_id = self._current_node_id
         src = node.source_path
@@ -362,7 +386,9 @@ class SubtreeProfilerService:
                 "shutil.move(str(src), str(dst))\n"
                 "print(str(dst))\n"
             )
-            success, out, _ = inspector.execute_remote(node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+            success, out, _ = inspector.execute_remote(
+                node_id, f"python3 -c {subprocess.list2cmdline([py_code])}"
+            )
             if not success or "Traceback" in out:
                 raise RuntimeError(f"Remote trash failed on {node_id}: {out}")
             lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
@@ -392,7 +418,9 @@ class SubtreeProfilerService:
                 "shutil.move(str(src), str(dst))\n"
                 "print('OK')\n"
             )
-            success, out, _ = inspector.execute_remote(node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+            success, out, _ = inspector.execute_remote(
+                node_id, f"python3 -c {subprocess.list2cmdline([py_code])}"
+            )
             if not success or "OK" not in out:
                 raise RuntimeError(f"Remote move failed on {node_id}: {out}")
             return ExecutionRecord(
@@ -413,11 +441,21 @@ class SubtreeProfilerService:
         """
         uuid_val = UUID(str(batch_id))
         if uuid_val not in self._execution_history:
-            return {"ok": False, "batch_id": str(batch_id), "message": "Batch not found"}
+            return {
+                "ok": False,
+                "batch_id": str(batch_id),
+                "message": "Batch not found",
+            }
 
         records = self._execution_history[uuid_val]
         if not records:
-            return {"ok": True, "batch_id": str(batch_id), "reverted_count": 0, "failed_count": 0, "message": "No actions to rollback"}
+            return {
+                "ok": True,
+                "batch_id": str(batch_id),
+                "reverted_count": 0,
+                "failed_count": 0,
+                "message": "No actions to rollback",
+            }
 
         reverted_count = 0
         failed_count = 0
@@ -428,7 +466,10 @@ class SubtreeProfilerService:
                 continue
 
             if is_remote:
-                from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import SSHNodeInspector
+                from hermes_auto_organizer.infrastructure.storage.ssh_node_inspector import (
+                    SSHNodeInspector,
+                )
+
                 inspector = SSHNodeInspector()
                 py_code = (
                     "import shutil, sys\n"
@@ -440,7 +481,10 @@ class SubtreeProfilerService:
                     "shutil.move(str(dst), str(src))\n"
                     "print('ROLLBACK_OK')\n"
                 )
-                success, out, _ = inspector.execute_remote(self._current_node_id, f"python3 -c {subprocess.list2cmdline([py_code])}")
+                success, out, _ = inspector.execute_remote(
+                    self._current_node_id,
+                    f"python3 -c {subprocess.list2cmdline([py_code])}",
+                )
                 if success and "ROLLBACK_OK" in out:
                     reverted_count += 1
                 else:
