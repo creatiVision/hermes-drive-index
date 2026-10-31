@@ -39,8 +39,8 @@ class LanMeshScanner:
             if resolved:
                 debian_ip = resolved
                 debian_ssh_ok = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to resolve active host 'debian1': %s", exc)
 
         devices: list[dict[str, Any]] = [
             {
