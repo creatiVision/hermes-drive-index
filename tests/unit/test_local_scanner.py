@@ -88,7 +88,10 @@ def test_compute_file_hashes_basic(tmp_path: Path):
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
     # Test with Path object
-    md5, sha256 = compute_file_hashes(test_file)
+    result = compute_file_hashes(test_file)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    md5, sha256 = result
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
@@ -110,7 +113,8 @@ def test_compute_file_hashes_empty_file(tmp_path: Path):
     assert sha256 == expected_sha256
 
 
-def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
+@pytest.mark.parametrize("chunk_size", [1, 10, 50, 100, 1000])
+def test_compute_file_hashes_custom_chunk_sizes(tmp_path: Path, chunk_size: int):
     content = b"A" * 100
     test_file = tmp_path / "chunks.txt"
     test_file.write_bytes(content)
@@ -118,8 +122,8 @@ def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
     expected_md5 = hashlib.md5(content).hexdigest()
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
-    # Read with chunk size smaller than content length to test iteration
-    md5, sha256 = compute_file_hashes(test_file, chunk_size=10)
+    # Read with chunk size smaller, equal, or larger than content length
+    md5, sha256 = compute_file_hashes(test_file, chunk_size=chunk_size)
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
