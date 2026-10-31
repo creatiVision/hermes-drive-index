@@ -301,8 +301,8 @@ async def health_check() -> Dict[str, Any]:
             )
             table_count = int(row["c"]) if row else 0
             db_ok = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed health check database table count query: %s", exc)
         finally:
             await conn.close()
 
@@ -1015,8 +1015,8 @@ async def switch_suggested_rule(req: RuleSwitchRequest) -> Dict[str, Any]:
                 "UPDATE organization_rules SET state = $1, updated_at = NOW() WHERE id::text = $2 OR rule_name = $2",
                 db_state, req.rule_id
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed updating rule state in database: %s", exc)
         finally:
             await conn.close()
 
@@ -4284,8 +4284,8 @@ async def browse_directory(path: str = Query(..., description="Target directory 
                     direct_files += 1
                     try:
                         direct_bytes += entry.stat().st_size
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        logger.warning("Failed stat on %s: %s", entry.path, exc)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Keine Leseberechtigung für dieses Verzeichnis")
 
