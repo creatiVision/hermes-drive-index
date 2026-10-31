@@ -297,4 +297,3 @@ class RoutingProposal:
     matched_document_type: str | None = None
     matched_entities: tuple[str, ...] = ()
     created_at: datetime = field(default_factory=_utc_now)
-

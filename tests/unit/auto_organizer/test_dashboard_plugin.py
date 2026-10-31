@@ -800,4 +800,3 @@ def test_suggested_rules_content_distillation_and_routing():
         assert admit_data["ok"] is True
         assert admit_data["traffic_light"] == "green"
         assert admit_data["state"] == "USER_APPROVED"
-
