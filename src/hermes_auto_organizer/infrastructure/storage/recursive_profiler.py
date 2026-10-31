@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
-import logging
+import math
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
+from uuid import uuid4
 
 from hermes_auto_organizer.application.ports.profiler_port import SubtreeProfilerPort
 from hermes_auto_organizer.domain.profiler_models import (
@@ -33,9 +34,6 @@ from hermes_auto_organizer.domain.profiler_models import (
     SolutionProposal,
     TreeDiffNode,
 )
-
-
-logger = logging.getLogger("hermes_auto_organizer.storage.recursive_profiler")
 
 
 CLEANABLE_DIR_NAMES = {
@@ -147,11 +145,10 @@ class RecursiveSubtreeProfiler(SubtreeProfilerPort):
                                     include_hidden=include_hidden,
                                 )
                                 subfolder_profiles.append(child_profile)
-                    except (PermissionError, FileNotFoundError, OSError) as exc:
-                        logger.debug("Skipping entry in %s due to error: %s", path_str, exc)
+                    except (PermissionError, FileNotFoundError, OSError):
                         continue
-        except (PermissionError, FileNotFoundError, OSError) as exc:
-            logger.debug("Could not scan directory %s: %s", path_str, exc)
+        except (PermissionError, FileNotFoundError, OSError):
+            pass
 
         # Bottom-up roll-up from subfolders
         total_files = direct_files + sum(c.total_files_count for c in subfolder_profiles)

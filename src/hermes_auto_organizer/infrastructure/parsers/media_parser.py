@@ -98,18 +98,13 @@ class MediaParser:
 
     def _extract_video_ffprobe(self, path: Path, sha256: str) -> FileExtraction:
         try:
-            resolved_path = Path(path).resolve()
-            if not resolved_path.is_file():
-                return self._fallback(path, sha256, "file not found")
-
             cmd = [
                 "ffprobe",
                 "-v", "quiet",
                 "-print_format", "json",
                 "-show_format",
                 "-show_streams",
-                "--",
-                str(resolved_path),
+                str(path),
             ]
             # Safety: shell=False, timeout=5
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)

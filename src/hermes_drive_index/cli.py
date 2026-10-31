@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 from dataclasses import asdict
-from typing import Any
+import json
+from pathlib import Path
 
 from . import __version__
 from .api import (
@@ -28,6 +28,7 @@ from .core.organizer_workflow import (
     analyse_first,
     execute_on_approval,
     format_plan_presentation,
+    intent_check,
     propose_plan,
     validate_approval,
 )
@@ -47,7 +48,7 @@ def _config_from_args(args: argparse.Namespace):
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Hermes Google Drive & Local Drives index and file manager")
     parser.add_argument("--version", action="version", version=f"hermes-drive-index {__version__}")
     parser.add_argument("--config", metavar="PATH", help="Path to a local TOML config file.")
@@ -134,10 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
     sync_p.add_argument("--mapping", default=None, metavar="NAME")
     sync_p.add_argument("--json", action="store_true", default=True)
 
-    return parser
+    args = parser.parse_args(argv)
+    cfg = _config_from_args(args)
 
-
-def _handle_index_commands(args: argparse.Namespace, cfg: Any) -> int | None:
     if args.cmd == "build":
         result = incremental_update(cfg) if args.mode in {"incremental", "incremental_manifest"} else build_index(cfg)
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -150,7 +150,7 @@ def _handle_index_commands(args: argparse.Namespace, cfg: Any) -> int | None:
         print(json.dumps(status(cfg), indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "doctor":
-        from importlib import metadata
+        import importlib.metadata as metadata
         eps = [str(e) for e in metadata.entry_points(group="hermes_agent.plugins") if "hermes_drive_index" in str(e)]
         print(json.dumps({"package": "hermes-drive-index", "version": __version__, "plugin_entry_points": eps, "status": status(cfg)}, indent=2, ensure_ascii=False))
         return 0
@@ -167,10 +167,6 @@ def _handle_index_commands(args: argparse.Namespace, cfg: Any) -> int | None:
             for i, row in enumerate(result["results"], 1):
                 print(f"\n{i}. {row['name']}\n   {row['path']}\n   {row.get('web_view_link')}\n   {row['snippet']}")
         return 0
-    return None
-
-
-def _handle_organize_and_sync_commands(args: argparse.Namespace, cfg: Any) -> int | None:
     if args.cmd == "duplicates":
         res = find_duplicates(args.folder)
         print(json.dumps(res, indent=2, ensure_ascii=False))
@@ -224,21 +220,6 @@ def _handle_organize_and_sync_commands(args: argparse.Namespace, cfg: Any) -> in
         res = selective_sync_plan_api(args.mapping, cfg)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         return 0
-    return None
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    cfg = _config_from_args(args)
-
-    res = _handle_index_commands(args, cfg)
-    if res is not None:
-        return res
-
-    res = _handle_organize_and_sync_commands(args, cfg)
-    if res is not None:
-        return res
 
     return 1
 

@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from hermes_auto_organizer.domain.profiler_models import (
     FolderProfile,
+    NaturalLanguageRule,
     OutlierItem,
     TreeDiffNode,
 )

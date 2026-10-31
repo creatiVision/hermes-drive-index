@@ -110,7 +110,8 @@ def test_compute_file_hashes_empty_file(tmp_path: Path):
     assert sha256 == expected_sha256
 
 
-def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
+@pytest.mark.parametrize("chunk_size", [1, 10, 50, 100, 1000])
+def test_compute_file_hashes_custom_chunk_sizes(tmp_path: Path, chunk_size: int):
     content = b"A" * 100
     test_file = tmp_path / "chunks.txt"
     test_file.write_bytes(content)
@@ -118,8 +119,8 @@ def test_compute_file_hashes_custom_chunk_size(tmp_path: Path):
     expected_md5 = hashlib.md5(content).hexdigest()
     expected_sha256 = hashlib.sha256(content).hexdigest()
 
-    # Read with chunk size smaller than content length to test iteration
-    md5, sha256 = compute_file_hashes(test_file, chunk_size=10)
+    # Read with chunk size smaller, equal, or larger than content length
+    md5, sha256 = compute_file_hashes(test_file, chunk_size=chunk_size)
     assert md5 == expected_md5
     assert sha256 == expected_sha256
 
@@ -130,18 +131,16 @@ def test_compute_file_hashes_nonexistent_file(tmp_path: Path):
         compute_file_hashes(non_existent)
 
 
-def test_scan_local_directory_hash_oserror(tmp_path: Path, monkeypatch, caplog):
+def test_scan_local_directory_hash_os_error(tmp_path: Path, monkeypatch, caplog):
     import logging
 
-    import hermes_drive_index.core.local_scanner as local_scanner_module
+    test_file = tmp_path / "unreadable.txt"
+    test_file.write_text("sample content")
 
-    f1 = tmp_path / "file1.txt"
-    f1.write_text("hello world")
+    def mock_compute_hashes(file_path, chunk_size=65536):
+        raise OSError("Permission denied")
 
-    def fake_compute_hashes(path):
-        raise OSError("Permission denied reading file")
-
-    monkeypatch.setattr(local_scanner_module, "compute_file_hashes", fake_compute_hashes)
+    monkeypatch.setattr("hermes_drive_index.core.local_scanner.compute_file_hashes", mock_compute_hashes)
 
     with caplog.at_level(logging.DEBUG):
         files = scan_local_directory(tmp_path, compute_hashes=True)
@@ -150,4 +149,4 @@ def test_scan_local_directory_hash_oserror(tmp_path: Path, monkeypatch, caplog):
     assert files[0].md5_checksum is None
     assert files[0].sha256_checksum is None
     assert "Failed to compute hashes for" in caplog.text
-    assert "Permission denied reading file" in caplog.text
+    assert "Permission denied" in caplog.text

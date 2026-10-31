@@ -148,7 +148,7 @@ class DocumentParser:
 
                 ocr_fragments = []
                 for img in rendered_images:
-                    cmd_ocr = [_TESSERACT_BIN, "--", str(img), "stdout", "-l", "deu+eng", "--psm", "3"]
+                    cmd_ocr = [_TESSERACT_BIN, str(img), "stdout", "-l", "deu+eng", "--psm", "3"]
                     proc = subprocess.run(cmd_ocr, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30, check=False)
                     if proc.stdout.strip():
                         ocr_fragments.append(proc.stdout.strip())

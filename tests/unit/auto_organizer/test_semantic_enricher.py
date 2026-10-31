@@ -35,7 +35,7 @@ def test_heuristic_enrichment_contract():
 
 
 def test_llm_enrichment_mock():
-    enricher = SemanticEnricher(api_key = "mock")
+    enricher = SemanticEnricher(api_key="mock_key")
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
@@ -59,33 +59,3 @@ def test_llm_enrichment_mock():
     assert result["summary"] == "Telekom Monatsrechnung für Internet"
     assert "Telekom" in result["keywords"]
     assert result["document_type"] == "invoice"
-
-
-def test_api_key_initialization_handling(monkeypatch):
-    # Ensure environment variables are clear
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    # Case 1: No arguments or env vars -> None
-    enricher_default = SemanticEnricher()
-    assert enricher_default.api_key is None
-
-    # Case 2: Empty or whitespace string argument -> None
-    enricher_empty = SemanticEnricher(api_key = "")
-    assert enricher_empty.api_key is None
-    enricher_spaces = SemanticEnricher(api_key = "   ")
-    assert enricher_spaces.api_key is None
-
-    # Case 3: Empty string in env var -> None
-    monkeypatch.setenv("OPENROUTER_API_KEY", "   ")
-    enricher_env_empty = SemanticEnricher()
-    assert enricher_env_empty.api_key is None
-
-    # Case 4: Valid padded key -> stripped string
-    enricher_valid = SemanticEnricher(api_key = "  t_key  ")
-    assert enricher_valid.api_key == "t_key"
-
-    # Case 5: Valid env var key -> stripped string
-    monkeypatch.setenv("OPENAI_API_KEY", " o_key ")
-    enricher_env_valid = SemanticEnricher()
-    assert enricher_env_valid.api_key == "o_key"

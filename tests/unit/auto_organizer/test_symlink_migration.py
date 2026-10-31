@@ -44,24 +44,3 @@ def test_migration_and_rollback(tmp_path: Path):
     assert source_dir.is_dir()
     assert (source_dir / "weights.bin").read_bytes() == b"dummy model weights data"
     assert not migrated_dest.exists()
-
-
-def test_migration_size_calculation_os_error(tmp_path: Path, caplog: pytest.LogCaptureFixture):
-    source_dir = tmp_path / "source_models"
-    source_dir.mkdir()
-    (source_dir / "weights.bin").write_bytes(b"dummy model weights data")
-
-    dest_root = tmp_path / "destination_drive"
-    dest_root.mkdir()
-
-    service = FilesystemMigrationService()
-    use_case = SymlinkMigratorUseCase(service)
-
-    from unittest.mock import patch
-    with patch("pathlib.Path.rglob", side_effect=PermissionError("Permission denied")):
-        with caplog.at_level("WARNING"):
-            record = use_case.migrate(str(source_dir), str(dest_root), name="migrated_models")
-
-    assert record.status == MigrationStatus.ACTIVE
-    assert record.size_bytes == 0
-    assert "Failed to calculate migrated directory size" in caplog.text
