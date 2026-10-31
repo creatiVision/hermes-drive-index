@@ -311,7 +311,7 @@ async def health_check() -> Dict[str, Any]:
             table_count = int(row["c"]) if row else 0
             db_ok = True
         except Exception as exc:
-            logger.warning("Health check DB query failed: %s", exc)
+            logger.warning("Failed health check database table count query: %s", exc)
         finally:
             await conn.close()
 
