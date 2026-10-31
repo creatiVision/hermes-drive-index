@@ -309,8 +309,8 @@ def scan_local_directory(
                 if compute_hashes:
                     try:
                         md5_val, sha256_val = compute_file_hashes(entry_path_str)
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        logger.debug("Failed to compute hashes for %s: %s", entry_path_str, exc)
 
                 if entry_path_str.startswith(base_prefix):
                     rel = entry_path_str[len(base_prefix):]
