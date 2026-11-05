@@ -6950,11 +6950,16 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
             style: { width: `${(step / 5) * 100}%` }
           })
         ),
-        h("div", { className: "auto-org-stepper" },
+        h("div", { className: "auto-org-stepper", role: "tablist", "aria-label": "Workflow-Schritte" },
           // Step 1
           h("div", {
             className: `auto-org-step-card ${step === 1 ? "active" : ""} ${isStep1Done ? "completed" : ""}`,
-            onClick: () => setStep(1)
+            role: "tab",
+            tabIndex: 0,
+            "aria-selected": step === 1,
+            "aria-label": "Schritt 1: Quelle & Ist-Stand",
+            onClick: () => setStep(1),
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStep(1); } },
           },
             h("div", { className: "auto-org-step-badge" }, isStep1Done ? "✓" : "1"),
             h("div", { className: "auto-org-step-info" },
@@ -6968,7 +6973,12 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           // Step 2 (Organisationssystem & Freigabe)
           h("div", {
             className: `auto-org-step-card ${step === 2 ? "active" : ""} ${isStep2Approved ? "completed" : ""}`,
-            onClick: () => setStep(2)
+            role: "tab",
+            tabIndex: 0,
+            "aria-selected": step === 2,
+            "aria-label": "Schritt 2: Organisationssystem & Freigabe",
+            onClick: () => setStep(2),
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStep(2); } },
           },
             h("div", { className: "auto-org-step-badge" }, isStep2Approved ? "✓" : "2"),
             h("div", { className: "auto-org-step-info" },
@@ -6989,7 +6999,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               }
               setStep(3);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3"
+            role: "tab",
+            tabIndex: 0,
+            "aria-selected": step === 3,
+            "aria-disabled": !isStep2Approved,
+            "aria-label": "Schritt 3: Proaktive Filter-Regeln" + (!isStep2Approved ? " (Gesperrt)" : ""),
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 3",
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!isStep2Approved) { setNotice("⚠️ Schritt 3 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben."); return; } setStep(3); } },
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : (rules.length > 0 ? "✓" : "3")),
             h("div", { className: "auto-org-step-info" },
@@ -7010,7 +7026,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               }
               setStep(4);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4"
+            role: "tab",
+            tabIndex: 0,
+            "aria-selected": step === 4,
+            "aria-disabled": !isStep2Approved,
+            "aria-label": "Schritt 4: Simulation & Ausführung" + (!isStep2Approved ? " (Gesperrt)" : ""),
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 4",
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!isStep2Approved) { setNotice("⚠️ Schritt 4 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben."); return; } setStep(4); } },
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "4"),
             h("div", { className: "auto-org-step-info" },
@@ -7031,7 +7053,13 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               }
               setStep(5);
             },
-            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync"
+            role: "tab",
+            tabIndex: 0,
+            "aria-selected": step === 5,
+            "aria-disabled": !isStep2Approved,
+            "aria-label": "Schritt 5: Google Drive Cloud-Sync" + (!isStep2Approved ? " (Gesperrt)" : ""),
+            title: !isStep2Approved ? "Gesperrt: Freigabe in Schritt 2 erforderlich" : "Zu Schritt 5: Google Drive Cloud-Sync",
+            onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!isStep2Approved) { setNotice("⚠️ Schritt 5 ist gesperrt: Bitte zuerst Schritt 1 & 2 (Organisationssystem) freigeben."); return; } setStep(5); } },
           },
             h("div", { className: "auto-org-step-badge" }, !isStep2Approved ? "🔒" : "5"),
             h("div", { className: "auto-org-step-info" },
