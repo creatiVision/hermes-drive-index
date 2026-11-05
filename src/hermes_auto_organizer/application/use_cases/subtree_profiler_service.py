@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timezone
+import json
 import logging
 from pathlib import Path
 import shutil
@@ -374,10 +375,11 @@ class SubtreeProfilerService:
         DiskCleaningPolicy.assert_cleanup_safe(src)
 
         if node.action == "CLEAN_TEMP":
+            src_lit = json.dumps(str(src))
             py_code = (
                 "import os, shutil, sys, time\n"
                 "from pathlib import Path\n"
-                f"src = Path('{src}')\n"
+                f"src = Path({src_lit})\n"
                 "if not src.exists(): sys.exit(2)\n"
                 "trash_dir = src.parent / '.hermes_trash'\n"
                 "trash_dir.mkdir(parents=True, exist_ok=True)\n"
@@ -408,11 +410,13 @@ class SubtreeProfilerService:
             if not dst:
                 return None
             DiskCleaningPolicy.assert_cleanup_safe(dst)
+            src_lit = json.dumps(str(src))
+            dst_lit = json.dumps(str(dst))
             py_code = (
                 "import os, shutil, sys\n"
                 "from pathlib import Path\n"
-                f"src = Path('{src}')\n"
-                f"dst = Path('{dst}')\n"
+                f"src = Path({src_lit})\n"
+                f"dst = Path({dst_lit})\n"
                 "if not src.exists(): sys.exit(2)\n"
                 "dst.parent.mkdir(parents=True, exist_ok=True)\n"
                 "shutil.move(str(src), str(dst))\n"
@@ -471,11 +475,13 @@ class SubtreeProfilerService:
                 )
 
                 inspector = SSHNodeInspector()
+                dst_lit = json.dumps(str(rec.destination_path))
+                src_lit = json.dumps(str(rec.source_path))
                 py_code = (
                     "import shutil, sys\n"
                     "from pathlib import Path\n"
-                    f"dst = Path('{rec.destination_path}')\n"
-                    f"src = Path('{rec.source_path}')\n"
+                    f"dst = Path({dst_lit})\n"
+                    f"src = Path({src_lit})\n"
                     "if not dst.exists(): sys.exit(2)\n"
                     "src.parent.mkdir(parents=True, exist_ok=True)\n"
                     "shutil.move(str(dst), str(src))\n"
