@@ -10,3 +10,7 @@
 ## 2026-09-15 - High-Contrast Focus Indicators in Dark-Themed IIFE CSS Injections
 **Learning:** In dark-themed React dashboard UI bundles with custom or reset stylesheets, default browser focus outlines are easily lost against dark backgrounds (`#0f172a`), leaving keyboard navigation (Tab/Shift+Tab) without clear visual focus feedback.
 **Action:** Always inject explicit `:focus-visible` CSS rules with bright, high-contrast focus rings (`#38bdf8`) into scoped plugin stylesheets so interactive controls (buttons, inputs, selects) remain immediately recognizable to keyboard users.
+
+## 2026-11-05 - Keyboard Accessible Workflow Steppers with WAI-ARIA Tabs
+**Learning:** Multi-step wizard or stepper cards in custom dashboards rendered as clickable `<div>` elements are completely unreachable to keyboard-only users and lack semantic role context (`role="tablist"` / `role="tab"`), state indications (`aria-selected`), and gated accessibility (`aria-disabled`).
+**Action:** Always wrap multi-step wizard navigators with `role="tablist"` and give each step card `role="tab"`, `tabIndex={0}`, `aria-selected`, `aria-label`, and `onKeyDown` handlers for `Enter` and `Space` that mirror click actions and honor step-gating policies.
