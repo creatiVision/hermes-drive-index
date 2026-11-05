@@ -805,6 +805,7 @@ def test_suggested_rules_content_distillation_and_routing():
 def test_plugin_api_db_pass_default_empty(monkeypatch):
     """Verify that plugin_api defaults DB_PASS to empty string and DSN does not leak secrets."""
     import importlib
+
     from hermes_auto_organizer.dashboard import plugin_api
 
     monkeypatch.delenv("HERMES_DB_PASSWORD", raising=False)
