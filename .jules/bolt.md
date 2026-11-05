@@ -26,3 +26,7 @@
 ## 2026-04-01 - os.path.commonpath List Allocation Overhead in Docker Mount Subpath Checking
 **Learning:** Using `os.path.commonpath([norm_parent, norm_child]) == norm_parent` inside mount translation and validation loops incurs heavy overhead from allocating temporary list objects and splitting path strings into component arrays. Fast string prefix matching on normalized absolute paths (`norm_child == norm_parent or norm_child.startswith(norm_parent + os.sep)`) accelerates path containment checks by over 3x.
 **Action:** When validating path containment in high-frequency mount translation or sandboxing routines, use normalized string prefix checking rather than `os.path.commonpath`.
+
+## 2026-04-01 - Path Allocation & Relative-To Splitting in Document Structure Planning
+**Learning:** In `plan_document_structure`, invoking `Path(f.path).relative_to(base).parts` and repeated list creations (`[t[0] for t in TOP_LEVEL_STRUCTURE]`) inside directory categorization loops creates severe object allocation overhead and slows file classification by over 11x. Pre-computing top-level directory names and path mappings as string sets/dicts, and checking relative paths via fast string slicing on `f.relative_path` or `base_prefix`, dramatically cuts classification latency.
+**Action:** When scanning and sorting large directory trees into target hierarchies, pre-compute directory string paths upfront and use string slicing rather than instantiating `pathlib.Path` objects and calling `.relative_to().parts`.
