@@ -78,12 +78,14 @@ logger = logging.getLogger("hermes.plugins.auto_organizer")
 DB_HOST = os.getenv("HERMES_DB_HOST", "localhost")
 DB_PORT = int(os.getenv("HERMES_DB_PORT", "5433"))
 DB_USER = os.getenv("HERMES_DB_USER", "pgadmin")
-DB_PASS = os.getenv("HERMES_DB_PASSWORD", "81914287fd58ccba48967c0b8483dfc74cced7f28c14d196")
+# Security: Passwords must not be hardcoded as fallbacks; read strictly from environment.
+DB_PASS = os.getenv("HERMES_DB_PASSWORD", "")
 DB_NAME = os.getenv("HERMES_ORGANIZER_DB_NAME", os.getenv("HERMES_DB_NAME", "agent_memory"))
 if DB_NAME in ("hermes_organizer", ""):
     DB_NAME = "agent_memory"
 
-DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+_AUTH_PART = f"{DB_USER}:{DB_PASS}" if DB_PASS else DB_USER
+DSN = f"postgresql://{_AUTH_PART}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # In-memory session store for pending dry-runs
 _DRY_RUN_CACHE: Dict[str, Dict[str, Any]] = {}
