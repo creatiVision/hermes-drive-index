@@ -802,6 +802,21 @@ def test_suggested_rules_content_distillation_and_routing():
         assert admit_data["state"] == "USER_APPROVED"
 
 
+def test_plugin_api_db_pass_default_empty(monkeypatch):
+    """Verify that plugin_api defaults DB_PASS to empty string and DSN does not leak secrets."""
+    import importlib
+    from hermes_auto_organizer.dashboard import plugin_api
+
+    monkeypatch.delenv("HERMES_DB_PASSWORD", raising=False)
+    reloaded_api = importlib.reload(plugin_api)
+    try:
+        assert reloaded_api.DB_PASS == ""
+        assert "81914287" not in reloaded_api.DSN
+        assert reloaded_api.DSN.startswith("postgresql://pgadmin@")
+    finally:
+        importlib.reload(plugin_api)
+
+
 def test_dashboard_bundle_inspector_clipboard_accessibility():
     """Verify that the dashboard frontend bundle contains accessible copy feedback without blocking alert dialogs."""
     bundle_path = Path(__file__).resolve().parents[3] / "src" / "hermes_auto_organizer" / "dashboard" / "dist" / "index.js"
