@@ -800,3 +800,19 @@ def test_suggested_rules_content_distillation_and_routing():
         assert admit_data["ok"] is True
         assert admit_data["traffic_light"] == "green"
         assert admit_data["state"] == "USER_APPROVED"
+
+
+def test_plugin_api_db_pass_default_empty(monkeypatch):
+    """Verify that plugin_api defaults DB_PASS to empty string and DSN does not leak secrets."""
+    import importlib
+
+    from hermes_auto_organizer.dashboard import plugin_api
+
+    monkeypatch.delenv("HERMES_DB_PASSWORD", raising=False)
+    reloaded_api = importlib.reload(plugin_api)
+    try:
+        assert reloaded_api.DB_PASS == ""
+        assert "81914287" not in reloaded_api.DSN
+        assert reloaded_api.DSN.startswith("postgresql://pgadmin@")
+    finally:
+        importlib.reload(plugin_api)
