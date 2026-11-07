@@ -282,11 +282,13 @@ class SSHNodeInspector(SSHNodePort):
         max_depth: int = 2,
     ) -> Dict[str, Any]:
         """Performs fast directory profiling on the remote machine via Python."""
+        # Sanitize path using json.dumps to prevent remote Python code injection
+        path_lit = json.dumps(str(remote_path))
         py_script = (
             "import os, sys, json, math\n"
             "from pathlib import Path\n"
             "from collections import Counter\n"
-            f"root = Path('{remote_path}')\n"
+            f"root = Path({path_lit})\n"
             "if not root.exists():\n"
             "    print(json.dumps({'error': 'Path does not exist'}))\n"
             "    sys.exit(0)\n"
@@ -348,6 +350,8 @@ class SSHNodeInspector(SSHNodePort):
     ) -> FolderProfile:
         """Runs recursive subtree profiling on the remote machine and reconstructs a FolderProfile."""
         inc_hid = "True" if include_hidden else "False"
+        path_lit = json.dumps(str(remote_path))
+        depth_int = int(max_depth)
         py_script = (
             "import os, sys, json, math\n"
             "from pathlib import Path\n"
@@ -427,8 +431,8 @@ class SSHNodeInspector(SSHNodePort):
             "        'root_pollution_ratio': round(direct_files / max(1, tot_files), 3) if len(children) > 0 else 0.0,\n"
             "        'children': children,\n"
             "    }\n"
-            f"root = Path('{remote_path}')\n"
-            f"res = profile_node(root, 0, {max_depth})\n"
+            f"root = Path({path_lit})\n"
+            f"res = profile_node(root, 0, {depth_int})\n"
             "print(json.dumps(res))\n"
         )
         success, out, _ = self.execute_remote(
