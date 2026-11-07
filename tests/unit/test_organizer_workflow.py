@@ -70,3 +70,39 @@ def test_organizer_plan_and_execution_workflow(tmp_path: Path):
     assert exec_res["executed_counts"]["moved"] == 2
     assert (tmp_path / "Images" / "img1.png").exists()
     assert (tmp_path / "Documents" / "doc1.pdf").exists()
+
+
+def test_format_plan_presentation_relative_paths(tmp_path: Path):
+    from hermes_drive_index.core.organizer_workflow import (
+        OrganizerAction,
+        OrganizerPlan,
+    )
+
+    plan = OrganizerPlan(folder_path=str(tmp_path))
+    plan.actions = [
+        OrganizerAction(
+            action_type="create_folder",
+            source=str(tmp_path / "Archives"),
+            purpose="Archives",
+        ),
+        OrganizerAction(
+            action_type="move",
+            source=str(tmp_path / "file.txt"),
+            target=str(tmp_path / "Archives" / "file.txt"),
+        ),
+        OrganizerAction(
+            action_type="rename",
+            source=str(tmp_path / "old.txt"),
+            target=str(tmp_path / "new.txt"),
+        ),
+        OrganizerAction(
+            action_type="delete",
+            source=str(tmp_path / "temp.log"),
+            purpose="Cleanup",
+        ),
+    ]
+    pres = format_plan_presentation(plan)
+    assert "📁 [CREATE FOLDER] `Archives/`" in pres
+    assert "📦 [MOVE] `file.txt` ➔ `Archives/file.txt`" in pres
+    assert "✏️ [RENAME] `old.txt` ➔ `new.txt`" in pres
+    assert "🗑️ [DELETE/TRASH] `temp.log`" in pres
