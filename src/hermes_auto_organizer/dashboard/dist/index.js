@@ -6790,6 +6790,8 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
     const renderNotice = () => {
       if (!notice) return null;
       return h("div", {
+        role: "status",
+        "aria-live": "polite",
         style: {
           padding: "0.75rem 1rem",
           background: "rgba(59, 130, 246, 0.12)",
@@ -6803,9 +6805,11 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
       },
         h("span", null, notice),
         h("button", {
+          type: "button",
           className: "auto-org-btn auto-org-btn-outline",
           style: { padding: "0.1rem 0.4rem", fontSize: "0.75rem" },
-          onClick: () => setNotice(null)
+          onClick: () => setNotice(null),
+          "aria-label": "Hinweis schließen"
         }, "Schließen")
       );
     };
@@ -6853,15 +6857,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               h("span", { className: "auto-org-badge auto-org-badge-blue" }, syncMappings.length)
             ),
             h("button", {
+              type: "button",
               className: `auto-org-config-btn ${showDiagnosticTools ? "active" : ""}`,
               onClick: () => setShowDiagnosticTools(v => !v),
-              title: "Erweiterte Diagnose-Werkzeuge (Docker Mounts, Wurzeln, SSH, Cleaner)"
+              title: "Erweiterte Diagnose-Werkzeuge (Docker Mounts, Wurzeln, SSH, Cleaner)",
+              "aria-expanded": showDiagnosticTools ? "true" : "false",
+              "aria-controls": "auto-org-diagnostic-panel"
             },
               h("span", null, "🛠️ System & Tools"),
               h("span", { className: "auto-org-badge auto-org-badge-blue" }, `${mountData ? mountData.total_mounts : 0} Mnts`),
               h("span", { style: { fontSize: "0.7rem", opacity: 0.8 } }, showDiagnosticTools ? "▲" : "▼")
             ),
             h("button", {
+              type: "button",
               className: "auto-org-btn auto-org-btn-outline",
               onClick: loadData,
               disabled: loading,
@@ -6869,7 +6877,11 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               "aria-label": "Daten neu laden"
             }, loading ? "..." : "↻ Aktualisieren")
           ),
-          showDiagnosticTools && h("div", { className: "auto-org-toolbar-secondary-panel" },
+          showDiagnosticTools && h("div", {
+            id: "auto-org-diagnostic-panel",
+            className: "auto-org-toolbar-secondary-panel",
+            "aria-label": "Erweiterte Diagnose-Werkzeuge"
+          },
             h("span", { style: { fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, marginRight: "0.25rem" } }, "Diagnose & Wartung:"),
             h("button", {
               className: `auto-org-config-btn ${activeModal === "mounts" ? "active" : ""}`,
