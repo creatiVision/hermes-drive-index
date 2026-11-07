@@ -12,6 +12,7 @@ See LICENSE in the repository root for license information.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import logging
 from pathlib import Path
 import shutil
@@ -375,10 +376,11 @@ class SubtreeProfilerService:
         DiskCleaningPolicy.assert_cleanup_safe(src)
 
         if node.action == "CLEAN_TEMP":
+            # Security: serialize paths with json.dumps to prevent remote script/command injection
             py_code = (
                 "import os, shutil, sys, time\n"
                 "from pathlib import Path\n"
-                f"src = Path('{src}')\n"
+                f"src = Path({json.dumps(str(src))})\n"
                 "if not src.exists(): sys.exit(2)\n"
                 "trash_dir = src.parent / '.hermes_trash'\n"
                 "trash_dir.mkdir(parents=True, exist_ok=True)\n"
@@ -409,11 +411,12 @@ class SubtreeProfilerService:
             if not dst:
                 return None
             DiskCleaningPolicy.assert_cleanup_safe(dst)
+            # Security: serialize paths with json.dumps to prevent remote script/command injection
             py_code = (
                 "import os, shutil, sys\n"
                 "from pathlib import Path\n"
-                f"src = Path('{src}')\n"
-                f"dst = Path('{dst}')\n"
+                f"src = Path({json.dumps(str(src))})\n"
+                f"dst = Path({json.dumps(str(dst))})\n"
                 "if not src.exists(): sys.exit(2)\n"
                 "dst.parent.mkdir(parents=True, exist_ok=True)\n"
                 "shutil.move(str(src), str(dst))\n"
@@ -472,11 +475,12 @@ class SubtreeProfilerService:
                 )
 
                 inspector = SSHNodeInspector()
+                # Security: serialize paths with json.dumps to prevent remote script/command injection
                 py_code = (
                     "import shutil, sys\n"
                     "from pathlib import Path\n"
-                    f"dst = Path('{rec.destination_path}')\n"
-                    f"src = Path('{rec.source_path}')\n"
+                    f"dst = Path({json.dumps(str(rec.destination_path))})\n"
+                    f"src = Path({json.dumps(str(rec.source_path))})\n"
                     "if not dst.exists(): sys.exit(2)\n"
                     "src.parent.mkdir(parents=True, exist_ok=True)\n"
                     "shutil.move(str(dst), str(src))\n"

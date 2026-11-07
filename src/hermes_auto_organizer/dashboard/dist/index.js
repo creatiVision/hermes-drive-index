@@ -3812,21 +3812,36 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
             // View Mode Switcher
-            h("div", { className: "auto-org-view-switcher" },
+            h("div", { className: "auto-org-view-switcher", role: "tablist", "aria-label": "Darstellungsmodus" },
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-f2g",
+                "aria-selected": viewMode === "folders2graph",
+                "aria-controls": "tree-panel-f2g",
+                tabIndex: viewMode === "folders2graph" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "folders2graph" ? "active" : ""}`,
                 onClick: () => setViewMode("folders2graph"),
                 title: "Obsidian folders2graph Struktur-Graph (Ordner, Dateien, Faltung & Syncthing-Fluss)"
               }, "🕸️ folders2graph Obsidian-Graph"),
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-fs",
+                "aria-selected": viewMode === "filesystem",
+                "aria-controls": "tree-panel-fs",
+                tabIndex: viewMode === "filesystem" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "filesystem" ? "active" : ""}`,
                 onClick: () => setViewMode("filesystem"),
                 title: "Vollständiger realer Verzeichnisbaum aller Mount-Punkte, Partitionen und Ordner"
               }, "🌲 Realer Dateibaum"),
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-radar",
+                "aria-selected": viewMode === "radar",
+                "aria-controls": "tree-panel-radar",
+                tabIndex: viewMode === "radar" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "radar" ? "active" : ""}`,
                 onClick: () => setViewMode("radar"),
                 title: "Obsidian-Graph Netzwerk-Radar über alle 5 Rechner und Syncthing-Ringe"
@@ -3969,19 +3984,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Main Body: Content (Folders2Graph OR Filesystem View OR Radar Canvas) + Inspector Drawer
         h("div", { className: "auto-org-multi-tree-body" },
           viewMode === "folders2graph" ?
-            h(Folders2GraphView, {
-              fsTree: fsTree,
-              nodeStates: nodeStates,
-              onSwitchNodeState: handleSwitchNodeState,
-              onOpenContextMenu: handleOpenContextMenu,
-              onShowRollover: handleShowRollover,
-              onHideRollover: handleHideRollover,
-              searchQuery: searchQuery,
-              isPaused: isPaused
-            }) :
+            h("div", { role: "tabpanel", id: "tree-panel-f2g", "aria-labelledby": "tree-tab-f2g", tabIndex: 0, style: { display: "flex", flex: 1, minHeight: 0 } },
+              h(Folders2GraphView, {
+                fsTree: fsTree,
+                nodeStates: nodeStates,
+                onSwitchNodeState: handleSwitchNodeState,
+                onOpenContextMenu: handleOpenContextMenu,
+                onShowRollover: handleShowRollover,
+                onHideRollover: handleHideRollover,
+                searchQuery: searchQuery,
+                isPaused: isPaused
+              })
+            ) :
           viewMode === "filesystem" ?
             // Real Filesystem Tree View Container
-            h("div", { className: "auto-org-fs-view-container" },
+            h("div", { role: "tabpanel", id: "tree-panel-fs", "aria-labelledby": "tree-tab-fs", tabIndex: 0, className: "auto-org-fs-view-container" },
               // Summary Strip
               h("div", { className: "auto-org-fs-tree-summary" },
                 h("div", { className: "auto-org-fs-stats-strip" },
@@ -4009,7 +4026,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             ) :
             // Canvas Viewport for Radar Mode
-            h("div", { className: "auto-org-canvas-viewport" },
+            h("div", { role: "tabpanel", id: "tree-panel-radar", "aria-labelledby": "tree-tab-radar", tabIndex: 0, className: "auto-org-canvas-viewport" },
               h("canvas", {
                 ref: canvasRef,
                 className: "auto-org-tree-canvas",
@@ -10206,21 +10223,31 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
 
           // Subtab navigation
-          h("div", { style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
+          h("div", { role: "tablist", "aria-label": "Bereinigungs-Kategorien", style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
             h("button", {
               type: "button",
+              role: "tab",
+              id: "cleaner-tab-cache",
+              "aria-selected": cleanerActiveTab === "cache",
+              "aria-controls": "cleaner-panel-cache",
+              tabIndex: cleanerActiveTab === "cache" ? 0 : -1,
               className: `auto-org-tab-btn ${cleanerActiveTab === "cache" ? "active" : ""}`,
               onClick: () => setCleanerActiveTab("cache")
             }, "🛡️ Caches & Temp (Level 0)"),
             h("button", {
               type: "button",
+              role: "tab",
+              id: "cleaner-tab-triage",
+              "aria-selected": cleanerActiveTab === "triage",
+              "aria-controls": "cleaner-panel-triage",
+              tabIndex: cleanerActiveTab === "triage" ? 0 : -1,
               className: `auto-org-tab-btn ${cleanerActiveTab === "triage" ? "active" : ""}`,
               onClick: () => setCleanerActiveTab("triage")
             }, `🌐 Wurzel-Triage (${meshTriageCandidates.length || 399} Dateien)`)
           ),
 
           // Tab 1: Safe Cache Purge candidates (Level 0)
-          cleanerActiveTab === "cache" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+          cleanerActiveTab === "cache" && h("div", { role: "tabpanel", id: "cleaner-panel-cache", "aria-labelledby": "cleaner-tab-cache", tabIndex: 0, style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
               h("div", null,
                 h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, "🛡️ Level 0: Sichere Cache- & Temp-Bereinigung"),
@@ -10261,7 +10288,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
 
           // Tab 2: Multi-Geräte Wurzel-Triage
-          cleanerActiveTab === "triage" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+          cleanerActiveTab === "triage" && h("div", { role: "tabpanel", id: "cleaner-panel-triage", "aria-labelledby": "cleaner-tab-triage", tabIndex: 0, style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
               h("div", null,
                 h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#60a5fa", margin: 0 } }, "🌐 Multi-Geräte Wurzel-Triage (work-data, privat-data, nosync)"),
