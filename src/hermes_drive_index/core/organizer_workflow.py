@@ -263,30 +263,34 @@ def propose_plan(
     plan = OrganizerPlan(folder_path=str(base))
     created_folders: set[str] = set()
 
+    base_str = str(base)
+
     if organize_mode == "downloads":
         # Group flat files by category
+        # Bolt performance optimization: use os.path functions and direct string operations
+        # instead of instantiating pathlib.Path objects inside the file iteration loop.
         for f in files:
             if f.is_dir:
                 continue
             cat = EXT_TO_CATEGORY.get(f.extension, "Other")
-            dest_dir = base / cat
-            if str(dest_dir) not in created_folders and not dest_dir.exists():
-                created_folders.add(str(dest_dir))
+            dest_dir_str = os.path.join(base_str, cat)
+            if dest_dir_str not in created_folders and not os.path.exists(dest_dir_str):
+                created_folders.add(dest_dir_str)
                 plan.actions.append(
                     OrganizerAction(
                         action_type="create_folder",
-                        source=str(dest_dir),
+                        source=dest_dir_str,
                         purpose=f"Destination for {cat} files",
                     )
                 )
 
-            dest_path = dest_dir / f.name
-            if dest_path != Path(f.path):
+            dest_path_str = os.path.join(dest_dir_str, f.name)
+            if dest_path_str != f.path:
                 plan.actions.append(
                     OrganizerAction(
                         action_type="move",
                         source=f.path,
-                        target=str(dest_path),
+                        target=dest_path_str,
                         purpose=f"Move {cat} file into {cat}/",
                     )
                 )
@@ -330,15 +334,20 @@ def propose_plan(
 
 def format_plan_presentation(plan: OrganizerPlan) -> str:
     """Format the plan presentation with clear icons and readable paths."""
-    base_path = Path(plan.folder_path)
+    base_str = str(Path(plan.folder_path))
+    base_prefix = base_str if base_str.endswith(os.sep) else base_str + os.sep
 
+    # Bolt performance optimization: use fast prefix slicing and os.path.basename
+    # instead of Path.relative_to and Path object instantiation in loop.
     def _rel(p_str: str | None) -> str:
         if not p_str:
             return ""
-        try:
-            return str(Path(p_str).relative_to(base_path))
-        except ValueError:
-            return p_str
+        p_norm = p_str.rstrip(os.sep) if p_str != os.sep else p_str
+        if p_norm.startswith(base_prefix):
+            return p_norm[len(base_prefix):]
+        if p_norm == base_str:
+            return "."
+        return p_str
 
     lines = [
         f"📋 **Summary Totals**: {plan.counts['renamed']} renamed, {plan.counts['moved']} moved, "
@@ -350,9 +359,10 @@ def format_plan_presentation(plan: OrganizerPlan) -> str:
         if a.action_type == "create_folder":
             lines.append(f"{i}. 📁 [CREATE FOLDER] `{_rel(a.source)}/` ({a.purpose})")
         elif a.action_type == "move":
-            lines.append(f"{i}. 📦 [MOVE] `{Path(a.source).name}` ➔ `{_rel(a.target)}`")
+            lines.append(f"{i}. 📦 [MOVE] `{os.path.basename(a.source)}` ➔ `{_rel(a.target)}`")
         elif a.action_type == "rename":
-            lines.append(f"{i}. ✏️ [RENAME] `{Path(a.source).name}` ➔ `{Path(a.target or '').name}`")
+            tgt_name = os.path.basename(a.target) if a.target else ""
+            lines.append(f"{i}. ✏️ [RENAME] `{os.path.basename(a.source)}` ➔ `{tgt_name}`")
         elif a.action_type == "delete":
             lines.append(f"{i}. 🗑️ [DELETE/TRASH] `{_rel(a.source)}` ({a.purpose})")
 
