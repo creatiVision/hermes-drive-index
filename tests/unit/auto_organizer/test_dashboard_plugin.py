@@ -816,3 +816,15 @@ def test_plugin_api_db_pass_default_empty(monkeypatch):
         assert reloaded_api.DSN.startswith("postgresql://pgadmin@")
     finally:
         importlib.reload(plugin_api)
+
+
+def test_dashboard_bundle_inspector_clipboard_accessibility():
+    """Verify that the dashboard frontend bundle contains accessible copy feedback without blocking alert dialogs."""
+    bundle_path = Path(__file__).resolve().parents[3] / "src" / "hermes_auto_organizer" / "dashboard" / "dist" / "index.js"
+    assert bundle_path.exists(), "dashboard frontend bundle dist/index.js must exist"
+
+    content = bundle_path.read_text(encoding="utf-8")
+    assert "aria-live" in content, "index.js should declare aria-live regions for dynamic clipboard feedback"
+    assert "Dateipfad in die Zwischenablage kopieren" in content, "Inspector copy button must have descriptive aria-label"
+    assert "✓ Kopiert!" in content, "Inline visual copy confirmation label must exist"
+    assert 'alert("Pfad in Zwischenablage kopiert:' not in content, "Blocking alert dialog should be replaced by non-blocking inline feedback"

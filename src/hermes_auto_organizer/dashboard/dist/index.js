@@ -2779,6 +2779,7 @@
       "node_media_nosync", "node_media_empty", "node_home", "node_"
     ]));
     const [fsSelectedNode, setFsSelectedNode] = useState(null);
+    const [copiedPath, setCopiedPath] = useState(false);
     const [isRescanning, setIsRescanning] = useState(false);
     const [rescanMsg, setRescanMsg] = useState("");
 
@@ -4071,14 +4072,19 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   ),
                   h("button", {
                     type: "button",
-                    className: "auto-org-pill-btn",
+                    className: `auto-org-pill-btn ${copiedPath ? "fit" : ""}`,
                     style: { padding: "0.15rem 0.45rem", fontSize: "0.68rem" },
                     onClick: () => {
-                      navigator.clipboard.writeText(fsSelectedNode.path);
-                      alert("Pfad in Zwischenablage kopiert: " + fsSelectedNode.path);
+                      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(fsSelectedNode.path).catch(() => {});
+                      }
+                      setCopiedPath(true);
+                      setTimeout(() => setCopiedPath(false), 2000);
                     },
-                    title: "Pfad kopieren"
-                  }, "📋 Kopieren")
+                    "aria-label": copiedPath ? "Pfad erfolgreich kopiert" : "Dateipfad in die Zwischenablage kopieren",
+                    "aria-live": "polite",
+                    title: copiedPath ? "Pfad kopiert!" : "Pfad kopieren"
+                  }, copiedPath ? "✓ Kopiert!" : "📋 Kopieren")
                 ),
                 fsSelectedNode.mount_point && h("div", { className: "auto-org-meta-row", style: { marginTop: "0.4rem" } },
                   h("span", { className: "auto-org-meta-label" }, "Mount-Point:"),
@@ -4348,12 +4354,14 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
                   type: "button",
                   className: "auto-org-btn auto-org-btn-outline",
                   style: { flex: 1, fontSize: "0.75rem" },
+                  "aria-label": expandedIds.has(selectedNode.id) ? "Diesen Ast in der Baumansicht einklappen" : "Diesen Ast in der Baumansicht ausklappen",
                   onClick: () => toggleExpand(selectedNode.id)
                 }, expandedIds.has(selectedNode.id) ? "Ast Einklappen" : "Ast Ausklappen"),
                 h("button", {
                   type: "button",
                   className: "auto-org-btn auto-org-btn-primary",
                   style: { flex: 1, fontSize: "0.75rem" },
+                  "aria-label": "Ausgewählten Knoten auf dem Bildschirm zentrieren",
                   onClick: () => centerNode(selectedNode)
                 }, "🎯 Zentrieren")
               )
