@@ -10214,21 +10214,31 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
 
           // Subtab navigation
-          h("div", { style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
+          h("div", { role: "tablist", "aria-label": "Bereinigungs-Kategorien", style: { display: "flex", gap: "0.5rem", borderBottom: "1px solid #334155", paddingBottom: "0.5rem" } },
             h("button", {
               type: "button",
+              role: "tab",
+              id: "cleaner-tab-cache",
+              "aria-selected": cleanerActiveTab === "cache",
+              "aria-controls": "cleaner-panel-cache",
+              tabIndex: cleanerActiveTab === "cache" ? 0 : -1,
               className: `auto-org-tab-btn ${cleanerActiveTab === "cache" ? "active" : ""}`,
               onClick: () => setCleanerActiveTab("cache")
             }, "🛡️ Caches & Temp (Level 0)"),
             h("button", {
               type: "button",
+              role: "tab",
+              id: "cleaner-tab-triage",
+              "aria-selected": cleanerActiveTab === "triage",
+              "aria-controls": "cleaner-panel-triage",
+              tabIndex: cleanerActiveTab === "triage" ? 0 : -1,
               className: `auto-org-tab-btn ${cleanerActiveTab === "triage" ? "active" : ""}`,
               onClick: () => setCleanerActiveTab("triage")
             }, `🌐 Wurzel-Triage (${meshTriageCandidates.length || 399} Dateien)`)
           ),
 
           // Tab 1: Safe Cache Purge candidates (Level 0)
-          cleanerActiveTab === "cache" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+          cleanerActiveTab === "cache" && h("div", { role: "tabpanel", id: "cleaner-panel-cache", "aria-labelledby": "cleaner-tab-cache", tabIndex: 0, style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
               h("div", null,
                 h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#4ade80", margin: 0 } }, "🛡️ Level 0: Sichere Cache- & Temp-Bereinigung"),
@@ -10269,7 +10279,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
 
           // Tab 2: Multi-Geräte Wurzel-Triage
-          cleanerActiveTab === "triage" && h("div", { style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
+          cleanerActiveTab === "triage" && h("div", { role: "tabpanel", id: "cleaner-panel-triage", "aria-labelledby": "cleaner-tab-triage", tabIndex: 0, style: { background: "#1e293b", border: "1px solid #334155", borderRadius: "0.5rem", padding: "1rem" } },
             h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" } },
               h("div", null,
                 h("h4", { style: { fontWeight: 700, fontSize: "0.95rem", color: "#60a5fa", margin: 0 } }, "🌐 Multi-Geräte Wurzel-Triage (work-data, privat-data, nosync)"),

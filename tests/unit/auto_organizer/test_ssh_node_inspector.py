@@ -199,3 +199,72 @@ def test_get_node_docker_services_invalid_json_logged(caplog):
         assert len(services) == 1
         assert services[0]["name"] == "shared-pg"
         assert "Failed to parse container JSON line" in caplog.text
+
+
+def test_subtree_profiler_service_remote_node_path_escaping():
+    """Verify paths with quotes and command injection payloads are safely serialized with json.dumps."""
+    import json
+    import subprocess
+    import uuid
+
+    from hermes_auto_organizer.application.use_cases.subtree_profiler_service import (
+        SubtreeProfilerService,
+    )
+    from hermes_auto_organizer.domain.models import (
+        ExecutionRecord,
+        OperationType,
+        RollbackState,
+    )
+    from hermes_auto_organizer.domain.profiler_models import TreeDiffNode
+
+    service = SubtreeProfilerService()
+    service._current_node_id = "debian1"
+
+    malicious_src = "/media/sdc2-2tb-work-privat-xchg/test'); os.system('whoami'); #.tmp"
+    malicious_dst = "/media/sdc2-2tb-work-privat-xchg/test'); os.system('reboot'); #.archive"
+
+    clean_node = TreeDiffNode(
+        source_path=malicious_src,
+        target_path="",
+        action="CLEAN_TEMP",
+        reason_de="Test",
+    )
+    move_node = TreeDiffNode(
+        source_path=malicious_src,
+        target_path=malicious_dst,
+        action="MOVE",
+        reason_de="Test",
+    )
+
+    with patch("hermes_auto_organizer.infrastructure.storage.ssh_node_inspector.SSHNodeInspector.execute_remote") as mock_exec:
+        mock_exec.return_value = (True, "trash:///mock_trash", 5.0)
+        rec = service._execute_remote_node(clean_node, uuid.uuid4())
+        assert rec is not None
+        executed_cmd = mock_exec.call_args[0][1]
+        assert subprocess.list2cmdline([f"Path({json.dumps(malicious_src)})"])[1:-1] in executed_cmd
+
+        mock_exec.return_value = (True, "OK\n", 5.0)
+        rec = service._execute_remote_node(move_node, uuid.uuid4())
+        assert rec is not None
+        executed_cmd = mock_exec.call_args[0][1]
+        assert subprocess.list2cmdline([f"Path({json.dumps(malicious_src)})"])[1:-1] in executed_cmd
+        assert subprocess.list2cmdline([f"Path({json.dumps(malicious_dst)})"])[1:-1] in executed_cmd
+
+        # Test rollback serialization
+        batch_id = uuid.uuid4()
+        service._execution_history[batch_id] = [
+            ExecutionRecord(
+                id=uuid.uuid4(),
+                batch_id=batch_id,
+                source_path=malicious_src,
+                destination_path=malicious_dst,
+                operation_type=OperationType.DIRECTORY_MOVE,
+                rollback_state=RollbackState.EXECUTED,
+            )
+        ]
+        mock_exec.return_value = (True, "ROLLBACK_OK\n", 5.0)
+        res = service.rollback_batch(batch_id)
+        assert res["reverted_count"] == 1
+        executed_cmd = mock_exec.call_args[0][1]
+        assert subprocess.list2cmdline([f"Path({json.dumps(malicious_dst)})"])[1:-1] in executed_cmd
+        assert subprocess.list2cmdline([f"Path({json.dumps(malicious_src)})"])[1:-1] in executed_cmd
