@@ -9,3 +9,8 @@
 **Vulnerability:** Remote node inspection and subtree profiling commands passed filesystem paths and parameters directly into inline Python script templates (`f"root = Path('{remote_path}')\n"`), allowing arbitrary Python execution and shell command injection over SSH.
 **Learning:** Formatting parameters into Python code strings executed remotely via `python3 -c` is equivalent to an unsanitized `eval()` on remote machines.
 **Prevention:** Always serialize untrusted or filesystem-supplied paths with `json.dumps(str(...))` or pass them as separate command-line arguments to avoid breaking out of string literals.
+
+## 2026-04-18 - Critical System Directory Cleanup Escape
+**Vulnerability:** `DiskCleaningPolicy.assert_cleanup_safe` checked exact equality against `CRITICAL_SYSTEM_PATHS` (e.g. `/etc`), allowing child directories and files within critical system directories (e.g., `/etc/ssh`, `/var/log`, `/usr/bin`) to bypass validation and be admitted for trash cleanup or migration.
+**Learning:** Exact set membership checks for path blacklists fail to protect child elements under protected system trees.
+**Prevention:** Check path ancestry against critical paths using `Path.parents` or hierarchical prefix checking rather than exact equality alone.

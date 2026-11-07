@@ -31,8 +31,19 @@ def test_critical_system_paths_rejection():
     with pytest.raises(PolicyViolationError):
         DiskCleaningPolicy.assert_cleanup_safe("/media/work-data")
 
+    # Critical system subpaths and nested files must also be rejected
+    with pytest.raises(PolicyViolationError):
+        DiskCleaningPolicy.assert_cleanup_safe("/etc/ssh")
+
+    with pytest.raises(PolicyViolationError):
+        DiskCleaningPolicy.assert_cleanup_safe("/usr/bin/python3")
+
+    with pytest.raises(PolicyViolationError):
+        DiskCleaningPolicy.assert_cleanup_safe("/var/log/syslog")
+
     # Safe subpath should not raise
     DiskCleaningPolicy.assert_cleanup_safe("/media/work-data/911_IT-wiki/test.mp4")
+    DiskCleaningPolicy.assert_cleanup_safe("/home/mb/Downloads/test.zip")
 
 
 def test_remove_nested_trash_candidates():
