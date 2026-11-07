@@ -128,11 +128,16 @@ class DiskCleaningPolicy:
     @classmethod
     def assert_cleanup_safe(cls, target_path: str) -> None:
         """
-        Verify that path is not a critical OS root or direct system directory.
+        Verify that path is not a critical OS root or direct system directory,
+        nor any subdirectory or file inside a critical system directory.
         Raises PolicyViolationError if unsafe.
         """
         normalized = cls.normalize_path(target_path)
-        if normalized in cls.CRITICAL_SYSTEM_PATHS:
+        p = Path(normalized)
+        if normalized in cls.CRITICAL_SYSTEM_PATHS or any(
+            str(parent) in cls.CRITICAL_SYSTEM_PATHS and str(parent) != "/"
+            for parent in p.parents
+        ):
             raise PolicyViolationError(
                 f"Critical system directory cannot be marked for cleanup: {target_path}"
             )
