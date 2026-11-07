@@ -3813,21 +3813,36 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
           ),
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
             // View Mode Switcher
-            h("div", { className: "auto-org-view-switcher" },
+            h("div", { className: "auto-org-view-switcher", role: "tablist", "aria-label": "Darstellungsmodus" },
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-f2g",
+                "aria-selected": viewMode === "folders2graph",
+                "aria-controls": "tree-panel-f2g",
+                tabIndex: viewMode === "folders2graph" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "folders2graph" ? "active" : ""}`,
                 onClick: () => setViewMode("folders2graph"),
                 title: "Obsidian folders2graph Struktur-Graph (Ordner, Dateien, Faltung & Syncthing-Fluss)"
               }, "🕸️ folders2graph Obsidian-Graph"),
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-fs",
+                "aria-selected": viewMode === "filesystem",
+                "aria-controls": "tree-panel-fs",
+                tabIndex: viewMode === "filesystem" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "filesystem" ? "active" : ""}`,
                 onClick: () => setViewMode("filesystem"),
                 title: "Vollständiger realer Verzeichnisbaum aller Mount-Punkte, Partitionen und Ordner"
               }, "🌲 Realer Dateibaum"),
               h("button", {
                 type: "button",
+                role: "tab",
+                id: "tree-tab-radar",
+                "aria-selected": viewMode === "radar",
+                "aria-controls": "tree-panel-radar",
+                tabIndex: viewMode === "radar" ? 0 : -1,
                 className: `auto-org-view-switcher-btn ${viewMode === "radar" ? "active" : ""}`,
                 onClick: () => setViewMode("radar"),
                 title: "Obsidian-Graph Netzwerk-Radar über alle 5 Rechner und Syncthing-Ringe"
@@ -3970,19 +3985,21 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
         // Main Body: Content (Folders2Graph OR Filesystem View OR Radar Canvas) + Inspector Drawer
         h("div", { className: "auto-org-multi-tree-body" },
           viewMode === "folders2graph" ?
-            h(Folders2GraphView, {
-              fsTree: fsTree,
-              nodeStates: nodeStates,
-              onSwitchNodeState: handleSwitchNodeState,
-              onOpenContextMenu: handleOpenContextMenu,
-              onShowRollover: handleShowRollover,
-              onHideRollover: handleHideRollover,
-              searchQuery: searchQuery,
-              isPaused: isPaused
-            }) :
+            h("div", { role: "tabpanel", id: "tree-panel-f2g", "aria-labelledby": "tree-tab-f2g", tabIndex: 0, style: { display: "flex", flex: 1, minHeight: 0 } },
+              h(Folders2GraphView, {
+                fsTree: fsTree,
+                nodeStates: nodeStates,
+                onSwitchNodeState: handleSwitchNodeState,
+                onOpenContextMenu: handleOpenContextMenu,
+                onShowRollover: handleShowRollover,
+                onHideRollover: handleHideRollover,
+                searchQuery: searchQuery,
+                isPaused: isPaused
+              })
+            ) :
           viewMode === "filesystem" ?
             // Real Filesystem Tree View Container
-            h("div", { className: "auto-org-fs-view-container" },
+            h("div", { role: "tabpanel", id: "tree-panel-fs", "aria-labelledby": "tree-tab-fs", tabIndex: 0, className: "auto-org-fs-view-container" },
               // Summary Strip
               h("div", { className: "auto-org-fs-tree-summary" },
                 h("div", { className: "auto-org-fs-stats-strip" },
@@ -4010,7 +4027,7 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
             ) :
             // Canvas Viewport for Radar Mode
-            h("div", { className: "auto-org-canvas-viewport" },
+            h("div", { role: "tabpanel", id: "tree-panel-radar", "aria-labelledby": "tree-tab-radar", tabIndex: 0, className: "auto-org-canvas-viewport" },
               h("canvas", {
                 ref: canvasRef,
                 className: "auto-org-tree-canvas",
