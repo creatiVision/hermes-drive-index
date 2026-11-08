@@ -44,7 +44,9 @@ class SymlinkMigratorUseCase:
         if not dest_dir or not Path(dest_dir).is_dir():
             raise FileNotFoundError(f"Destination root directory does not exist: {destination_dir}")
 
+        # Security: Prevent operating on critical OS paths or protected mount roots
         DiskCleaningPolicy.assert_cleanup_safe(src)
+        DiskCleaningPolicy.assert_cleanup_safe(dest_dir)
 
         # Check that we are not migrating into the source itself
         if DiskCleaningPolicy.is_path_inside(dest_dir, src):
@@ -52,6 +54,7 @@ class SymlinkMigratorUseCase:
 
         resolved_name = name or Path(src).name
         target_dest = str(Path(dest_dir) / resolved_name)
+        DiskCleaningPolicy.assert_cleanup_safe(target_dest)
 
         if Path(target_dest).exists():
             raise FileExistsError(f"Target destination already exists: {target_dest}")

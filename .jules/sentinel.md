@@ -14,3 +14,8 @@
 **Vulnerability:** `DiskCleaningPolicy.assert_cleanup_safe` checked exact equality against `CRITICAL_SYSTEM_PATHS` (e.g. `/etc`), allowing child directories and files within critical system directories (e.g., `/etc/ssh`, `/var/log`, `/usr/bin`) to bypass validation and be admitted for trash cleanup or migration.
 **Learning:** Exact set membership checks for path blacklists fail to protect child elements under protected system trees.
 **Prevention:** Check path ancestry against critical paths using `Path.parents` or hierarchical prefix checking rather than exact equality alone.
+
+## 2026-04-19 - Unchecked Migration Destination Path in Symlink Migrator
+**Vulnerability:** `SymlinkMigratorUseCase.migrate` checked source directory safety via `DiskCleaningPolicy.assert_cleanup_safe(src)` but omitted safety assertions on `dest_dir` and `target_dest`, permitting directory migrations into critical OS trees (e.g. `/etc`, `/usr`) or protected mount roots.
+**Learning:** File move and migration operations often focus defensive validation on the source operand being moved or deleted, inadvertently treating the destination directory as inherently safe.
+**Prevention:** Always assert path safety and non-critical containment on both source and destination operands (`DiskCleaningPolicy.assert_cleanup_safe`) before filesystem mutation.
