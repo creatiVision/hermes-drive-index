@@ -34,3 +34,7 @@
 ## 2026-04-02 - Vector L2 Norm & Set Allocation Overhead in Semantic Content Routing
 **Learning:** In `AutonomousContentRouter.propose_routing`, repeatedly computing `math.sqrt(sum(x * x))` for vector norms, allocating temporary `set()` objects for document types, entities, and extensions, and running multi-pass generator expressions inside the $O(N \times M)$ folder comparison loop creates severe CPU and GC overhead. Pre-computing folder purpose norms and sets once before the file loop and using a single-pass accumulator for dot-products in `_cosine_similarity` speeds up content routing proposals by ~3.15x.
 **Action:** When performing $O(N \times M)$ candidate matching across semantic embeddings or categorical metadata, pre-compute target centroid L2 norms and lookup sets outside the comparison loop and compute candidate vector norms only once per candidate.
+
+## 2026-11-08 - Path Allocation & Redundant Folder String Join in Downloads Organization
+**Learning:** In `plan_download_organization`, repeatedly constructing `base / cat / year` and `dest_dir / f.name` using `pathlib.Path` objects and string conversions in the file iteration loop introduces heavy allocation overhead. Memoizing directory strings via a local `(category, year)` cache and using `os.path.join` yields a ~10x speedup.
+**Action:** In file categorization and destination planning loops, resolve the base folder string once, memoize destination directory paths by category key, and construct target paths using `os.path.join`.
