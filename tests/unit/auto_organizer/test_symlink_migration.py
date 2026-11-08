@@ -6,6 +6,7 @@ import pytest
 
 from hermes_auto_organizer.application.use_cases.symlink_migrator import SymlinkMigratorUseCase
 from hermes_auto_organizer.domain.models import MigrationStatus
+from hermes_auto_organizer.domain.policies import PolicyViolationError
 from hermes_auto_organizer.infrastructure.storage.migration_service import FilesystemMigrationService
 
 
@@ -65,3 +66,27 @@ def test_migration_size_calculation_os_error(tmp_path: Path, caplog: pytest.LogC
     assert record.status == MigrationStatus.ACTIVE
     assert record.size_bytes == 0
     assert "Failed to calculate migrated directory size" in caplog.text
+
+
+def test_migration_destination_safety_checks(tmp_path: Path):
+    source_dir = tmp_path / "source_models"
+    source_dir.mkdir()
+    (source_dir / "weights.bin").write_bytes(b"dummy model weights data")
+
+    service = FilesystemMigrationService()
+    use_case = SymlinkMigratorUseCase(service)
+
+    # Migrating to critical system root or subdirectory should raise PolicyViolationError
+    with pytest.raises(PolicyViolationError):
+        use_case.migrate(str(source_dir), "/etc")
+
+    with pytest.raises(PolicyViolationError):
+        use_case.migrate(str(source_dir), "/usr")
+
+    # Migrating into protected mount roots should raise PolicyViolationError
+    with pytest.raises(PolicyViolationError):
+        use_case.migrate(str(source_dir), "/media")
+
+    # Migrating into critical subdirectory (e.g. /etc/ssl) should raise PolicyViolationError
+    with pytest.raises(PolicyViolationError):
+        use_case.migrate(str(source_dir), "/etc/ssl")
