@@ -3812,8 +3812,36 @@ const newPanY = mouseY - (mouseY - transformRef.current.panY) * (newScale / tran
               )
           ),
           h("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" } },
-            // View Mode Switcher
-            h("div", { className: "auto-org-view-switcher", role: "tablist", "aria-label": "Darstellungsmodus" },
+            // View Mode Switcher (WAI-ARIA Tablist with Arrow-Key Roving Tabindex)
+            h("div", {
+              className: "auto-org-view-switcher",
+              role: "tablist",
+              "aria-label": "Darstellungsmodus",
+              onKeyDown: (e) => {
+                const modes = ["folders2graph", "filesystem", "radar"];
+                const currentIndex = modes.indexOf(viewMode);
+                let nextIndex = -1;
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                  nextIndex = (currentIndex + 1) % modes.length;
+                } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                  nextIndex = (currentIndex - 1 + modes.length) % modes.length;
+                } else if (e.key === "Home") {
+                  nextIndex = 0;
+                } else if (e.key === "End") {
+                  nextIndex = modes.length - 1;
+                }
+                if (nextIndex !== -1) {
+                  e.preventDefault();
+                  const targetMode = modes[nextIndex];
+                  setViewMode(targetMode);
+                  const tabId = targetMode === "folders2graph" ? "tree-tab-f2g" : targetMode === "filesystem" ? "tree-tab-fs" : "tree-tab-radar";
+                  setTimeout(() => {
+                    const btn = document.getElementById(tabId);
+                    if (btn) btn.focus();
+                  }, 0);
+                }
+              }
+            },
               h("button", {
                 type: "button",
                 role: "tab",
