@@ -859,3 +859,19 @@ def test_execute_batch_rejects_critical_system_paths(tmp_path: Path):
         assert data["executed_count"] == 0
         assert data["failed_count"] == 1
         assert src_file.exists()  # Source was not trashed or moved
+
+
+def test_dashboard_bundle_view_switcher_keyboard_navigation():
+    """Verify that the MultiComputerTreeWindow view switcher supports arrow-key roving tabindex navigation."""
+    bundle_path = Path(__file__).resolve().parents[3] / "src" / "hermes_auto_organizer" / "dashboard" / "dist" / "index.js"
+    assert bundle_path.exists(), "dashboard frontend bundle dist/index.js must exist"
+
+    content = bundle_path.read_text(encoding="utf-8")
+    assert 'role: "tablist"' in content
+    assert 'id: "tree-tab-f2g"' in content
+    assert 'id: "tree-tab-fs"' in content
+    assert 'id: "tree-tab-radar"' in content
+    assert 'e.key === "ArrowRight"' in content
+    assert 'e.key === "ArrowLeft"' in content
+    assert 'e.key === "Home"' in content
+    assert 'e.key === "End"' in content

@@ -14,3 +14,7 @@
 ## 2026-11-05 - Keyboard Accessible Workflow Steppers with WAI-ARIA Tabs
 **Learning:** Multi-step wizard or stepper cards in custom dashboards rendered as clickable `<div>` elements are completely unreachable to keyboard-only users and lack semantic role context (`role="tablist"` / `role="tab"`), state indications (`aria-selected`), and gated accessibility (`aria-disabled`).
 **Action:** Always wrap multi-step wizard navigators with `role="tablist"` and give each step card `role="tab"`, `tabIndex={0}`, `aria-selected`, `aria-label`, and `onKeyDown` handlers for `Enter` and `Space` that mirror click actions and honor step-gating policies.
+
+## 2026-11-08 - WAI-ARIA Roving Focus and Arrow-Key Navigation on Tablists
+**Learning:** In React components using `role="tablist"` with `tabIndex={0}` for selected and `-1` for inactive tabs, keyboard-only users cannot navigate between tabs unless an explicit `onKeyDown` handler intercepts arrow keys (`ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`) as well as `Home`/`End` to cycle active tab selection and move DOM focus.
+**Action:** Always attach an `onKeyDown` handler to `role="tablist"` containers in the dashboard to implement standard roving tabindex navigation and programmatically focus the active tab button.
