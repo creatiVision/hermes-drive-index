@@ -19,3 +19,8 @@
 **Vulnerability:** `SymlinkMigratorUseCase.migrate` checked source directory safety via `DiskCleaningPolicy.assert_cleanup_safe(src)` but omitted safety assertions on `dest_dir` and `target_dest`, permitting directory migrations into critical OS trees (e.g. `/etc`, `/usr`) or protected mount roots.
 **Learning:** File move and migration operations often focus defensive validation on the source operand being moved or deleted, inadvertently treating the destination directory as inherently safe.
 **Prevention:** Always assert path safety and non-critical containment on both source and destination operands (`DiskCleaningPolicy.assert_cleanup_safe`) before filesystem mutation.
+
+## 2026-04-20 - Missing Critical OS Tree Boundary Checks in File Execution Runners
+**Vulnerability:** `AtomicExecutionRunner.execute_move` and dashboard `execute_batch` performed file relocations and trash operations without checking paths against `DiskCleaningPolicy.assert_cleanup_safe`, enabling malicious or erroneously crafted rules to move files out of or into critical operating system directories (e.g., `/etc`, `/usr`, `/var`, `/bin`) and trash system files.
+**Learning:** Container mount checks (`docker_mount_service.validate_destination_path`) verify container mount mappings and write permissions, but do not protect against operations within mounted or host-level critical OS trees.
+**Prevention:** Enforce defense-in-depth by calling `DiskCleaningPolicy.assert_cleanup_safe` directly within execution engines (`execute_move` and `execute_batch`) on both source and destination operands before any filesystem mutation.

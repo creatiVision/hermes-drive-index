@@ -828,3 +828,34 @@ def test_dashboard_bundle_inspector_clipboard_accessibility():
     assert "Dateipfad in die Zwischenablage kopieren" in content, "Inspector copy button must have descriptive aria-label"
     assert "✓ Kopiert!" in content, "Inline visual copy confirmation label must exist"
     assert 'alert("Pfad in Zwischenablage kopiert:' not in content, "Blocking alert dialog should be replaced by non-blocking inline feedback"
+
+
+def test_execute_batch_rejects_critical_system_paths(tmp_path: Path):
+    """Verify that execute_batch aborts moves attempting to target or source critical system paths."""
+    from hermes_auto_organizer.dashboard.plugin_api import _DRY_RUN_CACHE
+
+    src_file = tmp_path / "normal_file.txt"
+    src_file.write_text("hello", encoding="utf-8")
+
+    batch_id = "dry_test_critical_rejection"
+    _DRY_RUN_CACHE[batch_id] = {
+        "actions": [
+            {
+                "file_id": str(uuid4()),
+                "file_name": "normal_file.txt",
+                "source_path": str(src_file),
+                "destination_path": "/etc/shadow",
+                "safe_to_execute": True,
+                "operation": "LOCAL_MOVE",
+            }
+        ]
+    }
+
+    mock_conn = AsyncMock()
+    with patch("hermes_auto_organizer.dashboard.plugin_api._get_connection", return_value=mock_conn):
+        resp = client.post("/api/plugins/auto-organizer/execute", json={"dry_run_batch_id": batch_id})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["executed_count"] == 0
+        assert data["failed_count"] == 1
+        assert src_file.exists()  # Source was not trashed or moved
