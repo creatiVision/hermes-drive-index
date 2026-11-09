@@ -28,6 +28,7 @@ from hermes_auto_organizer.domain.models import (
     OperationType,
     RollbackState,
 )
+from hermes_auto_organizer.domain.policies import DiskCleaningPolicy
 from hermes_auto_organizer.infrastructure.storage.hashing import compute_full_sha256
 from hermes_auto_organizer.infrastructure.storage.metadata_writer import write_file_metadata
 
@@ -45,6 +46,10 @@ class AtomicExecutionRunner:
     def execute_move(cls, intent: MoveIntent, batch_id: UUID) -> ExecutionRecord:
         source = Path(intent.source_path)
         destination = Path(intent.destination_path)
+
+        # Security: protect critical system directories and OS root trees from unwanted relocation or overwrite
+        DiskCleaningPolicy.assert_cleanup_safe(str(source))
+        DiskCleaningPolicy.assert_cleanup_safe(str(destination))
 
         if not source.exists():
             raise ExecutionError(f"Source file does not exist: {source}")

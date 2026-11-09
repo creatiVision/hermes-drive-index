@@ -49,6 +49,7 @@ from hermes_auto_organizer.domain.models import (
 )
 from hermes_auto_organizer.application.services.folder_purpose_distiller import FolderPurposeDistiller
 from hermes_auto_organizer.application.services.autonomous_content_router import AutonomousContentRouter
+from hermes_auto_organizer.domain.policies import DiskCleaningPolicy, PolicyViolationError
 from hermes_auto_organizer.domain.rule_engine import (
     evaluate_modular_rule,
     resolve_destination_path,
@@ -1687,6 +1688,15 @@ async def execute_batch(req: ExecuteRequest) -> Dict[str, Any]:
         m_check = docker_mount_service.validate_destination_path(str(dst))
         if not m_check["valid"]:
             logger.warning("Aborting execution of %s -> %s: %s", src, dst, m_check["message"])
+            failed_count += 1
+            continue
+
+        # Security: protect critical system directories from unwanted relocation, overwrites or trashing
+        try:
+            DiskCleaningPolicy.assert_cleanup_safe(str(src))
+            DiskCleaningPolicy.assert_cleanup_safe(str(dst))
+        except PolicyViolationError as pve:
+            logger.warning("Aborting unsafe execution %s -> %s: %s", src, dst, pve)
             failed_count += 1
             continue
 

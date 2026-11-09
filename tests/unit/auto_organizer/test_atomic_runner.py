@@ -81,3 +81,36 @@ def test_atomic_move_carries_metadata(tmp_path: Path):
     assert meta["summary"] == "AI Zusammenfassung: Rechnung 2026"
     assert "Rechnung" in meta["tags"]
     assert meta["document_type"] == "invoice"
+
+
+import pytest
+from hermes_auto_organizer.domain.policies import PolicyViolationError
+
+
+def test_atomic_move_rejects_critical_system_paths(tmp_path: Path):
+    source_file = tmp_path / "test.txt"
+    source_file.write_text("safe content", encoding="utf-8")
+
+    # Destination pointing to critical system path
+    intent_bad_dest = MoveIntent(
+        file_id=uuid4(),
+        source_path=str(source_file),
+        destination_path="/etc/passwd",
+        source_sha256="",
+        operation_type=OperationType.LOCAL_MOVE,
+    )
+
+    with pytest.raises(PolicyViolationError, match="Critical system directory"):
+        AtomicExecutionRunner.execute_move(intent_bad_dest, uuid4())
+
+    # Source pointing to critical system path
+    intent_bad_src = MoveIntent(
+        file_id=uuid4(),
+        source_path="/etc/shadow",
+        destination_path=str(tmp_path / "stolen.txt"),
+        source_sha256="",
+        operation_type=OperationType.LOCAL_MOVE,
+    )
+
+    with pytest.raises(PolicyViolationError, match="Critical system directory"):
+        AtomicExecutionRunner.execute_move(intent_bad_src, uuid4())
