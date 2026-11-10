@@ -22,7 +22,7 @@ import shutil
 from typing import Sequence
 
 from .cleaner import EXT_TO_CATEGORY, detect_duplicates
-from .local_scanner import LocalFile, safe_trash, scan_local_directory
+from .local_scanner import LocalFile, assert_trash_safe, safe_trash, scan_local_directory
 
 APPROVAL_KEYWORDS = {
     "approve",
@@ -435,12 +435,15 @@ def execute_on_approval(
     for idx, act in enumerate(sorted_actions):
         try:
             if act.action_type == "create_folder":
+                assert_trash_safe(act.source)
                 p = Path(act.source)
                 p.mkdir(parents=True, exist_ok=True)
                 act.status = "success"
                 executed_counts["folders_created"] += 1
 
             elif act.action_type in {"move", "rename"}:
+                assert_trash_safe(act.source)
+                assert_trash_safe(act.target or "")
                 src = Path(act.source)
                 tgt = Path(act.target or "")
                 tgt.parent.mkdir(parents=True, exist_ok=True)
@@ -452,6 +455,7 @@ def execute_on_approval(
                     executed_counts["renamed"] += 1
 
             elif act.action_type == "delete":
+                assert_trash_safe(act.source)
                 safe_trash(act.source)
                 act.status = "success"
                 executed_counts["deleted"] += 1

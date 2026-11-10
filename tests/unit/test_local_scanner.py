@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from hermes_drive_index.core.local_scanner import (
+    assert_trash_safe,
     compute_file_hashes,
     guess_mime_type,
     safe_trash,
@@ -48,6 +49,19 @@ def test_safe_trash(tmp_path: Path):
     res = safe_trash(target)
     assert res is True
     assert not target.exists()
+
+
+def test_assert_trash_safe_rejects_critical_system_paths():
+    for unsafe_path in ["/etc", "/etc/passwd", "/usr", "/usr/bin/python3", "/var/log", "/boot"]:
+        with pytest.raises(ValueError, match="Critical system path cannot be trashed"):
+            assert_trash_safe(unsafe_path)
+
+    for unsafe_root in ["/home", "/media", "/media/work-data"]:
+        with pytest.raises(ValueError, match="Mount root cannot be trashed"):
+            assert_trash_safe(unsafe_root)
+
+    with pytest.raises(ValueError, match="Critical system path cannot be trashed"):
+        safe_trash("/etc/hosts")
 
 
 def test_safe_trash_exception_and_failure_logging(tmp_path: Path, monkeypatch, caplog):
