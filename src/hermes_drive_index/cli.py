@@ -201,7 +201,7 @@ def _handle_organize_and_sync_commands(args: argparse.Namespace, cfg: Any) -> in
     if args.cmd == "organize-plan":
         plan = propose_plan(args.folder, organize_mode=args.mode)
         if args.json:
-            print(json.dumps(asdict(plan), indent=2, ensure_ascii=False))
+            print(json.dumps(plan.to_dict(), indent=2, ensure_ascii=False))
         else:
             print(format_plan_presentation(plan))
         return 0
