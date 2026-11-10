@@ -109,10 +109,11 @@ def file_organizer_plan_handler(folder_path: str, organize_mode: str = "download
     try:
         plan = propose_plan(folder_path, organize_mode=organize_mode)
         formatted = format_plan_presentation(plan)
+        # Optimized: Use explicit .to_dict() instead of dataclasses.asdict reflection
         return json.dumps({
             "success": True,
             "package_version": __version__,
-            "plan": asdict(plan),
+            "plan": plan.to_dict(),
             "presentation": formatted,
         }, ensure_ascii=False)
     except Exception as exc:

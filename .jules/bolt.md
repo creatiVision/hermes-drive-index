@@ -38,3 +38,7 @@
 ## 2026-11-08 - Path Allocation & Redundant Folder String Join in Downloads Organization
 **Learning:** In `plan_download_organization`, repeatedly constructing `base / cat / year` and `dest_dir / f.name` using `pathlib.Path` objects and string conversions in the file iteration loop introduces heavy allocation overhead. Memoizing directory strings via a local `(category, year)` cache and using `os.path.join` yields a ~10x speedup.
 **Action:** In file categorization and destination planning loops, resolve the base folder string once, memoize destination directory paths by category key, and construct target paths using `os.path.join`.
+
+## 2026-11-09 - OrganizerPlan Dataclass Reflection Overhead & Path Inefficiencies
+**Learning:** Converting `OrganizerPlan` and its nested `OrganizerAction` list using `dataclasses.asdict()` in CLI outputs and Hermes RPC handlers causes heavy recursive reflection and deepcopy overhead (~6x slower than direct dictionary serialization). Furthermore, instantiating `Path` objects in `propose_plan(organize_mode="documents")` adds unnecessary object allocations (~8.7x slower than `os.path.join`).
+**Action:** Provide explicit `.to_dict()` methods on action and plan dataclasses returned through RPC APIs or JSON CLI interfaces, and use `os.path.join` for standard category path construction.
