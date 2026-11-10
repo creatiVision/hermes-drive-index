@@ -72,6 +72,30 @@ def test_organizer_plan_and_execution_workflow(tmp_path: Path):
     assert (tmp_path / "Documents" / "doc1.pdf").exists()
 
 
+def test_execute_on_approval_rejects_critical_system_paths(tmp_path: Path):
+    from hermes_drive_index.core.organizer_workflow import (
+        OrganizerAction,
+        OrganizerPlan,
+    )
+
+    src_file = tmp_path / "normal.txt"
+    src_file.write_text("safe")
+
+    plan = OrganizerPlan(folder_path=str(tmp_path))
+    plan.actions = [
+        OrganizerAction(
+            action_type="move",
+            source=str(src_file),
+            target="/etc/evil.txt",
+        )
+    ]
+
+    exec_res = execute_on_approval(plan, dry_run=False)
+    assert exec_res["success"] is False
+    assert "Critical system path cannot be trashed" in exec_res["error"]
+    assert src_file.exists()
+
+
 def test_format_plan_presentation_relative_paths(tmp_path: Path):
     from hermes_drive_index.core.organizer_workflow import (
         OrganizerAction,

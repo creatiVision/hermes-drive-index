@@ -24,3 +24,8 @@
 **Vulnerability:** `AtomicExecutionRunner.execute_move` and dashboard `execute_batch` performed file relocations and trash operations without checking paths against `DiskCleaningPolicy.assert_cleanup_safe`, enabling malicious or erroneously crafted rules to move files out of or into critical operating system directories (e.g., `/etc`, `/usr`, `/var`, `/bin`) and trash system files.
 **Learning:** Container mount checks (`docker_mount_service.validate_destination_path`) verify container mount mappings and write permissions, but do not protect against operations within mounted or host-level critical OS trees.
 **Prevention:** Enforce defense-in-depth by calling `DiskCleaningPolicy.assert_cleanup_safe` directly within execution engines (`execute_move` and `execute_batch`) on both source and destination operands before any filesystem mutation.
+
+## 2026-04-21 - Unchecked Critical OS Paths in Local Scanner safe_trash and Workflow Engine
+**Vulnerability:** `safe_trash` and `execute_on_approval` in `hermes_drive_index` executed file deletion, moves, renames, and directory creation on arbitrary file paths without checking against critical system paths (such as `/`, `/etc`, `/usr`, `/bin`, `/var`) or mount roots, allowing deletion or overwrites of operating system files if invoked with critical system paths.
+**Learning:** Utilities in lower-level or companion packages (`hermes_drive_index.core.local_scanner`) can become separate attack vectors if they assume callers have already verified safety boundaries.
+**Prevention:** Implement defense-in-depth checks (`assert_trash_safe`) directly within `safe_trash` and `execute_on_approval` to reject any operations referencing critical operating system trees or mount roots.

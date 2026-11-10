@@ -20,6 +20,27 @@ from typing import Callable, Sequence
 logger = logging.getLogger(__name__)
 
 
+CRITICAL_SYSTEM_PATHS: set[str] = {
+    "/", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64",
+    "/proc", "/root", "/sbin", "/sys", "/usr", "/var"
+}
+
+PROTECTED_MOUNT_ROOTS: set[str] = {
+    "/home", "/media", "/media/work-data", "/media/privat-data", "/media/xchg", "/media/nosync"
+}
+
+def assert_trash_safe(path: Path | str) -> None:
+    """Verify that path is not a critical OS root or directory inside one."""
+    normalized = str(Path(path).resolve())
+    p = Path(normalized)
+    if normalized in CRITICAL_SYSTEM_PATHS or any(
+        str(parent) in CRITICAL_SYSTEM_PATHS and str(parent) != "/"
+        for parent in p.parents
+    ):
+        raise ValueError(f"Critical system path cannot be trashed or modified: {path}")
+    if normalized in PROTECTED_MOUNT_ROOTS:
+        raise ValueError(f"Mount root cannot be trashed: {path}")
+
 DEFAULT_EXCLUDE_DIRS = {
     ".git",
     ".svn",
@@ -84,6 +105,9 @@ def safe_trash(path: Path | str) -> bool:
     Tries gio trash, trash-put, and desktop trash directory fallback.
     Returns True if successfully moved to trash.
     """
+    # Security: assert path is not in or equal to critical system paths or protected mount roots
+    assert_trash_safe(path)
+
     p = Path(path).resolve()
     if not p.exists():
         return False
