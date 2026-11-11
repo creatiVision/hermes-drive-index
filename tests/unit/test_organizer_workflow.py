@@ -55,9 +55,20 @@ def test_organizer_plan_and_execution_workflow(tmp_path: Path):
     # Step 4: propose_plan
     plan = propose_plan(tmp_path, organize_mode="downloads")
     assert plan.counts["moved"] == 2
+    d = plan.to_dict()
+    assert d["folder_path"] == str(tmp_path)
+    assert len(d["actions"]) == len(plan.actions)
+    assert d["counts"] == plan.counts
+    assert d["actions"][0]["action_type"] == plan.actions[0].action_type
     presentation = format_plan_presentation(plan)
     assert "Summary Totals" in presentation
     assert "Reply **'approve'** or **'go ahead'** to execute" in presentation
+
+    # Test organize_mode="documents"
+    doc_plan = propose_plan(tmp_path, organize_mode="documents")
+    assert doc_plan.counts["folders_created"] >= 5
+    doc_dict = doc_plan.to_dict()
+    assert doc_dict["folder_path"] == str(tmp_path)
 
     # Step 7: dry-run mode
     dry_res = execute_on_approval(plan, dry_run=True)
